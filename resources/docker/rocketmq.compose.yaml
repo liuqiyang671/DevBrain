@@ -1,0 +1,46 @@
+services:
+  rocketmq-namesrv:
+    image: ${ROCKETMQ_IMAGE:-apache/rocketmq:5.2.0}
+    container_name: devbrain-rocketmq-namesrv
+    user: root
+    command:
+      - /bin/sh
+      - -c
+      - |
+        mkdir -p /home/rocketmq/logs/rocketmqlogs
+        sh mqnamesrv
+    environment:
+      JAVA_OPT_EXT: "-server -Xms256m -Xmx256m -Xmn128m"
+    ports:
+      - "${ROCKETMQ_NAMESRV_PORT:-9876}:9876"
+    volumes:
+      - devbrain_rocketmq_namesrv_logs:/home/rocketmq/logs
+    restart: unless-stopped
+
+  rocketmq-broker:
+    image: ${ROCKETMQ_IMAGE:-apache/rocketmq:5.2.0}
+    container_name: devbrain-rocketmq-broker
+    user: root
+    depends_on:
+      - rocketmq-namesrv
+    command:
+      - /bin/sh
+      - -c
+      - |
+        mkdir -p /home/rocketmq/logs/rocketmqlogs /home/rocketmq/store/commitlog /home/rocketmq/store/consumequeue /home/rocketmq/store/index
+        sh mqbroker -n rocketmq-namesrv:9876 -c /home/rocketmq/broker.conf
+    environment:
+      JAVA_OPT_EXT: "-server -Xms512m -Xmx512m -Xmn256m"
+    ports:
+      - "${ROCKETMQ_BROKER_PORT:-10911}:10911"
+      - "${ROCKETMQ_BROKER_FAST_PORT:-10909}:10909"
+    volumes:
+      - ./rocketmq/broker.conf:/home/rocketmq/broker.conf:ro
+      - devbrain_rocketmq_broker_logs:/home/rocketmq/logs
+      - devbrain_rocketmq_broker_store:/home/rocketmq/store
+    restart: unless-stopped
+
+volumes:
+  devbrain_rocketmq_namesrv_logs:
+  devbrain_rocketmq_broker_logs:
+  devbrain_rocketmq_broker_store:

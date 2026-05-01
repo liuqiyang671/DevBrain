@@ -1,12 +1,44 @@
 spring:
   application:
     name: devbrain-bootstrap
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/devbrain}
+    username: ${DB_USERNAME:devbrain}
+    password: ${DB_PASSWORD:devbrain_dev_password}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+  servlet:
+    multipart:
+      max-file-size: ${DEVBRAIN_MAX_FILE_SIZE:50MB}
+      max-request-size: ${DEVBRAIN_MAX_REQUEST_SIZE:100MB}
 
 server:
   port: 9090
   servlet:
     context-path: /api/devbrain
 
+rocketmq:
+  name-server: ${ROCKETMQ_NAME_SERVER:localhost:9876}
+  producer:
+    group: ${ROCKETMQ_PRODUCER_GROUP:devbrain-producer-group}
+
 devbrain:
+  vector:
+    type: ${DEVBRAIN_VECTOR_TYPE:pg}
+    dimension: ${DEVBRAIN_VECTOR_DIMENSION:1536}
+    top-k: ${DEVBRAIN_VECTOR_TOP_K:5}
   upload:
     base-dir: ${DEVBRAIN_UPLOAD_DIR:./uploads}
+  object-storage:
+    provider: ${DEVBRAIN_OBJECT_STORAGE_PROVIDER:minio}
+    endpoint: ${S3_ENDPOINT:http://localhost:9000}
+    external-endpoint: ${S3_EXTERNAL_ENDPOINT:http://localhost:9000}
+    region: ${S3_REGION:us-east-1}
+    bucket: ${S3_BUCKET:devbrain}
+    access-key: ${S3_ACCESS_KEY:devbrain}
+    secret-key: ${S3_SECRET_KEY:devbrain_minio_password}

@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: devbrain-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-devbrain}
+      POSTGRES_USER: ${DB_USERNAME:-devbrain}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-devbrain_dev_password}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - devbrain_pg_data:/var/lib/postgresql/data
+      - ../database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  devbrain_pg_data:
