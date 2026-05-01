@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: devbrain-bootstrap
+
+server:
+  port: 9090
+  servlet:
+    context-path: /api/devbrain
+
+devbrain:
+  upload:
+    base-dir: ${DEVBRAIN_UPLOAD_DIR:./uploads}

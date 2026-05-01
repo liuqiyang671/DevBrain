@@ -1,0 +1,6 @@
+spring:
+  application:
+    name: devbrain-mcp-server
+
+server:
+  port: 9099
