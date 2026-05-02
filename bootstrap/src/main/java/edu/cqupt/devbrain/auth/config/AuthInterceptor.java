@@ -79,9 +79,6 @@ public class AuthInterceptor implements HandlerInterceptor {
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
             return true;
         }
-        if (isUnsafeMethod(request.getMethod())) {
-            csrfTokenService.validate(request);
-        }
         String path = request.getRequestURI();
         String contextPath = request.getContextPath();
         if (contextPath != null && !contextPath.isBlank() && path.startsWith(contextPath)) {
@@ -90,7 +87,13 @@ public class AuthInterceptor implements HandlerInterceptor {
         if (isPublicPath(path)) {
             return true;
         }
+        if (isUnsafeMethod(request.getMethod())) {
+            csrfTokenService.validate(request);
+        }
         String token = cookieSupport.readToken(request);
+        if (token == null || token.isBlank()) {
+            throw new ClientException(BaseErrorCode.UNAUTHORIZED);
+        }
         JwtClaims claims = jwtTokenService.parseToken(token);
         if (!tokenSessionService.exists(claims)) {
             throw new ClientException(BaseErrorCode.UNAUTHORIZED);

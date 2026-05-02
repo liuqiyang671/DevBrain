@@ -24,6 +24,44 @@ export interface PageResult<T> {
   pages: number;
 }
 
+export type KnowledgeBaseStatus = 'enabled' | 'disabled';
+
+export interface KnowledgeBaseItem {
+  id: string;
+  name: string;
+  description?: string | null;
+  embeddingModel: string;
+  collectionName: string;
+  status: KnowledgeBaseStatus | string;
+  documentCount: number;
+  chunkCount?: number | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  createTime?: string | null;
+  updateTime?: string | null;
+}
+
+export interface KnowledgeBasePageParams {
+  pageNo: number;
+  pageSize: number;
+  keyword?: string;
+  status?: KnowledgeBaseStatus | '';
+}
+
+export interface KnowledgeBaseCreatePayload {
+  name: string;
+  description?: string;
+  collectionName: string;
+  embeddingModel: string;
+}
+
+export interface KnowledgeBaseUpdatePayload {
+  name: string;
+  description?: string;
+  embeddingModel: string;
+  status: KnowledgeBaseStatus;
+}
+
 export interface RoleItem {
   id: string;
   roleCode: string;
