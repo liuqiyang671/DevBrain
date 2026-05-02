@@ -176,3 +176,63 @@ ON CONFLICT (http_method, path_pattern) DO NOTHING;
 INSERT INTO t_devbrain_schema_info (version, description)
 VALUES ('03-user-auth-permission', 'Built-in JWT authentication and RBAC tables')
 ON CONFLICT (version) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS t_knowledge_base (
+    id VARCHAR(32) PRIMARY KEY,
+    name VARCHAR(128) NOT NULL,
+    description VARCHAR(512),
+    embedding_model VARCHAR(64) NOT NULL,
+    collection_name VARCHAR(64) NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'enabled',
+    created_by VARCHAR(32) NOT NULL,
+    updated_by VARCHAR(32),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT uk_knowledge_base_collection_name UNIQUE (collection_name),
+    CONSTRAINT ck_knowledge_base_status CHECK (status IN ('enabled', 'disabled')),
+    CONSTRAINT ck_knowledge_base_collection_name CHECK (collection_name ~ '^[A-Za-z][A-Za-z0-9_-]*$')
+);
+COMMENT ON TABLE t_knowledge_base IS '知识库表，作为文档、Chunk 和向量集合的上层容器';
+COMMENT ON COLUMN t_knowledge_base.name IS '知识库名称';
+COMMENT ON COLUMN t_knowledge_base.description IS '知识库描述';
+COMMENT ON COLUMN t_knowledge_base.embedding_model IS 'Embedding 模型标识';
+COMMENT ON COLUMN t_knowledge_base.collection_name IS '向量集合名称，创建后禁止修改';
+COMMENT ON COLUMN t_knowledge_base.status IS '状态：enabled / disabled';
+COMMENT ON COLUMN t_knowledge_base.created_by IS '创建人用户 ID';
+COMMENT ON COLUMN t_knowledge_base.updated_by IS '最近更新人用户 ID';
+COMMENT ON COLUMN t_knowledge_base.deleted IS '逻辑删除标记，0 表示未删除，1 表示已删除';
+CREATE INDEX IF NOT EXISTS idx_knowledge_base_name ON t_knowledge_base (name);
+CREATE INDEX IF NOT EXISTS idx_knowledge_base_status ON t_knowledge_base (status);
+CREATE INDEX IF NOT EXISTS idx_knowledge_base_deleted_update_time ON t_knowledge_base (deleted, update_time);
+
+INSERT INTO t_permission (id, permission_code, permission_name, description)
+VALUES
+    ('11000000000000000007', 'knowledge:read', '查看知识库', '查看知识库列表和详情'),
+    ('11000000000000000008', 'knowledge:write', '管理知识库', '创建、更新、删除知识库')
+ON CONFLICT (permission_code) DO NOTHING;
+
+INSERT INTO t_role_permission (id, role_id, permission_id)
+SELECT
+    CASE p.permission_code
+        WHEN 'knowledge:read' THEN '12000000000000000007'
+        WHEN 'knowledge:write' THEN '12000000000000000008'
+    END,
+    r.id,
+    p.id
+FROM t_role r
+JOIN t_permission p ON p.permission_code IN ('knowledge:read', 'knowledge:write')
+WHERE r.role_code = 'admin'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO t_resource (id, resource_name, http_method, path_pattern, permission_code, public_access)
+VALUES
+    ('13000000000000000017', '知识库查询', 'GET', '/knowledge-base/**', 'knowledge:read', 0),
+    ('13000000000000000018', '知识库管理', 'POST', '/knowledge-base/**', 'knowledge:write', 0),
+    ('13000000000000000019', '知识库管理', 'PUT', '/knowledge-base/**', 'knowledge:write', 0),
+    ('13000000000000000020', '知识库管理', 'DELETE', '/knowledge-base/**', 'knowledge:write', 0)
+ON CONFLICT (http_method, path_pattern) DO NOTHING;
+
+INSERT INTO t_devbrain_schema_info (version, description)
+VALUES ('04-knowledge-base-crud', 'Knowledge base CRUD table and RBAC resources')
+ON CONFLICT (version) DO NOTHING;

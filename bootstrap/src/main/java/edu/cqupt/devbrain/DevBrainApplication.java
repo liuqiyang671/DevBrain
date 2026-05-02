@@ -17,7 +17,10 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
  * </ul>
  */
 @SpringBootApplication
-@MapperScan("edu.cqupt.devbrain.user.dao.mapper")
+@MapperScan({
+        "edu.cqupt.devbrain.user.dao.mapper",
+        "edu.cqupt.devbrain.knowledge.dao.mapper"
+})
 @EnableConfigurationProperties(AuthSecurityProperties.class)
 public class DevBrainApplication {
 
