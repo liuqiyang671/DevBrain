@@ -1,5 +1,6 @@
 package edu.cqupt.devbrain.framework.cache;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.serializer.RedisSerializer;
@@ -11,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 /**
  * Redis Key 序列化
  */
+@RequiredArgsConstructor
 @Component
 @ConditionalOnProperty(name = "framework.cache.redis.prefix")
 public class RedisKeySerializer implements RedisSerializer<String> {
