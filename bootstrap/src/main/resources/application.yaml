@@ -6,10 +6,16 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/devbrain}
     username: ${DB_USERNAME:devbrain}
     password: ${DB_PASSWORD:devbrain_dev_password}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:5}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT:30000}
+      idle-timeout: ${DB_IDLE_TIMEOUT:600000}
+      max-lifetime: ${DB_MAX_LIFETIME:1800000}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
+      port: ${REDIS_PORT:6380}
       password: ${REDIS_PASSWORD:}
       database: ${REDIS_DATABASE:0}
   servlet:
@@ -28,6 +34,16 @@ rocketmq:
     group: ${ROCKETMQ_PRODUCER_GROUP:devbrain-producer-group}
 
 devbrain:
+  auth:
+    jwt-secret: ${DEVBRAIN_JWT_SECRET:devbrain-local-secret-change-me-32bytes}
+    token-ttl: ${DEVBRAIN_TOKEN_TTL:8h}
+    csrf-ttl: ${DEVBRAIN_CSRF_TTL:2h}
+    cookie-secure: ${DEVBRAIN_COOKIE_SECURE:false}
+    same-site: ${DEVBRAIN_COOKIE_SAME_SITE:Lax}
+    ip-login-max-attempts: ${DEVBRAIN_IP_LOGIN_MAX_ATTEMPTS:20}
+    ip-login-window: ${DEVBRAIN_IP_LOGIN_WINDOW:5m}
+    account-max-failures: ${DEVBRAIN_ACCOUNT_MAX_FAILURES:5}
+    account-lock-duration: ${DEVBRAIN_ACCOUNT_LOCK_DURATION:15m}
   vector:
     type: ${DEVBRAIN_VECTOR_TYPE:pg}
     dimension: ${DEVBRAIN_VECTOR_DIMENSION:1536}
