@@ -1,5 +1,7 @@
 # 04 - 知识库 CRUD
 
+> 状态说明：本文是第 04 步构建提示词与验收清单归档。当前实现详见 `docs/knowledge-base-crud.md`。
+
 ## 1. 本步骤要完成什么
 
 实现知识库管理：创建、查询、修改、删除知识库。知识库是文档、Chunk、向量集合的上层容器。
@@ -14,20 +16,24 @@
 
 ```sql
 CREATE TABLE t_knowledge_base (
-    id VARCHAR(20) PRIMARY KEY,
+    id VARCHAR(32) PRIMARY KEY,
     name VARCHAR(128) NOT NULL,
+    description VARCHAR(512),
     embedding_model VARCHAR(64) NOT NULL,
     collection_name VARCHAR(64) NOT NULL,
-    created_by VARCHAR(20) NOT NULL,
-    description VARCHAR(512),
-    workspace_id VARCHAR(20),
-    updated_by VARCHAR(20),
-    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    deleted SMALLINT DEFAULT 0,
-    CONSTRAINT uk_collection_name UNIQUE (collection_name, deleted)
+    status VARCHAR(16) NOT NULL DEFAULT 'enabled',
+    created_by VARCHAR(32) NOT NULL,
+    updated_by VARCHAR(32),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT uk_knowledge_base_collection_name UNIQUE (collection_name),
+    CONSTRAINT ck_knowledge_base_status CHECK (status IN ('enabled', 'disabled')),
+    CONSTRAINT ck_knowledge_base_collection_name CHECK (collection_name ~ '^[A-Za-z][A-Za-z0-9_-]*$')
 );
-CREATE INDEX idx_kb_name ON t_knowledge_base(name);
+CREATE INDEX idx_knowledge_base_name ON t_knowledge_base(name);
+CREATE INDEX idx_knowledge_base_status ON t_knowledge_base(status);
+CREATE INDEX idx_knowledge_base_deleted_update_time ON t_knowledge_base(deleted, update_time);
 ```
 
 ## 4. 实现步骤
@@ -47,8 +53,7 @@ CREATE INDEX idx_kb_name ON t_knowledge_base(name);
 | GET | `/knowledge-base/{id}` | 知识库详情 |
 | PUT | `/knowledge-base/{id}` | 更新 |
 | DELETE | `/knowledge-base/{id}` | 删除 |
-| PATCH | `/knowledge-base/{id}/status` | 更新知识库状态（停用、启用等） |
- 
+
 ## 6. 实现功能注意事项
 1. 如果知识库下存在文档，则禁止删除，必须先删除文档，再删除知识库。
 2. 严格参考ragent项目的系统架构，返回格式等

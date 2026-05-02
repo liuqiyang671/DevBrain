@@ -1,14 +1,14 @@
  # DevBrain-CQUPT 数据库与中间件搭建说明
 
-> 生成日期：2026-05-01  
-> 参考文档：`E:\IdeaProjects\ragent\docs\devbrain-cqupt-ai-build\_template.md`、`E:\IdeaProjects\ragent1\docs\devbrain-cqupt-ai-build\02-database-and-middleware.md`  
+> 生成日期：2026-05-01
+> 参考文档：`E:\IdeaProjects\ragent\docs\devbrain-cqupt-ai-build\_template.md`、`E:\IdeaProjects\ragent1\docs\devbrain-cqupt-ai-build\02-database-and-middleware.md`
 > 目标项目：`E:\IdeaProjects\devbrain-cqupt`
 
 ## 1. 搭建目标
 
 本步骤为 DevBrain-CQUPT 准备本地开发运行环境，包括 PostgreSQL + pgvector、Redis、MinIO 和 RocketMQ，并在 Spring Boot 主应用中建立统一连接配置。
 
-当前步骤只创建基础设施级数据库对象，不提前生成用户、知识库、文档、向量、Trace 等业务表。业务表会在后续模块步骤中按各自文档补齐，避免列定义提前漂移。
+本文记录第 02 步基础设施搭建过程。后续步骤已在同一个 `resources/database/schema.sql` 中继续追加用户认证/RBAC 和知识库 CRUD 表结构；当前 schema 状态以 `resources/database/README.md` 为准。
 
 ## 2. 环境要求
 
@@ -79,7 +79,7 @@ bootstrap/src/main/resources/application.yaml
 | `DB_USERNAME` | `devbrain` | 数据库用户 |
 | `DB_PASSWORD` | `devbrain_dev_password` | 本地开发占位密码 |
 | `REDIS_HOST` | `localhost` | Redis 主机 |
-| `REDIS_PORT` | `6379` | Redis 端口 |
+| `REDIS_PORT` | `6380` | Redis 端口；当前后端默认值为 6380，Compose 默认发布 6379，启动时需要保持一致 |
 | `REDIS_PASSWORD` | 空 | Redis 密码，本地默认无密码 |
 | `S3_ENDPOINT` | `http://localhost:9000` | MinIO/S3 API 地址 |
 | `S3_BUCKET` | `devbrain` | 默认 bucket |
@@ -117,6 +117,8 @@ Copy-Item resources/docker/.env.example resources/docker/.env
 ```powershell
 docker compose --env-file resources/docker/.env -f resources/docker/postgres-pgvector.compose.yaml up -d
 ```
+
+如果后端直接使用 `application.yaml` 默认配置，Redis 会连接 `localhost:6380`。使用 Compose 默认 `6379` 时，需要在启动后端前设置 `$env:REDIS_PORT="6379"`；使用备用端口时，也要让 Compose 和后端共用同一个 `REDIS_PORT`。
 
 也可以直接在 PowerShell 中设置环境变量。例如本机已有 Redis 使用 `6379` 时：
 

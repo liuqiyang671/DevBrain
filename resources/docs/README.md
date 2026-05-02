@@ -1,3 +1,3 @@
-# Runtime Documents
+# 运行期文档资源
 
-This directory is reserved for runtime document samples, exported files, or development assets that should stay outside application source code.
+本目录用于存放运行期文档样例、导出文件，或不适合放入应用源码目录的开发资产。

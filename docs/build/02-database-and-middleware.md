@@ -1,5 +1,7 @@
 # 02 - 数据库与中间件搭建
 
+> 状态说明：本文是第 02 步构建提示词与验收清单归档。当前 Docker 与数据库状态请看 `resources/docker/README.md`、`resources/database/README.md` 和 `docs/database-and-middleware-setup.md`。
+
 ## 1. 本步骤要完成什么
 
 准备 DevBrain-CQUPT 的基础运行环境：PostgreSQL + pgvector、Redis、MinIO、RocketMQ，并建立统一连接配置。
@@ -17,7 +19,7 @@
 | PostgreSQL | 业务库 | 稳定、SQL 友好 |
 | pgvector | 向量检索 | 初期部署简单 |
 | Redis | 登录态、限流、缓存 | Spring 生态成熟 |
-| RustFS | 原始文档存储 | S3 兼容，易本地化 |
+| MinIO | 原始文档存储 | S3 兼容，易本地化 |
 | RocketMQ | 异步入库任务 | 后续支持任务解耦 |
 
 ## 4. 核心配置片段
@@ -27,11 +29,11 @@ spring:
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/devbrain}
     username: ${DB_USERNAME:devbrain}
-    # spring.datasource.password 使用 DB_PASSWORD 环境变量注入，不在配置文件中写默认值
+    password: ${DB_PASSWORD:devbrain_dev_password}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
+      port: ${REDIS_PORT:6380}
 ```
 
 ## 5. 涉及数据库对象
@@ -44,7 +46,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 1. 编写 `resources/docker/postgres-pgvector.compose.yaml`。
 2. 编写 `resources/docker/redis.compose.yaml`。
-3. 编写 `resources/docker/rustfs.compose.yaml`。
+3. 编写 `resources/docker/minio.compose.yaml`。
 4. 可选编写 `resources/docker/rocketmq.compose.yaml`。
 5. 在 `application.yaml` 中配置连接。
 6. 通过环境变量覆盖生产配置。

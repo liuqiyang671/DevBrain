@@ -1,5 +1,7 @@
 # 01 - 项目初始化与目录结构
 
+> 状态说明：本文是第 01 步构建提示词与验收清单归档。当前项目状态请先看 `docs/README.md` 和根目录 `README.md`。
+
 ## 1. 本步骤要完成什么
 
 创建 DevBrain-CQUPT 的工程骨架：Maven 多模块后端、React 前端、资源目录、文档目录、基础配置和 Git 忽略规则。
@@ -77,7 +79,7 @@ public class DevBrainApplication {
 | 测试项 | 命令 | 通过标准 |
 | --- | --- | --- |
 | Maven 结构 | `mvn -q -DskipTests compile` | 能识别所有模块 |
-| 启动类 | `mvn -pl bootstrap spring-boot:run` | 9090 端口启动 |
+| 启动类 | `mvn -pl bootstrap -am spring-boot:run` | 9090 端口启动 |
 | 前端 | `cd frontend && npm run dev` | Vite 正常启动 |
 
 ## 9. 验收标准

@@ -1,7 +1,7 @@
 # DevBrain-CQUPT 知识库 CRUD 说明
 
-> 完成日期：2026-05-02  
-> 适用模块：知识库管理、接口资源控制、后续文档入库前置容器
+> 完成日期：2026-05-02
+> 适用模块：知识库管理、接口资源控制、前端后台知识库管理、后续文档入库前置容器
 
 ## 1. 功能概览
 
@@ -15,6 +15,8 @@
 - 通过 RBAC 控制知识库读写权限。
 
 本模块只覆盖知识库本身，不包含文档上传、文档分块、向量写入和 RAG 检索。删除前的文档存在性检查通过 `KnowledgeBaseDocumentGuard` 预留扩展点，后续文档模块接入后替换为真实文档计数。
+
+前端后台页面 `/admin/knowledge-bases` 已接入真实知识库 CRUD API；用户侧 `/knowledge-bases` 和文档详情相关页面目前仍是入口/占位视图，等待文档模块继续接入。
 
 ## 2. 后端分层
 
@@ -309,7 +311,17 @@ git diff --check
 - 无文档时执行逻辑删除。
 - 分页参数裁剪到安全范围。
 
-## 9. 后续接入建议
+## 9. 前端接入
+
+| 文件 | 说明 |
+| --- | --- |
+| `frontend/src/services/knowledgeBase.ts` | 封装 `/knowledge-base` 列表、详情、创建、更新和删除请求 |
+| `frontend/src/types.ts` | 定义 `KnowledgeBaseItem`、分页结果和创建/更新 payload 类型 |
+| `frontend/src/App.tsx` | `/admin/knowledge-bases` 使用真实 API 管理知识库，前台知识库与文档页保留入口视图 |
+
+前端默认 API 前缀来自 `frontend/src/services/api.ts`，不要在页面中硬编码后端完整域名。
+
+## 10. 后续接入建议
 
 文档模块上线后，建议新增真实的 `KnowledgeBaseDocumentGuard` 实现：
 

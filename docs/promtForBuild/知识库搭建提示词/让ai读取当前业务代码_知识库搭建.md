@@ -1,3 +1,5 @@
+> 归档说明：此文件是知识库 CRUD 实现前的分析提示词草稿。当前项目已经存在 `edu.cqupt.devbrain.knowledge`；当前说明请看 `docs/knowledge-base-crud.md`。
+
 请先不要修改代码。
 
 请阅读当前项目结构，并分析在目标路径"E:\\IdeaProjects\\devbrain-cqupt"下实现“知识库 CRUD”需要改动哪些后端模块、数据库脚本文件。
