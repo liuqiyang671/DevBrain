@@ -18,8 +18,8 @@ import edu.cqupt.devbrain.user.service.CurrentUserAssembler;
 import edu.cqupt.devbrain.user.service.UserAccountSupport;
 import edu.cqupt.devbrain.user.service.UserDirectoryService;
 import edu.cqupt.devbrain.user.service.UserService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,29 +36,16 @@ import org.springframework.util.StringUtils;
  *   <li>创建用户时若未指定显示名称，默认使用用户名</li>
  * </ul>
  */
+@Slf4j
 @Service
+@RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
-
-    private static final Logger log = LoggerFactory.getLogger(UserServiceImpl.class);
 
     private final UserMapper userMapper;
     private final UserDirectoryService directoryService;
     private final CurrentUserAssembler currentUserAssembler;
     private final UserAccountSupport accountSupport;
     private final PasswordEncoder passwordEncoder;
-
-    public UserServiceImpl(
-            UserMapper userMapper,
-            UserDirectoryService directoryService,
-            CurrentUserAssembler currentUserAssembler,
-            UserAccountSupport accountSupport,
-            PasswordEncoder passwordEncoder) {
-        this.userMapper = userMapper;
-        this.directoryService = directoryService;
-        this.currentUserAssembler = currentUserAssembler;
-        this.accountSupport = accountSupport;
-        this.passwordEncoder = passwordEncoder;
-    }
 
     /**
      * 获取当前登录用户信息。

@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Data;
 
 import java.util.Date;
 
@@ -15,6 +16,7 @@ import java.util.Date;
  * 权限码是细粒度的操作权限标识（如 user:create、role:delete），
  * 通过 t_role_permission 与角色关联，再通过角色间接授权给用户。
  */
+@Data
 @TableName("t_permission")
 public class PermissionDO {
 
@@ -32,19 +34,4 @@ public class PermissionDO {
     @TableLogic
     @TableField(fill = FieldFill.INSERT)
     private Integer deleted;
-
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
-    public String getPermissionCode() { return permissionCode; }
-    public void setPermissionCode(String permissionCode) { this.permissionCode = permissionCode; }
-    public String getPermissionName() { return permissionName; }
-    public void setPermissionName(String permissionName) { this.permissionName = permissionName; }
-    public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
-    public Date getCreateTime() { return createTime; }
-    public void setCreateTime(Date createTime) { this.createTime = createTime; }
-    public Date getUpdateTime() { return updateTime; }
-    public void setUpdateTime(Date updateTime) { this.updateTime = updateTime; }
-    public Integer getDeleted() { return deleted; }
-    public void setDeleted(Integer deleted) { this.deleted = deleted; }
 }

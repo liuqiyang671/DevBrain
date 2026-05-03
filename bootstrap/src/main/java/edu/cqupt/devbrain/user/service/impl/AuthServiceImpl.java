@@ -21,8 +21,8 @@ import edu.cqupt.devbrain.user.service.CurrentUserAssembler;
 import edu.cqupt.devbrain.user.service.LoginOutcome;
 import edu.cqupt.devbrain.user.service.UserAccountSupport;
 import edu.cqupt.devbrain.user.service.UserDirectoryService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,10 +43,10 @@ import java.util.Set;
  *   <li>忘记密码接口无论邮箱是否存在都返回成功，不暴露用户注册信息</li>
  * </ul>
  */
+@Slf4j
 @Service
+@RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
-
-    private static final Logger log = LoggerFactory.getLogger(AuthServiceImpl.class);
 
     private final UserMapper userMapper;
     private final PasswordResetTokenMapper passwordResetTokenMapper;
@@ -56,25 +56,6 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
     private final TokenSessionService tokenSessionService;
-
-    public AuthServiceImpl(
-            UserMapper userMapper,
-            PasswordResetTokenMapper passwordResetTokenMapper,
-            UserDirectoryService directoryService,
-            CurrentUserAssembler currentUserAssembler,
-            UserAccountSupport accountSupport,
-            PasswordEncoder passwordEncoder,
-            JwtTokenService jwtTokenService,
-            TokenSessionService tokenSessionService) {
-        this.userMapper = userMapper;
-        this.passwordResetTokenMapper = passwordResetTokenMapper;
-        this.directoryService = directoryService;
-        this.currentUserAssembler = currentUserAssembler;
-        this.accountSupport = accountSupport;
-        this.passwordEncoder = passwordEncoder;
-        this.jwtTokenService = jwtTokenService;
-        this.tokenSessionService = tokenSessionService;
-    }
 
     /**
      * 用户注册。

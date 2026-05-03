@@ -1,5 +1,6 @@
 package edu.cqupt.devbrain.auth.core;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.util.StringUtils;
 
 import java.util.Locale;
@@ -14,15 +15,11 @@ import java.util.Locale;
  * </ul>
  * 所有计数与锁定状态均通过 {@link SecurityCache}（Redis）存储，支持 TTL 自动过期。
  */
+@RequiredArgsConstructor
 public class LoginAttemptGuard {
 
     private final SecurityCache cache;
     private final AuthSecurityProperties properties;
-
-    public LoginAttemptGuard(SecurityCache cache, AuthSecurityProperties properties) {
-        this.cache = cache;
-        this.properties = properties;
-    }
 
     /**
      * 检查当前登录请求是否被允许。

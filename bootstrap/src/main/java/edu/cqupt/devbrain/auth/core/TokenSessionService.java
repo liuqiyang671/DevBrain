@@ -1,5 +1,6 @@
 package edu.cqupt.devbrain.auth.core;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
@@ -14,15 +15,11 @@ import org.springframework.stereotype.Service;
  * 通过服务端会话记录可以实现"令牌虽未过期但已被注销"的场景。
  */
 @Service
+@RequiredArgsConstructor
 public class TokenSessionService {
 
     private final SecurityCache cache;
     private final AuthSecurityProperties properties;
-
-    public TokenSessionService(SecurityCache cache, AuthSecurityProperties properties) {
-        this.cache = cache;
-        this.properties = properties;
-    }
 
     /**
      * 存储会话映射：将 sessionId → userId 写入缓存，TTL 为令牌有效期。

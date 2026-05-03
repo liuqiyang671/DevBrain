@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Data;
 
 import java.util.Date;
 
@@ -22,6 +23,7 @@ import java.util.Date;
  *   <li>expireTime — 过期时间，过期后不可使用</li>
  * </ul>
  */
+@Data
 @TableName("t_password_reset_token")
 public class PasswordResetTokenDO {
 
@@ -42,21 +44,4 @@ public class PasswordResetTokenDO {
     @TableLogic
     @TableField(fill = FieldFill.INSERT)
     private Integer deleted;
-
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
-    public String getUserId() { return userId; }
-    public void setUserId(String userId) { this.userId = userId; }
-    public String getTokenHash() { return tokenHash; }
-    public void setTokenHash(String tokenHash) { this.tokenHash = tokenHash; }
-    public Date getExpireTime() { return expireTime; }
-    public void setExpireTime(Date expireTime) { this.expireTime = expireTime; }
-    public Integer getUsed() { return used; }
-    public void setUsed(Integer used) { this.used = used; }
-    public Date getCreateTime() { return createTime; }
-    public void setCreateTime(Date createTime) { this.createTime = createTime; }
-    public Date getUpdateTime() { return updateTime; }
-    public void setUpdateTime(Date updateTime) { this.updateTime = updateTime; }
-    public Integer getDeleted() { return deleted; }
-    public void setDeleted(Integer deleted) { this.deleted = deleted; }
 }

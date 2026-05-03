@@ -2,6 +2,7 @@ package edu.cqupt.devbrain.framework.mq.producer;
 
 import cn.hutool.core.util.StrUtil;
 import edu.cqupt.devbrain.framework.mq.MessageWrapper;
+import lombok.RequiredArgsConstructor;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.client.producer.TransactionSendResult;
 import org.apache.rocketmq.common.message.MessageConst;
@@ -17,17 +18,13 @@ import java.util.function.Consumer;
 /**
  * 基于 RocketMQ 的消息生产者
  */
+@RequiredArgsConstructor
 public class RocketMQProducerAdapter implements MessageQueueProducer {
 
     private static final Logger log = LoggerFactory.getLogger(RocketMQProducerAdapter.class);
 
     private final RocketMQTemplate rocketMQTemplate;
     private final DelegatingTransactionListener transactionListener;
-
-    public RocketMQProducerAdapter(RocketMQTemplate rocketMQTemplate, DelegatingTransactionListener transactionListener) {
-        this.rocketMQTemplate = rocketMQTemplate;
-        this.transactionListener = transactionListener;
-    }
 
     @Override
     public SendResult send(String topic, String keys, String bizDesc, Object body) {

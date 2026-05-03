@@ -1,5 +1,6 @@
 package edu.cqupt.devbrain.auth.config;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
@@ -17,13 +18,10 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * <b>注意</b>：当前 CORS 配置仅适用于开发环境，生产环境应替换为实际的前端域名。
  */
 @Configuration
+@RequiredArgsConstructor
 public class WebSecurityConfiguration implements WebMvcConfigurer {
 
     private final AuthInterceptor authInterceptor;
-
-    public WebSecurityConfiguration(AuthInterceptor authInterceptor) {
-        this.authInterceptor = authInterceptor;
-    }
 
     /**
      * 注册认证拦截器。

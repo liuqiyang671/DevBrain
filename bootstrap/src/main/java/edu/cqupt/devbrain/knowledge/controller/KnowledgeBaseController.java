@@ -9,6 +9,7 @@ import edu.cqupt.devbrain.knowledge.controller.request.KnowledgeBaseUpdateReques
 import edu.cqupt.devbrain.knowledge.controller.vo.KnowledgeBaseVO;
 import edu.cqupt.devbrain.knowledge.service.KnowledgeBaseService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,14 +24,11 @@ import org.springframework.web.bind.annotation.RestController;
  * 外部完整路径由 `server.servlet.context-path=/api/devbrain` 拼接而来，
  * 因此前端访问路径为 `/api/devbrain/knowledge-base`。
  */
+@RequiredArgsConstructor
 @RestController
 public class KnowledgeBaseController {
 
     private final KnowledgeBaseService knowledgeBaseService;
-
-    public KnowledgeBaseController(KnowledgeBaseService knowledgeBaseService) {
-        this.knowledgeBaseService = knowledgeBaseService;
-    }
 
     /**
      * 创建知识库。

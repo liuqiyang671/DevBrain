@@ -11,6 +11,7 @@ import edu.cqupt.devbrain.user.controller.vo.ResourceVO;
 import edu.cqupt.devbrain.user.controller.vo.RoleVO;
 import edu.cqupt.devbrain.user.service.RolePermissionService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -40,13 +41,10 @@ import java.util.List;
  * </ul>
  */
 @RestController
+@RequiredArgsConstructor
 public class RolePermissionController {
 
     private final RolePermissionService rolePermissionService;
-
-    public RolePermissionController(RolePermissionService rolePermissionService) {
-        this.rolePermissionService = rolePermissionService;
-    }
 
     /**
      * 查询所有角色列表。

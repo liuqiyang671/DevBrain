@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.lang.Singleton;
 import cn.hutool.core.lang.Snowflake;
 import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -21,16 +22,13 @@ import java.util.List;
  * 从 Redis 获取 workerId 和 datacenterId，并注册到 Hutool 的 IdUtil 中
  */
 @Component
+@RequiredArgsConstructor
 @ConditionalOnProperty(name = "devbrain.framework.snowflake.redis-enabled", havingValue = "true")
 public class SnowflakeIdInitializer {
 
     private static final Logger log = LoggerFactory.getLogger(SnowflakeIdInitializer.class);
 
     private final StringRedisTemplate stringRedisTemplate;
-
-    public SnowflakeIdInitializer(StringRedisTemplate stringRedisTemplate) {
-        this.stringRedisTemplate = stringRedisTemplate;
-    }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
     @PostConstruct

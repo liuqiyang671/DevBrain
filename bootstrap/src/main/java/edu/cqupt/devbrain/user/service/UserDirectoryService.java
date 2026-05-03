@@ -11,6 +11,7 @@ import edu.cqupt.devbrain.user.dao.mapper.PermissionMapper;
 import edu.cqupt.devbrain.user.dao.mapper.RoleMapper;
 import edu.cqupt.devbrain.user.dao.mapper.RolePermissionMapper;
 import edu.cqupt.devbrain.user.dao.mapper.UserRoleMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
@@ -37,6 +38,7 @@ import java.util.stream.Collectors;
  * <b>默认角色</b>：新注册用户自动分配 "user" 角色（{@link #DEFAULT_ROLE}）。
  */
 @Service
+@RequiredArgsConstructor
 public class UserDirectoryService {
 
     /**
@@ -48,17 +50,6 @@ public class UserDirectoryService {
     private final PermissionMapper permissionMapper;
     private final UserRoleMapper userRoleMapper;
     private final RolePermissionMapper rolePermissionMapper;
-
-    public UserDirectoryService(
-            RoleMapper roleMapper,
-            PermissionMapper permissionMapper,
-            UserRoleMapper userRoleMapper,
-            RolePermissionMapper rolePermissionMapper) {
-        this.roleMapper = roleMapper;
-        this.permissionMapper = permissionMapper;
-        this.userRoleMapper = userRoleMapper;
-        this.rolePermissionMapper = rolePermissionMapper;
-    }
 
     /**
      * 根据用户ID查询其角色编码集合。

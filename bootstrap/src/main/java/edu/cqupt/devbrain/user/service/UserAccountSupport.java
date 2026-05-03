@@ -5,6 +5,7 @@ import edu.cqupt.devbrain.framework.errorcode.BaseErrorCode;
 import edu.cqupt.devbrain.framework.exception.ClientException;
 import edu.cqupt.devbrain.user.dao.entity.UserDO;
 import edu.cqupt.devbrain.user.dao.mapper.UserMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -15,6 +16,7 @@ import org.springframework.util.StringUtils;
  * 所有查询均对输入进行 trim 处理，防止前后空白导致查询失败。
  */
 @Service
+@RequiredArgsConstructor
 public class UserAccountSupport {
 
     /**
@@ -23,10 +25,6 @@ public class UserAccountSupport {
     public static final String STATUS_ENABLED = "enabled";
 
     private final UserMapper userMapper;
-
-    public UserAccountSupport(UserMapper userMapper) {
-        this.userMapper = userMapper;
-    }
 
     /**
      * 根据用户ID查询用户，不存在则抛出异常。

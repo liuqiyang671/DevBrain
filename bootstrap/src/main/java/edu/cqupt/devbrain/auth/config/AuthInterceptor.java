@@ -16,6 +16,7 @@ import edu.cqupt.devbrain.user.service.CurrentUserAssembler;
 import edu.cqupt.devbrain.user.service.UserAccountSupport;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.AntPathMatcher;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -38,6 +39,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
  * 供后续业务逻辑使用。请求完成后自动清理上下文，防止内存泄漏。
  */
 @Component
+@RequiredArgsConstructor
 public class AuthInterceptor implements HandlerInterceptor {
 
     private final AuthSecurityProperties properties;
@@ -49,25 +51,6 @@ public class AuthInterceptor implements HandlerInterceptor {
     private final CurrentUserAssembler currentUserAssembler;
     private final AccessControlService accessControlService;
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
-
-    public AuthInterceptor(
-            AuthSecurityProperties properties,
-            CookieSupport cookieSupport,
-            CsrfTokenService csrfTokenService,
-            JwtTokenService jwtTokenService,
-            TokenSessionService tokenSessionService,
-            UserAccountSupport accountSupport,
-            CurrentUserAssembler currentUserAssembler,
-            AccessControlService accessControlService) {
-        this.properties = properties;
-        this.cookieSupport = cookieSupport;
-        this.csrfTokenService = csrfTokenService;
-        this.jwtTokenService = jwtTokenService;
-        this.tokenSessionService = tokenSessionService;
-        this.accountSupport = accountSupport;
-        this.currentUserAssembler = currentUserAssembler;
-        this.accessControlService = accessControlService;
-    }
 
     /**
      * 请求预处理 —— 执行完整的认证与权限校验链路。

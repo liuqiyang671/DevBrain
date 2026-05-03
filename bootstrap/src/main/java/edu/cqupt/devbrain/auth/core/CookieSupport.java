@@ -3,6 +3,7 @@ package edu.cqupt.devbrain.auth.core;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 
@@ -24,13 +25,10 @@ import java.util.Arrays;
  * </ul>
  */
 @Component
+@RequiredArgsConstructor
 public class CookieSupport {
 
     private final AuthSecurityProperties properties;
-
-    public CookieSupport(AuthSecurityProperties properties) {
-        this.properties = properties;
-    }
 
     /**
      * 写入 JWT 令牌 Cookie（HttpOnly）。

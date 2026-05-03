@@ -1,5 +1,9 @@
 package edu.cqupt.devbrain.framework.convention;
 
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 /**
  * 对话消息实体
  *
@@ -13,6 +17,9 @@ package edu.cqupt.devbrain.framework.convention;
  * 该结构适合在不同模型/厂商之间做一层通用抽象
  * </p>
  */
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class ChatMessage {
 
     /**
@@ -71,51 +78,9 @@ public class ChatMessage {
      */
     private Integer thinkingDuration;
 
-    public ChatMessage() {
-    }
-
     public ChatMessage(Role role, String content) {
         this.role = role;
         this.content = content;
-    }
-
-    public ChatMessage(Role role, String content, String thinkingContent, Integer thinkingDuration) {
-        this.role = role;
-        this.content = content;
-        this.thinkingContent = thinkingContent;
-        this.thinkingDuration = thinkingDuration;
-    }
-
-    public Role getRole() {
-        return role;
-    }
-
-    public void setRole(Role role) {
-        this.role = role;
-    }
-
-    public String getContent() {
-        return content;
-    }
-
-    public void setContent(String content) {
-        this.content = content;
-    }
-
-    public String getThinkingContent() {
-        return thinkingContent;
-    }
-
-    public void setThinkingContent(String thinkingContent) {
-        this.thinkingContent = thinkingContent;
-    }
-
-    public Integer getThinkingDuration() {
-        return thinkingDuration;
-    }
-
-    public void setThinkingDuration(Integer thinkingDuration) {
-        this.thinkingDuration = thinkingDuration;
     }
 
     /**

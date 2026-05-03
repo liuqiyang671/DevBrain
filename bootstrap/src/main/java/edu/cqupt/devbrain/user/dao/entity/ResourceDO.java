@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Data;
 
 import java.util.Date;
 
@@ -23,6 +24,7 @@ import java.util.Date;
  *   <li>publicAccess — 是否公开访问，1 表示无需登录即可访问</li>
  * </ul>
  */
+@Data
 @TableName("t_resource")
 public class ResourceDO {
 
@@ -44,23 +46,4 @@ public class ResourceDO {
     @TableLogic
     @TableField(fill = FieldFill.INSERT)
     private Integer deleted;
-
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
-    public String getResourceName() { return resourceName; }
-    public void setResourceName(String resourceName) { this.resourceName = resourceName; }
-    public String getHttpMethod() { return httpMethod; }
-    public void setHttpMethod(String httpMethod) { this.httpMethod = httpMethod; }
-    public String getPathPattern() { return pathPattern; }
-    public void setPathPattern(String pathPattern) { this.pathPattern = pathPattern; }
-    public String getPermissionCode() { return permissionCode; }
-    public void setPermissionCode(String permissionCode) { this.permissionCode = permissionCode; }
-    public Integer getPublicAccess() { return publicAccess; }
-    public void setPublicAccess(Integer publicAccess) { this.publicAccess = publicAccess; }
-    public Date getCreateTime() { return createTime; }
-    public void setCreateTime(Date createTime) { this.createTime = createTime; }
-    public Date getUpdateTime() { return updateTime; }
-    public void setUpdateTime(Date updateTime) { this.updateTime = updateTime; }
-    public Integer getDeleted() { return deleted; }
-    public void setDeleted(Integer deleted) { this.deleted = deleted; }
 }

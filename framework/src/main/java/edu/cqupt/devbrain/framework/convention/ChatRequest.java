@@ -1,5 +1,10 @@
 package edu.cqupt.devbrain.framework.convention;
 
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -20,6 +25,10 @@ import java.util.List;
  *     .build();
  * </pre>
  */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class ChatRequest {
 
     /**
@@ -30,6 +39,7 @@ public class ChatRequest {
      * prompt 会作为额外的 user 消息追加。
      * </p>
      */
+    @Builder.Default
     private List<ChatMessage> messages = new ArrayList<>();
 
     // ================== 模型控制参数 ==================
@@ -93,116 +103,4 @@ public class ChatRequest {
      * </p>
      */
     private Boolean enableTools;
-
-    public ChatRequest() {
-    }
-
-    public List<ChatMessage> getMessages() {
-        return messages;
-    }
-
-    public void setMessages(List<ChatMessage> messages) {
-        this.messages = messages;
-    }
-
-    public Double getTemperature() {
-        return temperature;
-    }
-
-    public void setTemperature(Double temperature) {
-        this.temperature = temperature;
-    }
-
-    public Double getTopP() {
-        return topP;
-    }
-
-    public void setTopP(Double topP) {
-        this.topP = topP;
-    }
-
-    public Integer getTopK() {
-        return topK;
-    }
-
-    public void setTopK(Integer topK) {
-        this.topK = topK;
-    }
-
-    public Integer getMaxTokens() {
-        return maxTokens;
-    }
-
-    public void setMaxTokens(Integer maxTokens) {
-        this.maxTokens = maxTokens;
-    }
-
-    public Boolean getThinking() {
-        return thinking;
-    }
-
-    public void setThinking(Boolean thinking) {
-        this.thinking = thinking;
-    }
-
-    public Boolean getEnableTools() {
-        return enableTools;
-    }
-
-    public void setEnableTools(Boolean enableTools) {
-        this.enableTools = enableTools;
-    }
-
-    /**
-     * 创建 Builder
-     */
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    /**
-     * Builder 模式
-     */
-    public static class Builder {
-        private final ChatRequest request = new ChatRequest();
-
-        public Builder messages(List<ChatMessage> messages) {
-            request.setMessages(messages);
-            return this;
-        }
-
-        public Builder temperature(Double temperature) {
-            request.setTemperature(temperature);
-            return this;
-        }
-
-        public Builder topP(Double topP) {
-            request.setTopP(topP);
-            return this;
-        }
-
-        public Builder topK(Integer topK) {
-            request.setTopK(topK);
-            return this;
-        }
-
-        public Builder maxTokens(Integer maxTokens) {
-            request.setMaxTokens(maxTokens);
-            return this;
-        }
-
-        public Builder thinking(Boolean thinking) {
-            request.setThinking(thinking);
-            return this;
-        }
-
-        public Builder enableTools(Boolean enableTools) {
-            request.setEnableTools(enableTools);
-            return this;
-        }
-
-        public ChatRequest build() {
-            return request;
-        }
-    }
 }

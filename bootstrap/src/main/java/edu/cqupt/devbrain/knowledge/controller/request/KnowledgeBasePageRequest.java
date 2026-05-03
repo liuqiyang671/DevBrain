@@ -2,10 +2,12 @@ package edu.cqupt.devbrain.knowledge.controller.request;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import lombok.Data;
 
 /**
  * 知识库分页查询参数。
  */
+@Data
 public class KnowledgeBasePageRequest {
 
     /** 页码，从 1 开始。 */
@@ -22,36 +24,4 @@ public class KnowledgeBasePageRequest {
 
     /** 状态过滤：enabled / disabled。 */
     private String status;
-
-    public long getPageNo() {
-        return pageNo;
-    }
-
-    public void setPageNo(long pageNo) {
-        this.pageNo = pageNo;
-    }
-
-    public long getPageSize() {
-        return pageSize;
-    }
-
-    public void setPageSize(long pageSize) {
-        this.pageSize = pageSize;
-    }
-
-    public String getKeyword() {
-        return keyword;
-    }
-
-    public void setKeyword(String keyword) {
-        this.keyword = keyword;
-    }
-
-    public String getStatus() {
-        return status;
-    }
-
-    public void setStatus(String status) {
-        this.status = status;
-    }
 }

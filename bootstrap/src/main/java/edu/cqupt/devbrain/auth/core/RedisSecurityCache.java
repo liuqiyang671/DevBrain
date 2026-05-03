@@ -1,5 +1,6 @@
 package edu.cqupt.devbrain.auth.core;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -16,13 +17,10 @@ import java.util.Optional;
  * 确保时间窗口从首次访问开始计算，避免通过持续请求无限延长窗口。
  */
 @Component
+@RequiredArgsConstructor
 public class RedisSecurityCache implements SecurityCache {
 
     private final StringRedisTemplate redisTemplate;
-
-    public RedisSecurityCache(StringRedisTemplate redisTemplate) {
-        this.redisTemplate = redisTemplate;
-    }
 
     @Override
     public Optional<String> get(String key) {

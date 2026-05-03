@@ -19,6 +19,7 @@ import edu.cqupt.devbrain.user.service.LoginOutcome;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -40,6 +41,7 @@ import org.springframework.web.bind.annotation.RestController;
  * </ul>
  */
 @RestController
+@RequiredArgsConstructor
 public class AuthController {
 
     private final AuthService authService;
@@ -47,14 +49,6 @@ public class AuthController {
     private final CookieSupport cookieSupport;
     private final JwtTokenService jwtTokenService;
     private final TokenSessionService tokenSessionService;
-
-    public AuthController(AuthService authService, CsrfTokenService csrfTokenService, CookieSupport cookieSupport, JwtTokenService jwtTokenService, TokenSessionService tokenSessionService) {
-        this.authService = authService;
-        this.csrfTokenService = csrfTokenService;
-        this.cookieSupport = cookieSupport;
-        this.jwtTokenService = jwtTokenService;
-        this.tokenSessionService = tokenSessionService;
-    }
 
     /**
      * 获取 CSRF 令牌。

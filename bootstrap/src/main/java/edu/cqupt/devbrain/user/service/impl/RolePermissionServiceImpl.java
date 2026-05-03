@@ -18,8 +18,8 @@ import edu.cqupt.devbrain.user.dao.mapper.RoleMapper;
 import edu.cqupt.devbrain.user.service.AccessControlService;
 import edu.cqupt.devbrain.user.service.RolePermissionService;
 import edu.cqupt.devbrain.user.service.UserDirectoryService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,29 +36,16 @@ import java.util.List;
  *   <li>权限分配为全量替换模式</li>
  * </ul>
  */
+@Slf4j
 @Service
+@RequiredArgsConstructor
 public class RolePermissionServiceImpl implements RolePermissionService {
-
-    private static final Logger log = LoggerFactory.getLogger(RolePermissionServiceImpl.class);
 
     private final RoleMapper roleMapper;
     private final PermissionMapper permissionMapper;
     private final ResourceMapper resourceMapper;
     private final UserDirectoryService directoryService;
     private final AccessControlService accessControlService;
-
-    public RolePermissionServiceImpl(
-            RoleMapper roleMapper,
-            PermissionMapper permissionMapper,
-            ResourceMapper resourceMapper,
-            UserDirectoryService directoryService,
-            AccessControlService accessControlService) {
-        this.roleMapper = roleMapper;
-        this.permissionMapper = permissionMapper;
-        this.resourceMapper = resourceMapper;
-        this.directoryService = directoryService;
-        this.accessControlService = accessControlService;
-    }
 
     @Override
     public List<RoleVO> roles() {

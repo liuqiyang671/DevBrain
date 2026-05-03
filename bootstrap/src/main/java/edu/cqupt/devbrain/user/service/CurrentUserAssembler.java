@@ -3,6 +3,7 @@ package edu.cqupt.devbrain.user.service;
 import edu.cqupt.devbrain.framework.context.LoginUser;
 import edu.cqupt.devbrain.user.controller.vo.CurrentUserVO;
 import edu.cqupt.devbrain.user.dao.entity.UserDO;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.Set;
@@ -14,13 +15,10 @@ import java.util.Set;
  * 用于认证拦截器设置用户上下文、登录/注册返回用户信息等场景。
  */
 @Service
+@RequiredArgsConstructor
 public class CurrentUserAssembler {
 
     private final UserDirectoryService directoryService;
-
-    public CurrentUserAssembler(UserDirectoryService directoryService) {
-        this.directoryService = directoryService;
-    }
 
     /**
      * 将用户实体转换为登录用户上下文对象。

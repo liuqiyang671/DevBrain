@@ -6,6 +6,7 @@ import com.google.gson.Gson;
 import edu.cqupt.devbrain.framework.context.LoginUser;
 import edu.cqupt.devbrain.framework.context.UserContext;
 import edu.cqupt.devbrain.framework.exception.ClientException;
+import lombok.RequiredArgsConstructor;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
@@ -26,15 +27,12 @@ import java.util.Objects;
  */
 @Aspect
 @Component
+@RequiredArgsConstructor
 @ConditionalOnBean(RedissonClient.class)
 public final class IdempotentSubmitAspect {
 
     private final RedissonClient redissonClient;
     private final Gson gson = new Gson();
-
-    public IdempotentSubmitAspect(RedissonClient redissonClient) {
-        this.redissonClient = redissonClient;
-    }
 
     /**
      * 增强方法标记 {@link IdempotentSubmit} 注解逻辑

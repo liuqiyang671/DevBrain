@@ -12,8 +12,8 @@ import edu.cqupt.devbrain.knowledge.dao.entity.KnowledgeBaseDO;
 import edu.cqupt.devbrain.knowledge.dao.mapper.KnowledgeBaseMapper;
 import edu.cqupt.devbrain.knowledge.service.KnowledgeBaseDocumentGuard;
 import edu.cqupt.devbrain.knowledge.service.KnowledgeBaseService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -26,21 +26,17 @@ import java.util.regex.Pattern;
  * Controller 只负责收参和返回包装，所有领域规则都集中在这里，便于后续文档、
  * Chunk 和向量模块复用同一套知识库约束。
  */
+@Slf4j
 @Service
+@RequiredArgsConstructor
 public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
 
-    private static final Logger log = LoggerFactory.getLogger(KnowledgeBaseServiceImpl.class);
     private static final Pattern COLLECTION_NAME_PATTERN = Pattern.compile("^[A-Za-z][A-Za-z0-9_-]*$");
     private static final String STATUS_ENABLED = "enabled";
     private static final String STATUS_DISABLED = "disabled";
 
     private final KnowledgeBaseMapper knowledgeBaseMapper;
     private final KnowledgeBaseDocumentGuard documentGuard;
-
-    public KnowledgeBaseServiceImpl(KnowledgeBaseMapper knowledgeBaseMapper, KnowledgeBaseDocumentGuard documentGuard) {
-        this.knowledgeBaseMapper = knowledgeBaseMapper;
-        this.documentGuard = documentGuard;
-    }
 
     @Override
     @Transactional
@@ -198,7 +194,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     }
 
     /**
-     * 统一去除用户输入前后空白，保留 null 语义用于区分“未传字段”。
+     * 统一去除用户输入前后空白，保留 null 语义用于区分"未传字段"。
      */
     private String clean(String value) {
         return value == null ? null : value.trim();

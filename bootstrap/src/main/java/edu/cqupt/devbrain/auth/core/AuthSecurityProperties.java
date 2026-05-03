@@ -1,5 +1,6 @@
 package edu.cqupt.devbrain.auth.core;
 
+import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
@@ -26,6 +27,7 @@ import java.util.List;
  *   <li>publicPaths — 免认证公开路径列表，支持 Ant 风格匹配</li>
  * </ul>
  */
+@Data
 @ConfigurationProperties(prefix = "devbrain.auth")
 public class AuthSecurityProperties {
 
@@ -48,100 +50,4 @@ public class AuthSecurityProperties {
             "/auth/password/reset",
             "/error"
     );
-
-    public String getJwtSecret() {
-        return jwtSecret;
-    }
-
-    public void setJwtSecret(String jwtSecret) {
-        this.jwtSecret = jwtSecret;
-    }
-
-    public Duration getTokenTtl() {
-        return tokenTtl;
-    }
-
-    public void setTokenTtl(Duration tokenTtl) {
-        this.tokenTtl = tokenTtl;
-    }
-
-    public Duration getCsrfTtl() {
-        return csrfTtl;
-    }
-
-    public void setCsrfTtl(Duration csrfTtl) {
-        this.csrfTtl = csrfTtl;
-    }
-
-    public String getTokenCookieName() {
-        return tokenCookieName;
-    }
-
-    public void setTokenCookieName(String tokenCookieName) {
-        this.tokenCookieName = tokenCookieName;
-    }
-
-    public String getCsrfCookieName() {
-        return csrfCookieName;
-    }
-
-    public void setCsrfCookieName(String csrfCookieName) {
-        this.csrfCookieName = csrfCookieName;
-    }
-
-    public boolean isCookieSecure() {
-        return cookieSecure;
-    }
-
-    public void setCookieSecure(boolean cookieSecure) {
-        this.cookieSecure = cookieSecure;
-    }
-
-    public String getSameSite() {
-        return sameSite;
-    }
-
-    public void setSameSite(String sameSite) {
-        this.sameSite = sameSite;
-    }
-
-    public int getIpLoginMaxAttempts() {
-        return ipLoginMaxAttempts;
-    }
-
-    public void setIpLoginMaxAttempts(int ipLoginMaxAttempts) {
-        this.ipLoginMaxAttempts = ipLoginMaxAttempts;
-    }
-
-    public Duration getIpLoginWindow() {
-        return ipLoginWindow;
-    }
-
-    public void setIpLoginWindow(Duration ipLoginWindow) {
-        this.ipLoginWindow = ipLoginWindow;
-    }
-
-    public int getAccountMaxFailures() {
-        return accountMaxFailures;
-    }
-
-    public void setAccountMaxFailures(int accountMaxFailures) {
-        this.accountMaxFailures = accountMaxFailures;
-    }
-
-    public Duration getAccountLockDuration() {
-        return accountLockDuration;
-    }
-
-    public void setAccountLockDuration(Duration accountLockDuration) {
-        this.accountLockDuration = accountLockDuration;
-    }
-
-    public List<String> getPublicPaths() {
-        return publicPaths;
-    }
-
-    public void setPublicPaths(List<String> publicPaths) {
-        this.publicPaths = publicPaths;
-    }
 }

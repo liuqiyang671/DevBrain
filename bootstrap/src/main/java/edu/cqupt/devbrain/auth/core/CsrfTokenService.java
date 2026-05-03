@@ -2,6 +2,7 @@ package edu.cqupt.devbrain.auth.core;
 
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
@@ -22,16 +23,12 @@ import java.util.HexFormat;
  * GET、HEAD、OPTIONS 等安全方法跳过校验。
  */
 @Service
+@RequiredArgsConstructor
 public class CsrfTokenService {
 
     private final SecurityCache cache;
     private final AuthSecurityProperties properties;
     private final SecureRandom secureRandom = new SecureRandom();
-
-    public CsrfTokenService(SecurityCache cache, AuthSecurityProperties properties) {
-        this.cache = cache;
-        this.properties = properties;
-    }
 
     /**
      * 签发 CSRF 令牌。

@@ -6,6 +6,7 @@ import edu.cqupt.devbrain.framework.errorcode.BaseErrorCode;
 import edu.cqupt.devbrain.framework.exception.ClientException;
 import edu.cqupt.devbrain.user.dao.entity.ResourceDO;
 import edu.cqupt.devbrain.user.dao.mapper.ResourceMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.AntPathMatcher;
 import org.springframework.util.StringUtils;
@@ -34,6 +35,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 资源变更时通过 {@link #clearResourceCache()} 手动刷新缓存。
  */
 @Service
+@RequiredArgsConstructor
 public class AccessControlService {
 
     private static final long CACHE_TTL_MS = 60_000;
@@ -41,10 +43,6 @@ public class AccessControlService {
     private final ResourceMapper resourceMapper;
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
     private final ConcurrentHashMap<String, CacheEntry> resourceCache = new ConcurrentHashMap<>();
-
-    public AccessControlService(ResourceMapper resourceMapper) {
-        this.resourceMapper = resourceMapper;
-    }
 
     /**
      * 检查当前用户是否有权访问指定路径。

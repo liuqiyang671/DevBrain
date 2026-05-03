@@ -2,6 +2,7 @@ package edu.cqupt.devbrain.auth.core;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.Mac;
@@ -37,6 +38,7 @@ import java.util.UUID;
  * 生产环境务必替换默认值并妥善保管。
  */
 @Component
+@RequiredArgsConstructor
 public class JwtTokenService {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -44,10 +46,6 @@ public class JwtTokenService {
     private static final Base64.Decoder BASE64_URL_DECODER = Base64.getUrlDecoder();
 
     private final AuthSecurityProperties properties;
-
-    public JwtTokenService(AuthSecurityProperties properties) {
-        this.properties = properties;
-    }
 
     /**
      * 签发 JWT 令牌。

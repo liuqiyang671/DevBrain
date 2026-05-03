@@ -2,6 +2,7 @@ package edu.cqupt.devbrain.framework.idempotent;
 
 import edu.cqupt.devbrain.framework.errorcode.BaseErrorCode;
 import edu.cqupt.devbrain.framework.exception.ServiceException;
+import lombok.RequiredArgsConstructor;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
@@ -22,16 +23,13 @@ import java.util.concurrent.TimeUnit;
  */
 @Aspect
 @Component
+@RequiredArgsConstructor
 @ConditionalOnBean(StringRedisTemplate.class)
 public final class IdempotentConsumeAspect {
 
     private static final Logger log = LoggerFactory.getLogger(IdempotentConsumeAspect.class);
 
     private final StringRedisTemplate stringRedisTemplate;
-
-    public IdempotentConsumeAspect(StringRedisTemplate stringRedisTemplate) {
-        this.stringRedisTemplate = stringRedisTemplate;
-    }
 
     private static final String LUA_SCRIPT = """
             local key = KEYS[1]

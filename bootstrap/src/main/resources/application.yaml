@@ -50,6 +50,9 @@ devbrain:
     top-k: ${DEVBRAIN_VECTOR_TOP_K:5}
   upload:
     base-dir: ${DEVBRAIN_UPLOAD_DIR:./uploads}
+    max-file-size: ${DEVBRAIN_UPLOAD_MAX_FILE_SIZE:50MB}
+    allowed-extensions: pdf,doc,docx,xls,xlsx,ppt,pptx,md,txt,csv,json,html,htm,xml
+    blocked-extensions: exe,sh,bat,cmd,jsp,php,jar,class,dll,so
   object-storage:
     provider: ${DEVBRAIN_OBJECT_STORAGE_PROVIDER:minio}
     endpoint: ${S3_ENDPOINT:http://localhost:9000}
