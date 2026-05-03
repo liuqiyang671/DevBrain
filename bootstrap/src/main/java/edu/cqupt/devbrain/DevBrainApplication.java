@@ -3,6 +3,7 @@ package edu.cqupt.devbrain;
 import edu.cqupt.devbrain.auth.core.AuthSecurityProperties;
 import edu.cqupt.devbrain.knowledge.config.ObjectStorageProperties;
 import edu.cqupt.devbrain.knowledge.config.UploadProperties;
+import edu.cqupt.devbrain.knowledge.config.UploadRateLimitProperties;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -23,7 +24,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
         "edu.cqupt.devbrain.user.dao.mapper",
         "edu.cqupt.devbrain.knowledge.dao.mapper"
 })
-@EnableConfigurationProperties({AuthSecurityProperties.class, UploadProperties.class, ObjectStorageProperties.class})
+@EnableConfigurationProperties({AuthSecurityProperties.class, UploadProperties.class, ObjectStorageProperties.class, UploadRateLimitProperties.class})
 public class DevBrainApplication {
 
     public static void main(String[] args) {

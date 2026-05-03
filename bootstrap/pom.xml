@@ -51,6 +51,12 @@
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
         </dependency>
+
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>${aws-s3.version}</version>
+        </dependency>
     </dependencies>
 
     <build>

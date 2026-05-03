@@ -236,3 +236,56 @@ ON CONFLICT (http_method, path_pattern) DO NOTHING;
 INSERT INTO t_devbrain_schema_info (version, description)
 VALUES ('04-knowledge-base-crud', 'Knowledge base CRUD table and RBAC resources')
 ON CONFLICT (version) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS t_knowledge_document (
+    id VARCHAR(32) PRIMARY KEY,
+    kb_id VARCHAR(32) NOT NULL,
+    doc_name VARCHAR(256) NOT NULL,
+    enabled SMALLINT NOT NULL DEFAULT 1,
+    chunk_count BIGINT NOT NULL DEFAULT 0,
+    file_url VARCHAR(512),
+    file_type VARCHAR(32),
+    file_size BIGINT,
+    process_mode VARCHAR(32),
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    source_type VARCHAR(32),
+    source_location VARCHAR(512),
+    schedule_enabled SMALLINT NOT NULL DEFAULT 0,
+    schedule_cron VARCHAR(64),
+    chunk_strategy VARCHAR(32),
+    chunk_config JSONB,
+    pipeline_id VARCHAR(32),
+    created_by VARCHAR(32) NOT NULL,
+    updated_by VARCHAR(32),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT fk_knowledge_document_kb_id FOREIGN KEY (kb_id) REFERENCES t_knowledge_base (id)
+);
+COMMENT ON TABLE t_knowledge_document IS '知识库文档表，记录上传文档及其处理状态';
+COMMENT ON COLUMN t_knowledge_document.kb_id IS '所属知识库 ID，关联 t_knowledge_base.id';
+COMMENT ON COLUMN t_knowledge_document.doc_name IS '文档名称';
+COMMENT ON COLUMN t_knowledge_document.enabled IS '是否启用：0 禁用，1 启用';
+COMMENT ON COLUMN t_knowledge_document.chunk_count IS '文档切片数量';
+COMMENT ON COLUMN t_knowledge_document.file_url IS '文件存储 URL';
+COMMENT ON COLUMN t_knowledge_document.file_type IS '文件类型，如 pdf、docx、md、txt';
+COMMENT ON COLUMN t_knowledge_document.file_size IS '文件大小，单位字节';
+COMMENT ON COLUMN t_knowledge_document.process_mode IS '处理模式';
+COMMENT ON COLUMN t_knowledge_document.status IS '文档处理状态，如 pending / processing / completed / failed';
+COMMENT ON COLUMN t_knowledge_document.source_type IS '来源类型';
+COMMENT ON COLUMN t_knowledge_document.source_location IS '来源地址';
+COMMENT ON COLUMN t_knowledge_document.schedule_enabled IS '是否启用定时同步：0 禁用，1 启用';
+COMMENT ON COLUMN t_knowledge_document.schedule_cron IS '定时同步 Cron 表达式';
+COMMENT ON COLUMN t_knowledge_document.chunk_strategy IS '切片策略';
+COMMENT ON COLUMN t_knowledge_document.chunk_config IS '切片配置，JSONB 类型';
+COMMENT ON COLUMN t_knowledge_document.pipeline_id IS '关联的处理流水线 ID';
+COMMENT ON COLUMN t_knowledge_document.created_by IS '创建人用户 ID';
+COMMENT ON COLUMN t_knowledge_document.updated_by IS '最近更新人用户 ID';
+COMMENT ON COLUMN t_knowledge_document.deleted IS '逻辑删除标记，0 表示未删除，1 表示已删除';
+CREATE INDEX IF NOT EXISTS idx_knowledge_document_kb_id ON t_knowledge_document (kb_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_document_status ON t_knowledge_document (status);
+CREATE INDEX IF NOT EXISTS idx_knowledge_document_deleted_update_time ON t_knowledge_document (deleted, update_time);
+
+INSERT INTO t_devbrain_schema_info (version, description)
+VALUES ('05-knowledge-document', 'Knowledge document table for file upload and processing')
+ON CONFLICT (version) DO NOTHING;

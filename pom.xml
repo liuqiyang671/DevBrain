@@ -26,6 +26,7 @@
         <redisson.version>4.0.0</redisson.version>
         <rocketmq-spring-boot-starter.version>2.3.5</rocketmq-spring-boot-starter.version>
         <guava.version>33.4.0-jre</guava.version>
+        <aws-s3.version>2.25.60</aws-s3.version>
     </properties>
 
     <modules>

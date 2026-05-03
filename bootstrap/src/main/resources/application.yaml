@@ -53,6 +53,14 @@ devbrain:
     max-file-size: ${DEVBRAIN_UPLOAD_MAX_FILE_SIZE:50MB}
     allowed-extensions: pdf,doc,docx,xls,xlsx,ppt,pptx,md,txt,csv,json,html,htm,xml
     blocked-extensions: exe,sh,bat,cmd,jsp,php,jar,class,dll,so
+    rate-limit:
+      enabled: ${DEVBRAIN_UPLOAD_RATE_LIMIT_ENABLED:true}
+      semaphore-name: ${DEVBRAIN_UPLOAD_SEMAPHORE_NAME:devbrain:upload:semaphore}
+      permits: ${DEVBRAIN_UPLOAD_PERMITS:10}
+      wait-millis: ${DEVBRAIN_UPLOAD_WAIT_MILLIS:0}
+      paths:
+        - /knowledge-base/*/docs/upload
+        - /ingestion/tasks/upload
   object-storage:
     provider: ${DEVBRAIN_OBJECT_STORAGE_PROVIDER:minio}
     endpoint: ${S3_ENDPOINT:http://localhost:9000}
