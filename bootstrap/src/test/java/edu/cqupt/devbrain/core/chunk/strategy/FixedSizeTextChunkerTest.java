@@ -11,25 +11,19 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * FixedSizeTextChunker 单元测试，覆盖固定长度分块、自然断点和 overlap 行为。
+ * FixedSizeTextChunker 单元测试，覆盖固定长度分块、自然断点、文本归一化和 overlap 行为。
  */
 class FixedSizeTextChunkerTest {
 
-    /**
-     * 被测固定长度文本分块器。
-     */
     private FixedSizeTextChunker chunker;
 
-    /**
-     * 每个用例前创建新的分块器实例，避免用例之间共享状态。
-     */
     @BeforeEach
     void setUp() {
         chunker = new FixedSizeTextChunker();
     }
 
     /**
-     * 验证固定长度分块会携带指定 overlap。
+     * 验证固定长度分块会携带指定 overlap，块内容和数量符合预期。
      */
     @Test
     void shouldChunkWithOverlap() {
@@ -42,33 +36,78 @@ class FixedSizeTextChunkerTest {
     }
 
     /**
-     * 验证空文本不会生成任何 chunk。
+     * 验证空文本和 null 不会生成任何 chunk。
      */
     @Test
-    void shouldHandleEmptyText() {
-        List<VectorChunk> chunks = chunker.chunk("", new FixedSizeOptions(10, 2));
-
-        assertTrue(chunks.isEmpty());
+    void shouldReturnEmptyForBlankText() {
+        assertTrue(chunker.chunk("", new FixedSizeOptions(10, 2)).isEmpty());
+        assertTrue(chunker.chunk(null, new FixedSizeOptions(10, 2)).isEmpty());
     }
 
     /**
-     * 验证目标窗口附近存在换行符时优先在换行处断开。
+     * 验证 chunkSize 为 -1 时进入不分块模式并返回原文作为一个 chunk。
      */
     @Test
-    void shouldBreakAtNewline() {
-        List<VectorChunk> chunks = chunker.chunk("hello\nworld continues", new FixedSizeOptions(10, 5));
+    void shouldReturnSingleChunkWhenSizeIsNegativeOne() {
+        List<VectorChunk> chunks = chunker.chunk("keep the whole document", new FixedSizeOptions(-1, 0));
 
-        assertEquals("hello\n", chunks.get(0).getContent());
+        assertEquals(1, chunks.size());
+        assertEquals("keep the whole document", chunks.get(0).getContent());
     }
 
     /**
-     * 验证目标窗口附近存在中文句末标点时优先在句末断开。
+     * 验证目标窗口附近存在中文句末标点时优先在句号处断开。
      */
     @Test
-    void shouldBreakAtChinesePunctuation() {
+    void shouldAlignToSentenceBoundary() {
         List<VectorChunk> chunks = chunker.chunk("第一句。第二句内容很长", new FixedSizeOptions(8, 7));
 
         assertEquals("第一句。", chunks.get(0).getContent());
+    }
+
+    /**
+     * 验证中文字符之间的软换行被修复（"商\n保通" -> "商保通"），
+     * 但段落换行（\n\n）和列表换行（\n2.）保持不变。
+     */
+    @Test
+    void shouldHandleChineseSoftLineBreak() {
+        String text = "这是商\n保通系统\n\n第二段内容\n2. 列表项";
+        List<VectorChunk> chunks = chunker.chunk(text, new FixedSizeOptions(100, 0));
+
+        assertEquals(1, chunks.size());
+        String content = chunks.get(0).getContent();
+        assertTrue(content.contains("商保通系统"), "CJK 软换行应被修复");
+        assertTrue(content.contains("\n\n"), "段落换行应保留");
+        assertTrue(content.contains("\n2. 列表项"), "列表换行应保留");
+    }
+
+    /**
+     * 验证长文本分块时每个 chunk 不超过配置的 chunkSize。
+     */
+    @Test
+    void shouldNotExceedConfiguredSize() {
+        String text = "a".repeat(500) + "。" + "b".repeat(500);
+        int chunkSize = 200;
+
+        List<VectorChunk> chunks = chunker.chunk(text, new FixedSizeOptions(chunkSize, 0));
+
+        for (VectorChunk chunk : chunks) {
+            assertTrue(chunk.getContent().length() <= chunkSize,
+                    "chunk 长度 " + chunk.getContent().length() + " 不应超过 " + chunkSize);
+        }
+    }
+
+    /**
+     * 验证每个 chunk 的 index 从 0 开始连续递增。
+     */
+    @Test
+    void shouldSetChunkIndexSequentially() {
+        String text = "abcdefghij".repeat(10);
+        List<VectorChunk> chunks = chunker.chunk(text, new FixedSizeOptions(10, 0));
+
+        for (int i = 0; i < chunks.size(); i++) {
+            assertEquals(i, chunks.get(i).getIndex());
+        }
     }
 
     /**
@@ -83,14 +122,15 @@ class FixedSizeTextChunkerTest {
     }
 
     /**
-     * 验证 chunkSize 为 -1 时进入不分块模式并返回原文。
+     * 验证被换行拆开的英数字文本会被修复拼接（如 "exam\nple" -> "example"）。
      */
     @Test
-    void shouldHandleNoSplitMode() {
-        List<VectorChunk> chunks = chunker.chunk("keep the whole document", new FixedSizeOptions(-1, 0));
+    void shouldJoinBrokenUrl() {
+        String text = "访问 exam\nple 了解更多";
+        List<VectorChunk> chunks = chunker.chunk(text, new FixedSizeOptions(100, 0));
 
         assertEquals(1, chunks.size());
-        assertEquals("keep the whole document", chunks.get(0).getContent());
+        assertTrue(chunks.get(0).getContent().contains("example"), "被拆开的英数字文本应被修复");
     }
 
     /**

@@ -25,7 +25,7 @@ public interface KnowledgeDocumentMapper extends BaseMapper<KnowledgeDocumentDO>
     String selectStatusById(@Param("docId") String docId);
 
     /**
-     * 仅当文档处于 pending 或 failed 状态时，将其原子更新为 processing。
+     * 仅当文档处于 pending、failed、completed 或可恢复的 processing 状态时，将其原子更新为 processing。
      *
      * @param docId 文档 ID
      * @param userId 触发解析的用户 ID
@@ -38,7 +38,7 @@ public interface KnowledgeDocumentMapper extends BaseMapper<KnowledgeDocumentDO>
                    update_time = CURRENT_TIMESTAMP
              WHERE id = #{docId}
                AND deleted = 0
-               AND status IN ('pending', 'failed')
+               AND status IN ('pending', 'failed', 'completed', 'processing')
             """)
     int updatePendingOrFailedToProcessing(@Param("docId") String docId,
                                           @Param("userId") String userId);

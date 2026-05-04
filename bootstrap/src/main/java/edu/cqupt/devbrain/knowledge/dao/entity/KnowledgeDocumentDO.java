@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
+import edu.cqupt.devbrain.knowledge.dao.typehandler.JsonbStringTypeHandler;
 import lombok.Data;
 
 import java.util.Date;
@@ -16,7 +17,7 @@ import java.util.Date;
  * 该实体只在 DAO/Service 层流转，接口层统一转换为 DocumentVO。
  */
 @Data
-@TableName("t_knowledge_document")
+@TableName(value = "t_knowledge_document", autoResultMap = true)
 public class KnowledgeDocumentDO {
 
     /** 主键，使用 MyBatis-Plus 雪花算法生成。 */
@@ -66,6 +67,7 @@ public class KnowledgeDocumentDO {
     private String chunkStrategy;
 
     /** 切片配置，PostgreSQL JSONB 类型，以 JSON 字符串形式映射。 */
+    @TableField(typeHandler = JsonbStringTypeHandler.class)
     private String chunkConfig;
 
     /** 关联的处理流水线 ID。 */

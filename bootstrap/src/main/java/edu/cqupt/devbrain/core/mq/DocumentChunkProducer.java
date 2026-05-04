@@ -2,6 +2,8 @@ package edu.cqupt.devbrain.core.mq;
 
 import edu.cqupt.devbrain.framework.exception.ClientException;
 import edu.cqupt.devbrain.framework.mq.producer.MessageQueueProducer;
+import edu.cqupt.devbrain.knowledge.dao.entity.KnowledgeDocumentChunkLogDO;
+import edu.cqupt.devbrain.knowledge.dao.mapper.KnowledgeDocumentChunkLogMapper;
 import edu.cqupt.devbrain.knowledge.dao.mapper.KnowledgeDocumentMapper;
 import edu.cqupt.devbrain.knowledge.mq.event.DocumentChunkEvent;
 import lombok.RequiredArgsConstructor;
@@ -36,8 +38,24 @@ public class DocumentChunkProducer {
      */
     private static final String STATUS_PROCESSING = "processing";
 
+    /**
+     * 文档处理完成状态。
+     */
+    private static final String STATUS_COMPLETED = "completed";
+
+    /**
+     * 分块日志运行中状态。
+     */
+    private static final String LOG_STATUS_PROCESSING = "processing";
+
+    /**
+     * 旧解析链路的运行中状态。
+     */
+    private static final String LOG_STATUS_RUNNING = "RUNNING";
+
     private final ObjectProvider<MessageQueueProducer> messageQueueProducerProvider;
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
+    private final KnowledgeDocumentChunkLogMapper chunkLogMapper;
 
     @Value("${rocketmq.topic.document-chunk:devbrain-document-chunk}")
     private String documentChunkTopic;
@@ -76,7 +94,24 @@ public class DocumentChunkProducer {
     }
 
     /**
-     * 本地事务：仅允许 pending/failed 文档切换为 processing，其他状态回滚消息。
+     * 本地兜底触发前的状态准备。用于 RocketMQ 不可用时复用同一套并发控制。
+     *
+     * @param docId 文档 ID
+     * @param userId 触发解析的用户 ID
+     * @return true 表示文档已切换为 processing，可由本地线程执行解析
+     */
+    public boolean prepareLocalChunk(String docId, String userId) {
+        try {
+            executeLocalTransaction(docId, userId);
+            return true;
+        } catch (ClientException e) {
+            log.warn("本地文档解析准备失败，docId={}, userId={}, reason={}", docId, userId, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 本地事务：允许 pending/failed/completed 文档切换为 processing，其他状态回滚消息。
      *
      * @param docId 文档 ID
      * @param userId 触发解析的用户 ID
@@ -86,10 +121,13 @@ public class DocumentChunkProducer {
         if (currentStatus == null) {
             throw new ClientException("文档不存在或已删除");
         }
-        if (STATUS_PROCESSING.equalsIgnoreCase(currentStatus)) {
+        if (STATUS_PROCESSING.equalsIgnoreCase(currentStatus) && hasRunningChunkLog(docId)) {
             throw new ClientException("文档正在解析中");
         }
-        if (!STATUS_PENDING.equalsIgnoreCase(currentStatus) && !STATUS_FAILED.equalsIgnoreCase(currentStatus)) {
+        if (!STATUS_PENDING.equalsIgnoreCase(currentStatus)
+                && !STATUS_FAILED.equalsIgnoreCase(currentStatus)
+                && !STATUS_COMPLETED.equalsIgnoreCase(currentStatus)
+                && !STATUS_PROCESSING.equalsIgnoreCase(currentStatus)) {
             throw new ClientException("当前文档状态不允许解析: " + currentStatus);
         }
 
@@ -98,5 +136,13 @@ public class DocumentChunkProducer {
             throw new ClientException("文档状态更新失败，请稍后重试");
         }
         log.info("文档解析本地事务提交，docId={}, userId={}", docId, userId);
+    }
+
+    private boolean hasRunningChunkLog(String docId) {
+        KnowledgeDocumentChunkLogDO latestLog = chunkLogMapper.selectLatestByDocId(docId);
+        return latestLog != null
+                && latestLog.getEndTime() == null
+                && (LOG_STATUS_PROCESSING.equalsIgnoreCase(latestLog.getStatus())
+                || LOG_STATUS_RUNNING.equalsIgnoreCase(latestLog.getStatus()));
     }
 }

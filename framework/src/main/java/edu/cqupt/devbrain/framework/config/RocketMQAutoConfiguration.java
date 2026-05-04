@@ -5,7 +5,7 @@ import edu.cqupt.devbrain.framework.mq.producer.DelegatingTransactionListener;
 import edu.cqupt.devbrain.framework.mq.producer.MessageQueueProducer;
 import edu.cqupt.devbrain.framework.mq.producer.RocketMQProducerAdapter;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -25,10 +25,9 @@ public class RocketMQAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnBean(RocketMQTemplate.class)
     @ConditionalOnMissingBean(MessageQueueProducer.class)
-    public MessageQueueProducer messageQueueProducer(RocketMQTemplate rocketMQTemplate,
+    public MessageQueueProducer messageQueueProducer(ObjectProvider<RocketMQTemplate> rocketMQTemplateProvider,
                                                      DelegatingTransactionListener transactionListener) {
-        return new RocketMQProducerAdapter(rocketMQTemplate, transactionListener);
+        return new RocketMQProducerAdapter(rocketMQTemplateProvider, transactionListener);
     }
 }

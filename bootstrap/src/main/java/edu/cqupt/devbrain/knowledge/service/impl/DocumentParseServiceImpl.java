@@ -2,6 +2,8 @@ package edu.cqupt.devbrain.knowledge.service.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import cn.hutool.core.util.IdUtil;
+import edu.cqupt.devbrain.auth.core.DigestSupport;
 import edu.cqupt.devbrain.core.chunk.ChunkingMode;
 import edu.cqupt.devbrain.core.chunk.ChunkingOptions;
 import edu.cqupt.devbrain.core.chunk.ChunkingStrategy;
@@ -31,6 +33,7 @@ import org.springframework.util.StringUtils;
 import java.io.InputStream;
 import java.net.URI;
 import java.util.ArrayList;
+import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -108,14 +111,15 @@ public class DocumentParseServiceImpl implements DocumentParseService {
         KnowledgeDocumentDO document = requireDocument(docId);
         ensureRunnable(document);
 
-        KnowledgeDocumentChunkLogDO logRecord = createRunningLog(document);
         long totalStart = System.currentTimeMillis();
+        KnowledgeDocumentChunkLogDO logRecord = null;
         Long extractDuration = null;
         Long chunkDuration = null;
         Long persistDuration = null;
         List<VectorChunk> chunks = List.of();
 
         try {
+            logRecord = createRunningLog(document);
             if (!DOCUMENT_STATUS_PROCESSING.equalsIgnoreCase(document.getStatus())) {
                 updateDocumentStatus(document, DOCUMENT_STATUS_PROCESSING);
             }
@@ -227,11 +231,12 @@ public class DocumentParseServiceImpl implements DocumentParseService {
     private KnowledgeDocumentChunkLogDO createRunningLog(KnowledgeDocumentDO document) {
         KnowledgeDocumentChunkLogDO logRecord = new KnowledgeDocumentChunkLogDO();
         logRecord.setDocId(document.getId());
+        logRecord.setKbId(document.getKbId());
         logRecord.setStatus(STATUS_RUNNING);
         logRecord.setProcessMode(document.getProcessMode());
         logRecord.setChunkStrategy(document.getChunkStrategy());
         logRecord.setPipelineId(document.getPipelineId());
-        logRecord.setStartTime(new Date());
+        logRecord.setStartTime(LocalDateTime.now());
         chunkLogMapper.insert(logRecord);
         return logRecord;
     }
@@ -271,7 +276,7 @@ public class DocumentParseServiceImpl implements DocumentParseService {
             return ChunkingMode.FIXED_SIZE;
         }
         for (ChunkingMode mode : ChunkingMode.values()) {
-            if (mode.getMode().equalsIgnoreCase(chunkStrategy) || mode.name().equalsIgnoreCase(chunkStrategy)) {
+            if (mode.getValue().equalsIgnoreCase(chunkStrategy) || mode.name().equalsIgnoreCase(chunkStrategy)) {
                 return mode;
             }
         }
@@ -298,6 +303,9 @@ public class DocumentParseServiceImpl implements DocumentParseService {
                     readInt(configMap, "maxChars", 1800),
                     readInt(configMap, "minChars", 600)
             );
+            case RECURSIVE_CHARACTER -> mode.createOptions(configMap);
+            case QA_PAIR -> mode.createOptions(configMap);
+            case TABLE_AWARE -> mode.createOptions(configMap);
         };
     }
 
@@ -397,6 +405,9 @@ public class DocumentParseServiceImpl implements DocumentParseService {
         document.setStatus(DOCUMENT_STATUS_FAILED);
         knowledgeDocumentMapper.updateById(document);
 
+        if (logRecord == null) {
+            return;
+        }
         logRecord.setStatus(STATUS_FAILED);
         logRecord.setExtractDuration(extractDuration);
         logRecord.setChunkDuration(chunkDuration);
@@ -404,7 +415,7 @@ public class DocumentParseServiceImpl implements DocumentParseService {
         logRecord.setTotalDuration(totalDuration);
         logRecord.setChunkCount(chunkCount);
         logRecord.setErrorMessage(buildErrorMessage(exception));
-        logRecord.setEndTime(new Date());
+        logRecord.setEndTime(LocalDateTime.now());
         chunkLogMapper.updateById(logRecord);
     }
 
@@ -533,7 +544,7 @@ class DocumentParsePersistenceService {
                                         long totalStart) {
         knowledgeChunkMapper.deleteByDocId(document.getId());
         if (!chunks.isEmpty()) {
-            knowledgeChunkMapper.insertBatch(toChunkEntities(document.getId(), chunks));
+            knowledgeChunkMapper.insertBatch(toChunkEntities(document, chunks));
         }
 
         document.setStatus(DOCUMENT_STATUS_COMPLETED);
@@ -546,26 +557,33 @@ class DocumentParsePersistenceService {
         logRecord.setPersistDuration(elapsedSince(persistStart));
         logRecord.setTotalDuration(elapsedSince(totalStart));
         logRecord.setChunkCount(chunks.size());
-        logRecord.setEndTime(new Date());
+        logRecord.setEndTime(LocalDateTime.now());
         chunkLogMapper.updateById(logRecord);
     }
 
     /**
      * 将核心 VectorChunk 模型转换为数据库分块实体。
      *
-     * @param docId 文档 ID
+     * @param document 文档记录
      * @param chunks VectorChunk 列表
      * @return 数据库实体列表
      */
-    private List<KnowledgeChunkDO> toChunkEntities(String docId, List<VectorChunk> chunks) {
+    private List<KnowledgeChunkDO> toChunkEntities(KnowledgeDocumentDO document, List<VectorChunk> chunks) {
         List<KnowledgeChunkDO> entities = new ArrayList<>(chunks.size());
         for (VectorChunk chunk : chunks) {
+            String content = chunk.getContent() == null ? "" : chunk.getContent();
             KnowledgeChunkDO entity = new KnowledgeChunkDO();
-            entity.setId(chunk.getChunkId());
-            entity.setDocId(docId);
+            entity.setId(StringUtils.hasText(chunk.getChunkId()) ? chunk.getChunkId() : IdUtil.fastSimpleUUID());
+            entity.setKbId(document.getKbId());
+            entity.setDocId(document.getId());
             entity.setChunkIndex(chunk.getIndex());
-            entity.setContent(chunk.getContent());
+            entity.setContent(content);
+            entity.setContentHash(DigestSupport.sha256(content));
+            entity.setCharCount(content.length());
             entity.setMetadata(writeMetadata(chunk.getMetadata()));
+            entity.setEnabled(1);
+            entity.setCreatedBy(document.getCreatedBy());
+            entity.setUpdatedBy(document.getUpdatedBy());
             entities.add(entity);
         }
         return entities;

@@ -147,7 +147,9 @@ public class FixedSizeTextChunker implements ChunkingStrategy {
     }
 
     /**
-     * 将跨行 URL 拼接为一行，避免固定长度切分前已经破坏 URL 语义。
+     * 修复 URL 被换行拆开的情况，如 "dingtalk.\ncom" 修复为 "dingtalk.com"。
+     * 规则：如果一行以英文字母/数字结尾，下一行以英文字母/数字开头，且拼接后不含空格，则合并。
+     * 但必须保留段落换行（连续两个 \n）和列表换行（\n 后跟数字+点号如 "2."）。
      *
      * @param text 已统一换行符的文本
      * @return 修复跨行 URL 后的文本
@@ -158,7 +160,7 @@ public class FixedSizeTextChunker implements ChunkingStrategy {
 
         for (int i = 0; i < lines.length; i++) {
             String currentLine = lines[i];
-            while (isUrlLine(currentLine) && i + 1 < lines.length && canJoinAsUrlContinuation(lines[i + 1])) {
+            while (i + 1 < lines.length && canJoinAlphanumericLines(currentLine, lines[i + 1])) {
                 currentLine = currentLine + lines[++i];
             }
             normalizedLines.add(currentLine);
@@ -246,25 +248,30 @@ public class FixedSizeTextChunker implements ChunkingStrategy {
     }
 
     /**
-     * 判断当前行是否以 URL 协议开头。
+     * 判断两行是否可以拼接为一行（修复被换行拆开的英文/数字连续文本）。
+     * 规则：当前行以英文字母/数字结尾，下一行以英文字母/数字开头，且下一行不是列表标记。
      *
-     * @param line 当前文本行
-     * @return 是 URL 起始行时返回 true
+     * @param currentLine 当前行
+     * @param nextLine    下一行
+     * @return 可以拼接时返回 true
      */
-    private boolean isUrlLine(String line) {
-        return line.startsWith("http://") || line.startsWith("https://");
+    private boolean canJoinAlphanumericLines(String currentLine, String nextLine) {
+        if (currentLine.isEmpty() || nextLine.isEmpty()) {
+            return false;
+        }
+        char lastChar = currentLine.charAt(currentLine.length() - 1);
+        char firstChar = nextLine.charAt(0);
+        return isAlphanumeric(lastChar) && isAlphanumeric(firstChar) && !isListMarkerLine(nextLine);
     }
 
     /**
-     * 判断下一行是否可以作为 URL 延续行拼接到当前 URL 后。
+     * 判断字符是否是英文字母或数字。
      *
-     * @param line 待判断的下一行
-     * @return 可以拼接到 URL 后时返回 true
+     * @param value 待判断字符
+     * @return 是英文字母或数字时返回 true
      */
-    private boolean canJoinAsUrlContinuation(String line) {
-        return !line.isEmpty()
-                && !Character.isWhitespace(line.charAt(0))
-                && !isListMarkerLine(line);
+    private boolean isAlphanumeric(char value) {
+        return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') || (value >= '0' && value <= '9');
     }
 
     /**

@@ -5,6 +5,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.EnumMap;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -43,6 +44,16 @@ public class ChunkingStrategyFactory {
                 throw new IllegalStateException("重复注册分块模式: " + mode);
             }
         }
+    }
+
+    /**
+     * 获取指定分块模式对应的策略，未注册时返回空 Optional。
+     *
+     * @param mode 分块模式
+     * @return 对应的分块策略（可能为空）
+     */
+    public Optional<ChunkingStrategy> findStrategy(ChunkingMode mode) {
+        return Optional.ofNullable(strategyMap.get(mode));
     }
 
     /**

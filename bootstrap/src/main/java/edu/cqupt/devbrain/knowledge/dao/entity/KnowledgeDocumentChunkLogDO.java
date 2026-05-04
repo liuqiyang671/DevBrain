@@ -5,98 +5,98 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
-import java.util.Date;
+import java.time.LocalDateTime;
 
 /**
- * 文档解析分块日志实体，对应 t_knowledge_document_chunk_log 表。
+ * 文档分块处理日志实体，对应 t_knowledge_document_chunk_log 表。
  */
 @Data
 @TableName("t_knowledge_document_chunk_log")
 public class KnowledgeDocumentChunkLogDO {
 
     /**
-     * 主键 ID，使用 MyBatis-Plus 雪花算法生成。
+     * 主键 ID，雪花算法生成。
      */
     @TableId(type = IdType.ASSIGN_ID)
     private String id;
 
     /**
-     * 文档 ID，关联待解析的知识库文档。
+     * 文档 ID。
      */
     private String docId;
 
     /**
-     * 解析处理状态。
+     * 知识库 ID。
      */
-    private String status;
+    private String kbId;
 
     /**
-     * 文档处理模式。
+     * 处理模式：chunk / pipeline。
      */
     private String processMode;
 
     /**
-     * 文档分块策略。
+     * 使用的分块策略名称。
      */
     private String chunkStrategy;
 
     /**
-     * 处理流水线 ID。
+     * 流水线 ID。
      */
     private String pipelineId;
 
     /**
-     * 文本提取耗时，单位毫秒。
-     */
-    private Long extractDuration;
-
-    /**
-     * 文档分块耗时，单位毫秒。
-     */
-    private Long chunkDuration;
-
-    /**
-     * 向量嵌入耗时，单位毫秒。
-     */
-    private Long embedDuration;
-
-    /**
-     * 持久化耗时，单位毫秒。
-     */
-    private Long persistDuration;
-
-    /**
-     * 完整处理链路总耗时，单位毫秒。
-     */
-    private Long totalDuration;
-
-    /**
-     * 本次解析生成的 chunk 数量。
+     * 分块数量。
      */
     private Integer chunkCount;
 
     /**
-     * 处理失败时的错误信息。
+     * 文本提取耗时（毫秒）。
+     */
+    private Long extractDuration;
+
+    /**
+     * 分块耗时（毫秒）。
+     */
+    private Long chunkDuration;
+
+    /**
+     * 嵌入耗时（毫秒）。
+     */
+    private Long embedDuration;
+
+    /**
+     * 持久化耗时（毫秒）。
+     */
+    private Long persistDuration;
+
+    /**
+     * 总耗时（毫秒）。
+     */
+    private Long totalDuration;
+
+    /**
+     * 处理状态：SUCCESS / FAILED。
+     */
+    private String status;
+
+    /**
+     * 失败时的错误信息。
      */
     private String errorMessage;
 
     /**
-     * 处理开始时间。
+     * 解析开始时间。
      */
-    private Date startTime;
+    private LocalDateTime startTime;
 
     /**
-     * 处理结束时间。
+     * 解析结束时间。
      */
-    private Date endTime;
+    private LocalDateTime endTime;
 
     /**
      * 日志创建时间。
      */
-    private Date createTime;
-
-    /**
-     * 日志更新时间。
-     */
-    private Date updateTime;
+    private LocalDateTime createTime;
 }

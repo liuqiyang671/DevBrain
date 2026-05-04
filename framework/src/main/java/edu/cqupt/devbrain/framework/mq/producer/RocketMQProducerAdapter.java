@@ -7,6 +7,7 @@ import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.client.producer.TransactionSendResult;
 import org.apache.rocketmq.common.message.MessageConst;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
+import org.springframework.beans.factory.ObjectProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.Message;
@@ -23,11 +24,12 @@ public class RocketMQProducerAdapter implements MessageQueueProducer {
 
     private static final Logger log = LoggerFactory.getLogger(RocketMQProducerAdapter.class);
 
-    private final RocketMQTemplate rocketMQTemplate;
+    private final ObjectProvider<RocketMQTemplate> rocketMQTemplateProvider;
     private final DelegatingTransactionListener transactionListener;
 
     @Override
     public SendResult send(String topic, String keys, String bizDesc, Object body) {
+        RocketMQTemplate rocketMQTemplate = requireRocketMQTemplate();
         keys = StrUtil.isEmpty(keys) ? UUID.randomUUID().toString() : keys;
 
         Message<MessageWrapper<Object>> message = MessageBuilder
@@ -50,6 +52,7 @@ public class RocketMQProducerAdapter implements MessageQueueProducer {
     @Override
     public TransactionSendResult sendInTransaction(String topic, String keys, String bizDesc, Object body,
                                                    Consumer<Object> localTransaction) {
+        RocketMQTemplate rocketMQTemplate = requireRocketMQTemplate();
         keys = StrUtil.isEmpty(keys) ? UUID.randomUUID().toString() : keys;
         String txId = UUID.randomUUID().toString();
 
@@ -73,5 +76,13 @@ public class RocketMQProducerAdapter implements MessageQueueProducer {
         log.info("[生产者] {} - 事务消息发送结果: {}, 本地事务状态: {}, 消息ID: {}, Keys: {}",
                 bizDesc, sendResult.getSendStatus(), sendResult.getLocalTransactionState(), sendResult.getMsgId(), keys);
         return sendResult;
+    }
+
+    private RocketMQTemplate requireRocketMQTemplate() {
+        RocketMQTemplate rocketMQTemplate = rocketMQTemplateProvider.getIfAvailable();
+        if (rocketMQTemplate == null) {
+            throw new IllegalStateException("RocketMQTemplate 未初始化，请检查 RocketMQ starter 和 rocketmq.name-server 配置");
+        }
+        return rocketMQTemplate;
     }
 }

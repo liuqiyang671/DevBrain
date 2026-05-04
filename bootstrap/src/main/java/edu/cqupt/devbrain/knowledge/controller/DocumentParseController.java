@@ -6,20 +6,27 @@ import edu.cqupt.devbrain.framework.convention.Result;
 import edu.cqupt.devbrain.framework.context.UserContext;
 import edu.cqupt.devbrain.framework.exception.ServiceException;
 import edu.cqupt.devbrain.framework.web.Results;
+import edu.cqupt.devbrain.knowledge.controller.request.DocumentParseRequest;
 import edu.cqupt.devbrain.knowledge.controller.vo.ChunkVO;
 import edu.cqupt.devbrain.knowledge.controller.vo.PageResult;
 import edu.cqupt.devbrain.knowledge.controller.vo.ParseStatusVO;
 import edu.cqupt.devbrain.knowledge.dao.entity.KnowledgeDocumentChunkLogDO;
 import edu.cqupt.devbrain.knowledge.service.DocumentParseService;
+import edu.cqupt.devbrain.knowledge.service.KnowledgeDocumentService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 /**
  * 文档解析控制器，提供触发解析、查询状态、查询分块和重试解析接口。
@@ -27,6 +34,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/documents")
 @RequiredArgsConstructor
+@Slf4j
 public class DocumentParseController {
 
     /**
@@ -40,7 +48,9 @@ public class DocumentParseController {
     private static final int MAX_PAGE_SIZE = 100;
 
     private final DocumentParseService documentParseService;
+    private final KnowledgeDocumentService knowledgeDocumentService;
     private final DocumentChunkProducer documentChunkProducer;
+    private final Executor applicationTaskExecutor;
 
     /**
      * 触发指定文档解析。
@@ -49,12 +59,13 @@ public class DocumentParseController {
      * @return 空响应
      */
     @PostMapping("/parse/{docId}")
-    public Result<Void> parse(@PathVariable String docId) {
+    public Result<Void> parse(@PathVariable String docId,
+                              @RequestBody(required = false) @Valid DocumentParseRequest request) {
         try {
-            boolean triggered = documentChunkProducer.startChunk(docId, UserContext.requireUser().userId(), null);
-            return triggered
-                    ? Results.success()
-                    : Results.failure("A000409", "文档正在解析中或当前状态不允许解析");
+            if (request != null) {
+                knowledgeDocumentService.updateChunkConfig(docId, request.chunkStrategy(), request.chunkConfig());
+            }
+            return triggerChunk(docId, UserContext.requireUser().userId());
         } catch (ServiceException e) {
             return Results.failure(e.errorCode, e.getMessage());
         }
@@ -104,13 +115,29 @@ public class DocumentParseController {
     @PostMapping("/parse/{docId}/retry")
     public Result<Void> retry(@PathVariable String docId) {
         try {
-            boolean triggered = documentChunkProducer.startChunk(docId, UserContext.requireUser().userId(), null);
-            return triggered
-                    ? Results.success()
-                    : Results.failure("A000409", "文档正在解析中或当前状态不允许解析");
+            return triggerChunk(docId, UserContext.requireUser().userId());
         } catch (ServiceException e) {
             return Results.failure(e.errorCode, e.getMessage());
         }
+    }
+
+    private Result<Void> triggerChunk(String docId, String userId) {
+        boolean triggered = documentChunkProducer.startChunk(docId, userId, null);
+        if (triggered) {
+            return Results.success();
+        }
+        boolean localPrepared = documentChunkProducer.prepareLocalChunk(docId, userId);
+        if (!localPrepared) {
+            return Results.failure("A000409", "文档正在解析中或当前状态不允许解析");
+        }
+        CompletableFuture.runAsync(() -> {
+            try {
+                knowledgeDocumentService.executeChunk(docId);
+            } catch (Exception e) {
+                log.error("本地文档分块执行失败，docId={}", docId, e);
+            }
+        }, applicationTaskExecutor);
+        return Results.success();
     }
 
     /**
@@ -130,8 +157,8 @@ public class DocumentParseController {
                 logRecord.getChunkDuration(),
                 logRecord.getTotalDuration(),
                 logRecord.getErrorMessage(),
-                logRecord.getStartTime(),
-                logRecord.getEndTime()
+                logRecord.getStartTime() != null ? java.util.Date.from(logRecord.getStartTime().atZone(java.time.ZoneId.systemDefault()).toInstant()) : null,
+                logRecord.getEndTime() != null ? java.util.Date.from(logRecord.getEndTime().atZone(java.time.ZoneId.systemDefault()).toInstant()) : null
         );
     }
 

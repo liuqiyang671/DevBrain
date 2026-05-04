@@ -70,10 +70,26 @@ public interface KnowledgeDocumentService {
     DocumentVO updateEnabled(String kbId, String docId, Integer enabled);
 
     /**
+     * 更新文档分块配置，供手动分块前覆盖本次参数。
+     *
+     * @param docId         文档 ID
+     * @param chunkStrategy 分块策略，可为空
+     * @param chunkConfig   分块配置 JSON 字符串，可为空
+     */
+    void updateChunkConfig(String docId, String chunkStrategy, String chunkConfig);
+
+    /**
      * 逻辑删除文档，并尽量清理对象存储文件。
      *
      * @param kbId  知识库 ID
      * @param docId 文档 ID
      */
     void delete(String kbId, String docId);
+
+    /**
+     * 执行文档分块任务：解析 → 分块 → 嵌入 → 持久化。
+     *
+     * @param docId 文档 ID
+     */
+    void executeChunk(String docId);
 }

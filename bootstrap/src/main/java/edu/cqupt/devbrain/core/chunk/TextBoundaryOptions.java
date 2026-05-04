@@ -1,12 +1,14 @@
 package edu.cqupt.devbrain.core.chunk;
 
+import java.util.Map;
+
 /**
  * 文本边界分块配置，用于结构感知分块器控制 chunk 的目标、最小和最大字符数。
  *
- * @param targetChars 每个 chunk 的目标字符数，默认 1400
+ * @param targetChars  每个 chunk 的目标字符数，默认 1400
  * @param overlapChars 相邻 chunk 的重叠字符数，默认 0
- * @param maxChars 每个 chunk 的最大字符数，默认 1800
- * @param minChars 每个 chunk 的最小字符数，默认 600
+ * @param maxChars     每个 chunk 的最大字符数，默认 1800
+ * @param minChars     每个 chunk 的最小字符数，默认 600
  */
 public record TextBoundaryOptions(int targetChars, int overlapChars, int maxChars, int minChars)
         implements ChunkingOptions {
@@ -47,5 +49,15 @@ public record TextBoundaryOptions(int targetChars, int overlapChars, int maxChar
         if (minChars <= 0) {
             minChars = DEFAULT_MIN_CHARS;
         }
+    }
+
+    @Override
+    public Map<String, Integer> toConfigMap() {
+        return Map.of(
+                "targetChars", targetChars,
+                "overlapChars", overlapChars,
+                "maxChars", maxChars,
+                "minChars", minChars
+        );
     }
 }

@@ -10,8 +10,17 @@ import edu.cqupt.devbrain.knowledge.dao.entity.KnowledgeBaseDO;
 import edu.cqupt.devbrain.knowledge.dao.entity.KnowledgeDocumentDO;
 import edu.cqupt.devbrain.knowledge.dao.mapper.KnowledgeBaseMapper;
 import edu.cqupt.devbrain.knowledge.dao.mapper.KnowledgeDocumentMapper;
+import edu.cqupt.devbrain.core.chunk.ChunkEmbeddingService;
+import edu.cqupt.devbrain.core.chunk.ChunkingStrategyFactory;
+import edu.cqupt.devbrain.core.parser.DocumentParserSelector;
+import edu.cqupt.devbrain.knowledge.dao.mapper.KnowledgeDocumentChunkLogMapper;
+import edu.cqupt.devbrain.knowledge.mq.KnowledgeDocumentChunkProducer;
+import edu.cqupt.devbrain.knowledge.service.KnowledgeChunkService;
 import edu.cqupt.devbrain.knowledge.service.validator.FileUploadValidator;
 import edu.cqupt.devbrain.knowledge.storage.FileStorageService;
+import edu.cqupt.devbrain.rag.core.vector.VectorStoreService;
+import edu.cqupt.devbrain.sync.adapter.DocumentSourceAdapterRegistry;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -42,13 +51,24 @@ class KnowledgeDocumentServiceImplTest {
 
     private final KnowledgeBaseMapper knowledgeBaseMapper = mock(KnowledgeBaseMapper.class);
     private final KnowledgeDocumentMapper knowledgeDocumentMapper = mock(KnowledgeDocumentMapper.class);
+    private final KnowledgeDocumentChunkLogMapper chunkLogMapper = mock(KnowledgeDocumentChunkLogMapper.class);
+    private final KnowledgeChunkService chunkService = mock(KnowledgeChunkService.class);
     private final FileStorageService fileStorageService = mock(FileStorageService.class);
     private final FileUploadValidator fileUploadValidator = mock(FileUploadValidator.class);
     private final TransactionTemplate transactionTemplate = mock(TransactionTemplate.class);
+    private final DocumentSourceAdapterRegistry adapterRegistry = mock(DocumentSourceAdapterRegistry.class);
+    private final DocumentParserSelector parserSelector = mock(DocumentParserSelector.class);
+    private final ChunkingStrategyFactory strategyFactory = mock(ChunkingStrategyFactory.class);
+    private final ChunkEmbeddingService chunkEmbeddingService = mock(ChunkEmbeddingService.class);
+    private final VectorStoreService vectorStoreService = mock(VectorStoreService.class);
+    private final ObjectMapper objectMapper = mock(ObjectMapper.class);
+    private final KnowledgeDocumentChunkProducer chunkProducer = mock(KnowledgeDocumentChunkProducer.class);
 
     private final KnowledgeDocumentServiceImpl service = new KnowledgeDocumentServiceImpl(
-            knowledgeBaseMapper, knowledgeDocumentMapper, fileStorageService,
-            fileUploadValidator, transactionTemplate
+            knowledgeBaseMapper, knowledgeDocumentMapper, chunkLogMapper, chunkService,
+            fileStorageService, fileUploadValidator, transactionTemplate, adapterRegistry,
+            parserSelector, strategyFactory, chunkEmbeddingService, vectorStoreService,
+            objectMapper, chunkProducer
     );
 
     @AfterEach

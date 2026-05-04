@@ -3,6 +3,15 @@ package edu.cqupt.devbrain.knowledge.service.impl;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import cn.hutool.core.util.IdUtil;
+import edu.cqupt.devbrain.core.chunk.ChunkEmbeddingService;
+import edu.cqupt.devbrain.core.chunk.ChunkingMode;
+import edu.cqupt.devbrain.core.chunk.ChunkingOptions;
+import edu.cqupt.devbrain.core.chunk.ChunkingStrategy;
+import edu.cqupt.devbrain.core.chunk.ChunkingStrategyFactory;
+import edu.cqupt.devbrain.core.chunk.VectorChunk;
+import edu.cqupt.devbrain.core.parser.DocumentParser;
+import edu.cqupt.devbrain.core.parser.DocumentParserSelector;
 import edu.cqupt.devbrain.framework.context.UserContext;
 import edu.cqupt.devbrain.framework.errorcode.BaseErrorCode;
 import edu.cqupt.devbrain.framework.exception.ClientException;
@@ -10,18 +19,27 @@ import edu.cqupt.devbrain.framework.exception.ServiceException;
 import edu.cqupt.devbrain.knowledge.controller.request.OnlineDocumentImportRequest;
 import edu.cqupt.devbrain.knowledge.controller.vo.DocumentVO;
 import edu.cqupt.devbrain.knowledge.dao.entity.KnowledgeBaseDO;
+import edu.cqupt.devbrain.knowledge.dao.entity.KnowledgeChunkDO;
+import edu.cqupt.devbrain.knowledge.dao.entity.KnowledgeDocumentChunkLogDO;
 import edu.cqupt.devbrain.knowledge.dao.entity.KnowledgeDocumentDO;
 import edu.cqupt.devbrain.knowledge.dao.mapper.KnowledgeBaseMapper;
+import edu.cqupt.devbrain.knowledge.dao.mapper.KnowledgeDocumentChunkLogMapper;
 import edu.cqupt.devbrain.knowledge.dao.mapper.KnowledgeDocumentMapper;
+import edu.cqupt.devbrain.knowledge.service.KnowledgeChunkService;
+import edu.cqupt.devbrain.knowledge.mq.KnowledgeDocumentChunkProducer;
 import edu.cqupt.devbrain.knowledge.service.KnowledgeDocumentService;
 import edu.cqupt.devbrain.knowledge.service.validator.FileUploadValidator;
 import edu.cqupt.devbrain.knowledge.storage.FileStorageService;
+import edu.cqupt.devbrain.rag.core.vector.VectorStoreService;
 import edu.cqupt.devbrain.sync.adapter.DocumentSourceAdapter;
 import edu.cqupt.devbrain.sync.adapter.DocumentSourceAdapterRegistry;
 import edu.cqupt.devbrain.sync.adapter.FetchedContent;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -35,6 +53,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.HexFormat;
 
@@ -51,6 +70,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     private static final String DEFAULT_STATUS = "pending";
     private static final String DEFAULT_PROCESS_MODE = "chunk";
+    private static final String MANUAL_PROCESS_MODE = "manual";
     private static final String SOURCE_TYPE = "file";
     private static final String ONLINE_FILE_TYPE = "txt";
     private static final Set<String> ONLINE_SOURCE_TYPES = Set.of("feishu", "url");
@@ -58,10 +78,18 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     private final KnowledgeBaseMapper knowledgeBaseMapper;
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
+    private final KnowledgeDocumentChunkLogMapper chunkLogMapper;
+    private final KnowledgeChunkService chunkService;
     private final FileStorageService fileStorageService;
     private final FileUploadValidator fileUploadValidator;
     private final TransactionTemplate transactionTemplate;
     private final DocumentSourceAdapterRegistry adapterRegistry;
+    private final DocumentParserSelector parserSelector;
+    private final ChunkingStrategyFactory strategyFactory;
+    private final ChunkEmbeddingService chunkEmbeddingService;
+    private final VectorStoreService vectorStoreService;
+    private final ObjectMapper objectMapper;
+    private final KnowledgeDocumentChunkProducer chunkProducer;
 
     @Override
     public List<DocumentVO> listByKnowledgeBase(String kbId) {
@@ -108,6 +136,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                              String chunkStrategy, String chunkConfig, String pipelineId) {
         // 1. 校验知识库存在且未删除
         requireKnowledgeBase(kbId);
+        String cleanedChunkConfig = normalizeChunkConfig(chunkConfig);
 
         // 2. 文件基础校验（非空、大小）
         fileUploadValidator.validate(file);
@@ -150,7 +179,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 document.setSourceLocation(sanitizedName);
                 document.setScheduleEnabled(0);
                 document.setChunkStrategy(chunkStrategy);
-                document.setChunkConfig(chunkConfig);
+                document.setChunkConfig(cleanedChunkConfig);
                 document.setPipelineId(pipelineId);
                 document.setCreatedBy(userId);
                 document.setUpdatedBy(userId);
@@ -169,6 +198,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             throw e;
         }
 
+        triggerChunkAsync(result.id(), kbId, result.processMode());
         return result;
     }
 
@@ -185,6 +215,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
         ensureEnabledValid(request.scheduleEnabled() == null ? 0 : request.scheduleEnabled());
         validateSchedule(request.scheduleEnabled(), request.scheduleCron());
+        String cleanedChunkConfig = normalizeChunkConfig(request.chunkConfig());
 
         FetchedContent fetched = fetchOnlineContent(sourceType, sourceLocation);
         String text = fetched.text();
@@ -199,8 +230,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 new ByteArrayInputStream(bytes), "text/plain; charset=utf-8", bytes.length);
         String contentHash = sha256(text);
 
+        DocumentVO result;
         try {
-            return transactionTemplate.execute(status -> {
+            result = transactionTemplate.execute(status -> {
                 String userId = UserContext.requireUser().userId();
                 KnowledgeDocumentDO document = new KnowledgeDocumentDO();
                 document.setKbId(kbId);
@@ -217,7 +249,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
                 document.setScheduleEnabled(request.scheduleEnabled() == null ? 0 : request.scheduleEnabled());
                 document.setScheduleCron(clean(request.scheduleCron()));
                 document.setChunkStrategy(clean(request.chunkStrategy()));
-                document.setChunkConfig(clean(request.chunkConfig()));
+                document.setChunkConfig(cleanedChunkConfig);
                 document.setPipelineId(clean(request.pipelineId()));
                 document.setLastContentHash(contentHash);
                 document.setLastSyncTime(new Date());
@@ -237,6 +269,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             compensateUploadedFile(objectKey, kbId, docName, fileUrl);
             throw e;
         }
+
+        triggerChunkAsync(result.id(), kbId, result.processMode());
+        return result;
     }
 
     @Override
@@ -251,12 +286,210 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     }
 
     @Override
+    public void updateChunkConfig(String docId, String chunkStrategy, String chunkConfig) {
+        KnowledgeDocumentDO document = knowledgeDocumentMapper.selectById(docId);
+        if (document == null || Integer.valueOf(1).equals(document.getDeleted())) {
+            throw new ClientException("文档不存在或已删除：" + docId);
+        }
+        document.setChunkStrategy(clean(chunkStrategy));
+        document.setChunkConfig(normalizeChunkConfig(chunkConfig));
+        document.setProcessMode(DEFAULT_PROCESS_MODE);
+        document.setUpdatedBy(UserContext.requireUser().userId());
+        knowledgeDocumentMapper.updateById(document);
+        log.info("文档分块配置已更新，docId={}, chunkStrategy={}", docId, document.getChunkStrategy());
+    }
+
+    @Override
     public void delete(String kbId, String docId) {
         KnowledgeDocumentDO document = requireDocument(kbId, docId);
         document.setUpdatedBy(UserContext.requireUser().userId());
         cleanupStoredFile(document);
         knowledgeDocumentMapper.deleteById(document);
         log.info("文档已逻辑删除，kbId={}, docId={}", kbId, docId);
+    }
+
+    @Override
+    public void executeChunk(String docId) {
+        KnowledgeDocumentDO doc = knowledgeDocumentMapper.selectById(docId);
+        if (doc == null || Integer.valueOf(1).equals(doc.getDeleted())) {
+            throw new ClientException("文档不存在或已删除：" + docId);
+        }
+
+        long totalStart = System.currentTimeMillis();
+        KnowledgeDocumentChunkLogDO logEntry = null;
+        boolean logInserted = false;
+        try {
+            doc.setStatus("processing");
+            knowledgeDocumentMapper.updateById(doc);
+
+            logEntry = new KnowledgeDocumentChunkLogDO();
+            logEntry.setDocId(docId);
+            logEntry.setKbId(doc.getKbId());
+            logEntry.setProcessMode(doc.getProcessMode());
+            logEntry.setChunkStrategy(doc.getChunkStrategy());
+            logEntry.setStatus("processing");
+            logEntry.setCreateTime(LocalDateTime.now());
+            logEntry.setStartTime(LocalDateTime.now());
+            chunkLogMapper.insert(logEntry);
+            logInserted = true;
+
+            runChunkProcess(doc, logEntry);
+            long totalDuration = System.currentTimeMillis() - totalStart;
+
+            logEntry.setStatus("completed");
+            logEntry.setTotalDuration(totalDuration);
+            logEntry.setEndTime(LocalDateTime.now());
+            chunkLogMapper.updateById(logEntry);
+
+            doc.setStatus("completed");
+            knowledgeDocumentMapper.updateById(doc);
+
+            log.info("文档分块处理完成，docId={}, chunkCount={}, totalDuration={}ms",
+                    docId, logEntry.getChunkCount(), totalDuration);
+        } catch (Exception e) {
+            long totalDuration = System.currentTimeMillis() - totalStart;
+            if (logInserted) {
+                logEntry.setStatus("failed");
+                logEntry.setErrorMessage(truncate(e.getMessage(), 2000));
+                logEntry.setTotalDuration(totalDuration);
+                logEntry.setEndTime(LocalDateTime.now());
+                chunkLogMapper.updateById(logEntry);
+            }
+
+            doc.setStatus("failed");
+            knowledgeDocumentMapper.updateById(doc);
+
+            log.error("文档分块处理失败，docId={}", docId, e);
+            throw new ServiceException("文档分块处理失败: " + e.getMessage(), e, BaseErrorCode.SERVICE_ERROR);
+        }
+    }
+
+    private void runChunkProcess(KnowledgeDocumentDO doc, KnowledgeDocumentChunkLogDO logEntry) {
+        // 1. 解析文档
+        long extractStart = System.currentTimeMillis();
+        String text = extractDocumentText(doc);
+        long extractDuration = System.currentTimeMillis() - extractStart;
+        logEntry.setExtractDuration(extractDuration);
+
+        if (!StringUtils.hasText(text)) {
+            logEntry.setChunkCount(0);
+            log.warn("文档内容为空，跳过分块，docId={}", doc.getId());
+            return;
+        }
+
+        // 2. 分块
+        long chunkStart = System.currentTimeMillis();
+        ChunkingMode mode = ChunkingMode.fromValue(doc.getChunkStrategy());
+        if (mode == null) {
+            mode = ChunkingMode.FIXED_SIZE;
+        }
+        ChunkingStrategy strategy = strategyFactory.requireStrategy(mode);
+        ChunkingOptions options = buildChunkOptions(mode, doc.getChunkConfig());
+        List<VectorChunk> chunks = strategy.chunk(text, options);
+        long chunkDuration = System.currentTimeMillis() - chunkStart;
+        logEntry.setChunkDuration(chunkDuration);
+
+        if (chunks.isEmpty()) {
+            logEntry.setChunkCount(0);
+            log.warn("分块结果为空，docId={}", doc.getId());
+            return;
+        }
+
+        // 3. 嵌入
+        long embedStart = System.currentTimeMillis();
+        KnowledgeBaseDO kb = requireKnowledgeBase(doc.getKbId());
+        String embeddingModel = kb.getEmbeddingModel();
+        if (StringUtils.hasText(embeddingModel)) {
+            chunkEmbeddingService.embed(chunks, embeddingModel);
+        }
+        long embedDuration = System.currentTimeMillis() - embedStart;
+        logEntry.setEmbedDuration(embedDuration);
+
+        // 4. 持久化
+        long persistStart = System.currentTimeMillis();
+        persistChunksAndVectorsAtomically(doc, chunks);
+        long persistDuration = System.currentTimeMillis() - persistStart;
+        logEntry.setPersistDuration(persistDuration);
+
+        logEntry.setChunkCount(chunks.size());
+    }
+
+    @Transactional
+    public void persistChunksAndVectorsAtomically(KnowledgeDocumentDO doc, List<VectorChunk> chunks) {
+        List<KnowledgeChunkDO> chunkDOs = chunks.stream()
+                .map(vc -> toChunkDO(doc, vc))
+                .toList();
+        chunkService.batchCreate(chunkDOs, true);
+
+        doc.setChunkCount((long) chunks.size());
+        knowledgeDocumentMapper.updateById(doc);
+
+        log.info("分块持久化完成，docId={}, count={}", doc.getId(), chunks.size());
+    }
+
+    private KnowledgeChunkDO toChunkDO(KnowledgeDocumentDO doc, VectorChunk vc) {
+        KnowledgeChunkDO chunk = new KnowledgeChunkDO();
+        chunk.setId(IdUtil.fastSimpleUUID());
+        chunk.setKbId(doc.getKbId());
+        chunk.setDocId(doc.getId());
+        chunk.setChunkIndex(vc.getIndex());
+        chunk.setContent(vc.getContent());
+        chunk.setContentHash(sha256(vc.getContent()));
+        chunk.setCharCount(vc.getContent().length());
+        chunk.setEnabled(1);
+        chunk.setCreatedBy(doc.getCreatedBy());
+        chunk.setUpdatedBy(doc.getUpdatedBy());
+        return chunk;
+    }
+
+    private String extractDocumentText(KnowledgeDocumentDO doc) {
+        String objectKey = extractObjectKey(doc.getFileUrl());
+        try (var is = fileStorageService.download(objectKey)) {
+            DocumentParser parser = parserSelector.selectByMimeType(doc.getFileType());
+            return parser.extractText(is, doc.getFileType());
+        } catch (Exception e) {
+            log.error("文档内容提取失败，docId={}, objectKey={}", doc.getId(), objectKey, e);
+            throw new ServiceException("文档内容提取失败", e, BaseErrorCode.SERVICE_ERROR);
+        }
+    }
+
+    private ChunkingOptions buildChunkOptions(ChunkingMode mode, String chunkConfigJson) {
+        if (StringUtils.hasText(chunkConfigJson)) {
+            try {
+                java.util.Map<String, Object> configMap = objectMapper.readValue(
+                        chunkConfigJson, new TypeReference<java.util.Map<String, Object>>() {});
+                java.util.Map<String, Object> intMap = new java.util.HashMap<>();
+                configMap.forEach((k, v) -> {
+                    if (v instanceof Number num) {
+                        intMap.put(k, num.intValue());
+                    }
+                });
+                return mode.createOptions(intMap);
+            } catch (Exception e) {
+                log.warn("解析分块配置失败，使用默认配置: {}", chunkConfigJson, e);
+            }
+        }
+        return mode.createDefaultOptions(null, null);
+    }
+
+    private void triggerChunkAsync(String docId, String kbId, String processMode) {
+        if (MANUAL_PROCESS_MODE.equalsIgnoreCase(clean(processMode))) {
+            log.info("文档设置为手动分块模式，跳过上传后自动分块，docId={}, kbId={}", docId, kbId);
+            return;
+        }
+        try {
+            String operator = UserContext.hasUser() ? UserContext.getUserId() : null;
+            chunkProducer.sendChunkEvent(docId, kbId, operator);
+        } catch (Exception e) {
+            log.warn("异步分块事件发送失败，docId={}，可稍后手动触发", docId, e);
+        }
+    }
+
+    private String truncate(String text, int maxLen) {
+        if (text == null) {
+            return null;
+        }
+        return text.length() <= maxLen ? text : text.substring(0, maxLen) + "...";
     }
 
     /**
@@ -321,6 +554,19 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             } catch (IllegalArgumentException e) {
                 throw new ClientException("Cron 表达式格式错误: " + e.getMessage());
             }
+        }
+    }
+
+    private String normalizeChunkConfig(String chunkConfig) {
+        String cleaned = clean(chunkConfig);
+        if (!StringUtils.hasText(cleaned)) {
+            return null;
+        }
+        try {
+            objectMapper.readTree(cleaned);
+            return cleaned;
+        } catch (Exception e) {
+            throw new ClientException("分块配置必须是合法 JSON");
         }
     }
 

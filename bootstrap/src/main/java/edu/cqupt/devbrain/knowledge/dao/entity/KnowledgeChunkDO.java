@@ -2,10 +2,11 @@ package edu.cqupt.devbrain.knowledge.dao.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
-import java.util.Date;
+import java.time.LocalDateTime;
 
 /**
  * 知识库文档分块实体，对应 t_knowledge_chunk 表。
@@ -15,13 +16,18 @@ import java.util.Date;
 public class KnowledgeChunkDO {
 
     /**
-     * Chunk 主键 ID，使用雪花算法生成。
+     * Chunk 主键 ID，雪花算法生成。
      */
     @TableId(type = IdType.ASSIGN_ID)
     private String id;
 
     /**
-     * 文档 ID，关联 t_knowledge_document.id。
+     * 所属知识库 ID。
+     */
+    private String kbId;
+
+    /**
+     * 所属文档 ID。
      */
     private String docId;
 
@@ -36,17 +42,53 @@ public class KnowledgeChunkDO {
     private String content;
 
     /**
-     * Chunk 元数据，JSONB 类型以 JSON 字符串形式映射。
+     * 内容的 SHA-256 哈希，用于去重和变更检测。
+     */
+    private String contentHash;
+
+    /**
+     * 字符数。
+     */
+    private Integer charCount;
+
+    /**
+     * Token 数，可后续填充。
+     */
+    private Integer tokenCount;
+
+    /**
+     * 扩展元数据，JSON 格式。
      */
     private String metadata;
 
     /**
+     * 是否启用：1 启用，0 禁用。检索时过滤。
+     */
+    private Integer enabled;
+
+    /**
+     * 创建人用户 ID。
+     */
+    private String createdBy;
+
+    /**
+     * 最近更新人用户 ID。
+     */
+    private String updatedBy;
+
+    /**
      * 创建时间。
      */
-    private Date createTime;
+    private LocalDateTime createTime;
 
     /**
      * 更新时间。
      */
-    private Date updateTime;
+    private LocalDateTime updateTime;
+
+    /**
+     * 逻辑删除标记：0 未删除，1 已删除。
+     */
+    @TableLogic
+    private Integer deleted;
 }

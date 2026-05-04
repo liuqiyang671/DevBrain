@@ -289,3 +289,141 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_document_deleted_update_time ON t_knowl
 INSERT INTO t_devbrain_schema_info (version, description)
 VALUES ('05-knowledge-document', 'Knowledge document table for file upload and processing')
 ON CONFLICT (version) DO NOTHING;
+
+INSERT INTO t_resource (id, resource_name, http_method, path_pattern, permission_code, public_access)
+VALUES
+    ('13000000000000000021', '文档查询', 'GET', '/knowledge-documents', 'knowledge:read', 0)
+ON CONFLICT (http_method, path_pattern) DO NOTHING;
+
+INSERT INTO t_devbrain_schema_info (version, description)
+VALUES ('06-knowledge-document-management', 'Knowledge document management endpoint resources')
+ON CONFLICT (version) DO NOTHING;
+
+-- ============================================================
+-- 07: Document scheduled sync (Feishu / URL)
+-- ============================================================
+
+ALTER TABLE t_knowledge_document ADD COLUMN IF NOT EXISTS last_sync_time TIMESTAMP;
+ALTER TABLE t_knowledge_document ADD COLUMN IF NOT EXISTS last_content_hash VARCHAR(64);
+COMMENT ON COLUMN t_knowledge_document.last_sync_time IS '最近一次同步成功时间';
+COMMENT ON COLUMN t_knowledge_document.last_content_hash IS '最近一次同步内容的 SHA-256 哈希';
+
+CREATE TABLE IF NOT EXISTS t_document_sync_history (
+    id VARCHAR(32) PRIMARY KEY,
+    doc_id VARCHAR(32) NOT NULL,
+    sync_status VARCHAR(16) NOT NULL DEFAULT 'success',
+    content_hash VARCHAR(64),
+    content_changed SMALLINT NOT NULL DEFAULT 0,
+    error_message TEXT,
+    duration_ms BIGINT,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT fk_sync_history_doc_id FOREIGN KEY (doc_id) REFERENCES t_knowledge_document (id)
+);
+COMMENT ON TABLE t_document_sync_history IS '文档同步历史记录表';
+COMMENT ON COLUMN t_document_sync_history.doc_id IS '关联文档 ID';
+COMMENT ON COLUMN t_document_sync_history.sync_status IS '同步状态：success / failed';
+COMMENT ON COLUMN t_document_sync_history.content_hash IS '本次同步内容的 SHA-256 哈希';
+COMMENT ON COLUMN t_document_sync_history.content_changed IS '内容是否变更：0 未变更，1 已变更';
+COMMENT ON COLUMN t_document_sync_history.duration_ms IS '同步耗时（毫秒）';
+COMMENT ON COLUMN t_document_sync_history.deleted IS '逻辑删除标记';
+CREATE INDEX IF NOT EXISTS idx_sync_history_doc_id ON t_document_sync_history (doc_id, create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_sync_history_doc_hash ON t_document_sync_history (doc_id, content_hash);
+
+INSERT INTO t_resource (id, resource_name, http_method, path_pattern, permission_code, public_access)
+VALUES
+    ('13000000000000000022', '同步任务查询', 'GET', '/sync-tasks/**', 'knowledge:read', 0),
+    ('13000000000000000023', '同步任务管理', 'POST', '/sync-tasks/**', 'knowledge:write', 0),
+    ('13000000000000000024', '同步任务管理', 'PUT', '/sync-tasks/**', 'knowledge:write', 0),
+    ('13000000000000000025', '同步配置管理', 'PUT', '/knowledge-base/*/docs/*/schedule', 'knowledge:write', 0)
+ON CONFLICT (http_method, path_pattern) DO NOTHING;
+
+INSERT INTO t_devbrain_schema_info (version, description)
+VALUES ('07-document-sync', 'Document scheduled sync with Feishu/URL source adapters and sync history')
+ON CONFLICT (version) DO NOTHING;
+
+-- ============================================================
+-- 08: Document chunking
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS t_knowledge_chunk (
+    id VARCHAR(32) PRIMARY KEY,
+    kb_id VARCHAR(32) NOT NULL,
+    doc_id VARCHAR(32) NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    content_hash VARCHAR(64),
+    char_count INTEGER,
+    token_count INTEGER,
+    metadata JSONB,
+    enabled SMALLINT NOT NULL DEFAULT 1,
+    created_by VARCHAR(32),
+    updated_by VARCHAR(32),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0
+);
+COMMENT ON TABLE t_knowledge_chunk IS '知识库文档分块表，存储文档切片后的文本块';
+COMMENT ON COLUMN t_knowledge_chunk.kb_id IS '所属知识库 ID，关联 t_knowledge_base.id';
+COMMENT ON COLUMN t_knowledge_chunk.doc_id IS '所属文档 ID，关联 t_knowledge_document.id';
+COMMENT ON COLUMN t_knowledge_chunk.chunk_index IS '块在文档中的序号，从 0 开始';
+COMMENT ON COLUMN t_knowledge_chunk.content IS '块的文本内容';
+COMMENT ON COLUMN t_knowledge_chunk.content_hash IS '内容的 SHA-256 哈希，用于去重和变更检测';
+COMMENT ON COLUMN t_knowledge_chunk.char_count IS '字符数';
+COMMENT ON COLUMN t_knowledge_chunk.token_count IS 'token 数，可后续填充';
+COMMENT ON COLUMN t_knowledge_chunk.metadata IS '扩展元数据，JSON 格式';
+COMMENT ON COLUMN t_knowledge_chunk.enabled IS '是否启用：0 禁用，1 启用，检索时过滤';
+COMMENT ON COLUMN t_knowledge_chunk.created_by IS '创建人用户 ID';
+COMMENT ON COLUMN t_knowledge_chunk.updated_by IS '最近更新人用户 ID';
+COMMENT ON COLUMN t_knowledge_chunk.deleted IS '逻辑删除标记，0 表示未删除，1 表示已删除';
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_doc_id ON t_knowledge_chunk (doc_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_kb_id ON t_knowledge_chunk (kb_id);
+
+CREATE TABLE IF NOT EXISTS t_knowledge_document_chunk_log (
+    id VARCHAR(32) PRIMARY KEY,
+    doc_id VARCHAR(32) NOT NULL,
+    kb_id VARCHAR(32) NOT NULL,
+    process_mode VARCHAR(20) NOT NULL,
+    chunk_strategy VARCHAR(30),
+    pipeline_id VARCHAR(32),
+    chunk_count INTEGER,
+    extract_duration BIGINT,
+    chunk_duration BIGINT,
+    embed_duration BIGINT,
+    persist_duration BIGINT,
+    total_duration BIGINT,
+    status VARCHAR(20),
+    error_message TEXT,
+    start_time TIMESTAMP,
+    end_time TIMESTAMP,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+COMMENT ON TABLE t_knowledge_document_chunk_log IS '文档分块处理日志表，记录每次分块处理的耗时和结果';
+COMMENT ON COLUMN t_knowledge_document_chunk_log.doc_id IS '关联文档 ID';
+COMMENT ON COLUMN t_knowledge_document_chunk_log.kb_id IS '关联知识库 ID';
+COMMENT ON COLUMN t_knowledge_document_chunk_log.process_mode IS '处理模式：chunk / pipeline';
+COMMENT ON COLUMN t_knowledge_document_chunk_log.chunk_strategy IS '使用的分块策略名称';
+COMMENT ON COLUMN t_knowledge_document_chunk_log.chunk_count IS '分块数量';
+COMMENT ON COLUMN t_knowledge_document_chunk_log.extract_duration IS '文本提取耗时（毫秒）';
+COMMENT ON COLUMN t_knowledge_document_chunk_log.chunk_duration IS '分块耗时（毫秒）';
+COMMENT ON COLUMN t_knowledge_document_chunk_log.embed_duration IS '嵌入耗时（毫秒）';
+COMMENT ON COLUMN t_knowledge_document_chunk_log.persist_duration IS '持久化耗时（毫秒）';
+COMMENT ON COLUMN t_knowledge_document_chunk_log.total_duration IS '总耗时（毫秒）';
+COMMENT ON COLUMN t_knowledge_document_chunk_log.status IS '处理状态：SUCCESS / FAILED';
+COMMENT ON COLUMN t_knowledge_document_chunk_log.error_message IS '失败时的错误信息';
+COMMENT ON COLUMN t_knowledge_document_chunk_log.start_time IS '解析开始时间';
+COMMENT ON COLUMN t_knowledge_document_chunk_log.end_time IS '解析结束时间';
+CREATE INDEX IF NOT EXISTS idx_chunk_log_doc_id ON t_knowledge_document_chunk_log (doc_id);
+
+INSERT INTO t_devbrain_schema_info (version, description)
+VALUES ('08-document-chunking', 'Document chunk and chunk processing log tables')
+ON CONFLICT (version) DO NOTHING;
+
+-- Migration: add start_time, end_time and pipeline_id columns to chunk log table
+ALTER TABLE t_knowledge_document_chunk_log ADD COLUMN IF NOT EXISTS start_time TIMESTAMP;
+ALTER TABLE t_knowledge_document_chunk_log ADD COLUMN IF NOT EXISTS end_time TIMESTAMP;
+ALTER TABLE t_knowledge_document_chunk_log ADD COLUMN IF NOT EXISTS pipeline_id VARCHAR(32);
+
+-- Migration: add metadata column to chunk table
+ALTER TABLE t_knowledge_chunk ADD COLUMN IF NOT EXISTS metadata JSONB;

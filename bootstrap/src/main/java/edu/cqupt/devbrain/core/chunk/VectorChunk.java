@@ -40,18 +40,34 @@ public class VectorChunk {
     private float[] embedding;
 
     /**
+     * 无参构造器，初始化空元数据。
+     */
+    public VectorChunk() {
+        this.metadata = new HashMap<>();
+    }
+
+    /**
+     * 三参构造器，用于快速创建分块结果。
+     *
+     * @param chunkId 分块唯一标识
+     * @param index   分块顺序索引
+     * @param content 分块文本内容
+     */
+    public VectorChunk(String chunkId, Integer index, String content) {
+        this.chunkId = chunkId;
+        this.index = index;
+        this.content = content;
+        this.metadata = new HashMap<>();
+    }
+
+    /**
      * 创建只包含文本和索引的分块对象，并自动生成雪花 ID 与空元数据。
      *
      * @param content 分块文本内容
-     * @param index 分块顺序索引
+     * @param index   分块顺序索引
      * @return 初始化完成的向量分块对象
      */
     public static VectorChunk of(String content, int index) {
-        VectorChunk chunk = new VectorChunk();
-        chunk.setChunkId(IdUtil.getSnowflakeNextIdStr());
-        chunk.setIndex(index);
-        chunk.setContent(content);
-        chunk.setMetadata(new HashMap<>());
-        return chunk;
+        return new VectorChunk(IdUtil.fastSimpleUUID(), index, content);
     }
 }
