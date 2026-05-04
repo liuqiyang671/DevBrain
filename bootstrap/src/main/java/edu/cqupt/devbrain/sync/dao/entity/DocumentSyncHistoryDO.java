@@ -10,6 +10,9 @@ import lombok.Data;
 
 import java.util.Date;
 
+/**
+ * 文档同步历史记录实体，对应表 t_document_sync_history。
+ */
 @Data
 @TableName("t_document_sync_history")
 public class DocumentSyncHistoryDO {

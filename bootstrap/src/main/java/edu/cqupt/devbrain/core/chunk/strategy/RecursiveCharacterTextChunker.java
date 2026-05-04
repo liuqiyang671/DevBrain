@@ -26,11 +26,23 @@ public class RecursiveCharacterTextChunker implements ChunkingStrategy {
      */
     private static final String[] SEPARATORS = {"\n\n", "\n", "。", "！", "？", ". ", "! ", "? ", " ", ""};
 
+    /**
+     * 返回递归字符分块策略类型。
+     *
+     * @return 递归字符分块模式
+     */
     @Override
     public ChunkingMode getType() {
         return ChunkingMode.RECURSIVE_CHARACTER;
     }
 
+    /**
+     * 按分隔符层级递归切分文本，优先保留语义完整性。
+     *
+     * @param text   待分块的文本内容
+     * @param config 分块配置，非 RecursiveOptions 时使用默认配置
+     * @return 分块后的向量 chunk 列表
+     */
     @Override
     public List<VectorChunk> chunk(String text, ChunkingOptions config) {
         if (text == null || text.isBlank()) {
@@ -141,6 +153,12 @@ public class RecursiveCharacterTextChunker implements ChunkingStrategy {
         return s.replaceAll("([\\\\.*+?\\[\\](){}|^$])", "\\\\$1");
     }
 
+    /**
+     * 解析递归字符配置，调用方传入其他配置类型时使用默认配置。
+     *
+     * @param config 分块配置
+     * @return 递归字符分块配置
+     */
     private RecursiveOptions resolveOptions(ChunkingOptions config) {
         if (config instanceof RecursiveOptions options) {
             return options;

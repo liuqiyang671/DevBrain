@@ -44,11 +44,21 @@ public enum ChunkingMode {
         this.label = label;
     }
 
+    /**
+     * 返回策略标识，用于 JSON 序列化。
+     *
+     * @return 策略标识字符串
+     */
     @JsonValue
     public String getValue() {
         return value;
     }
 
+    /**
+     * 返回策略的中文显示名称。
+     *
+     * @return 中文标签
+     */
     public String getLabel() {
         return label;
     }

@@ -31,11 +31,23 @@ public class QaPairTextChunker implements ChunkingStrategy {
             Pattern.DOTALL | Pattern.MULTILINE
     );
 
+    /**
+     * 返回问答对分块策略类型。
+     *
+     * @return 问答对分块模式
+     */
     @Override
     public ChunkingMode getType() {
         return ChunkingMode.QA_PAIR;
     }
 
+    /**
+     * 识别 Q:/A: 或 问：/答：格式的问答对并按对分块，未识别时回退为固定长度分块。
+     *
+     * @param text   待分块的文本内容
+     * @param config 分块配置，非 QaPairOptions 时使用默认配置
+     * @return 分块后的向量 chunk 列表
+     */
     @Override
     public List<VectorChunk> chunk(String text, ChunkingOptions config) {
         if (text == null || text.isBlank()) {
@@ -93,11 +105,23 @@ public class QaPairTextChunker implements ChunkingStrategy {
         return pairs;
     }
 
+    /**
+     * 判断行是否为问题起始标记（Q:、Q：、问:、问：）。
+     *
+     * @param line 待判断的文本行
+     * @return 是问题起始行时返回 true
+     */
     private boolean isQuestionStart(String line) {
         return line.startsWith("Q:") || line.startsWith("Q：")
                 || line.startsWith("问:") || line.startsWith("问：");
     }
 
+    /**
+     * 判断行是否为回答起始标记（A:、A：、答:、答：）。
+     *
+     * @param line 待判断的文本行
+     * @return 是回答起始行时返回 true
+     */
     private boolean isAnswerStart(String line) {
         return line.startsWith("A:") || line.startsWith("A：")
                 || line.startsWith("答:") || line.startsWith("答：");
@@ -136,6 +160,12 @@ public class QaPairTextChunker implements ChunkingStrategy {
         return chunks;
     }
 
+    /**
+     * 解析问答对配置，调用方传入其他配置类型时使用默认配置。
+     *
+     * @param config 分块配置
+     * @return 问答对分块配置
+     */
     private QaPairOptions resolveOptions(ChunkingOptions config) {
         if (config instanceof QaPairOptions options) {
             return options;

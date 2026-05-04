@@ -47,11 +47,23 @@ public class ChunkEmbeddingService {
         log.info("嵌入完成，count={}", chunks.size());
     }
 
+    /**
+     * 判断分块是否已有嵌入向量。
+     *
+     * @param chunk 待检查的分块
+     * @return 已有非空向量时返回 true
+     */
     private boolean hasEmbedding(VectorChunk chunk) {
         float[] embedding = chunk.getEmbedding();
         return embedding != null && embedding.length > 0;
     }
 
+    /**
+     * 将 List&lt;Float&gt; 转为 float[] 基础类型数组。
+     *
+     * @param list 浮点数列表
+     * @return 对应的 float 数组
+     */
     private float[] toFloatArray(List<Float> list) {
         float[] array = new float[list.size()];
         for (int i = 0; i < list.size(); i++) {

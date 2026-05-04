@@ -374,15 +374,36 @@ public class StructureAwareTextChunker implements ChunkingStrategy {
         private final BlockType type;
         private final StringBuilder content;
 
+        /**
+         * 构造临时块，从原始文本中截取初始内容。
+         *
+         * @param type        块类型
+         * @param text        原始文本
+         * @param startOffset 起始 offset
+         * @param endOffset   结束 offset
+         */
         private PendingBlock(BlockType type, String text, int startOffset, int endOffset) {
             this.type = type;
             this.content = new StringBuilder(text.substring(startOffset, endOffset));
         }
 
+        /**
+         * 追加新内容到临时块末尾。
+         *
+         * @param text        原始文本
+         * @param startOffset 起始 offset
+         * @param endOffset   结束 offset
+         */
         private void append(String text, int startOffset, int endOffset) {
             content.append(text, startOffset, endOffset);
         }
 
+        /**
+         * 将临时块转为不可变的 Block 实例。
+         *
+         * @param text 原始文本（当前实现未使用，保留用于未来扩展）
+         * @return 固化的 Block
+         */
         private Block toBlock(String text) {
             return new Block(type, content.toString());
         }

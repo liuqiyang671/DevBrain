@@ -34,6 +34,9 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Date;
 import java.util.HexFormat;
 
+/**
+ * 文档同步服务实现，负责拉取远程文档内容、比对哈希、上传存储并触发重新解析。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -50,6 +53,9 @@ public class DocumentSyncServiceImpl implements DocumentSyncService {
     private final DocumentParseService documentParseService;
     private final RedissonClient redissonClient;
 
+    /**
+     * 执行文档同步：拉取内容、哈希比对、上传文件并触发重新解析。
+     */
     @Override
     public SyncResult sync(String docId) {
         KnowledgeDocumentDO document = knowledgeDocumentMapper.selectById(docId);
@@ -122,6 +128,9 @@ public class DocumentSyncServiceImpl implements DocumentSyncService {
         }
     }
 
+    /**
+     * 分页查询文档同步历史。
+     */
     @Override
     public IPage<SyncHistoryVO> getSyncHistory(String docId, long pageNo, long pageSize) {
         Page<DocumentSyncHistoryDO> page = new Page<>(pageNo, pageSize);
@@ -132,6 +141,9 @@ public class DocumentSyncServiceImpl implements DocumentSyncService {
         return result.convert(this::toSyncHistoryVO);
     }
 
+    /**
+     * 更新文档的定时同步配置。
+     */
     @Override
     public DocumentVO updateSchedule(String kbId, String docId, ScheduleConfigRequest request) {
         KnowledgeDocumentDO document = knowledgeDocumentMapper.selectById(docId);
@@ -165,6 +177,9 @@ public class DocumentSyncServiceImpl implements DocumentSyncService {
         return toDocumentVO(document);
     }
 
+    /**
+     * 保存一条同步历史记录。
+     */
     private void saveSyncHistory(String docId, String contentHash, int contentChanged,
                                  String status, String errorMessage, long durationMs) {
         try {
@@ -181,6 +196,9 @@ public class DocumentSyncServiceImpl implements DocumentSyncService {
         }
     }
 
+    /**
+     * 将同步历史 DO 转换为 VO。
+     */
     private SyncHistoryVO toSyncHistoryVO(DocumentSyncHistoryDO h) {
         return new SyncHistoryVO(
                 h.getId(), h.getDocId(), h.getSyncStatus(), h.getContentHash(),
@@ -188,6 +206,9 @@ public class DocumentSyncServiceImpl implements DocumentSyncService {
         );
     }
 
+    /**
+     * 将文档 DO 转换为 VO。
+     */
     private DocumentVO toDocumentVO(KnowledgeDocumentDO d) {
         return new DocumentVO(
                 d.getId(), d.getKbId(), d.getDocName(), d.getEnabled(), d.getChunkCount(),
@@ -200,6 +221,9 @@ public class DocumentSyncServiceImpl implements DocumentSyncService {
         );
     }
 
+    /**
+     * 计算文本的 SHA-256 哈希值。
+     */
     private String sha256(String text) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");

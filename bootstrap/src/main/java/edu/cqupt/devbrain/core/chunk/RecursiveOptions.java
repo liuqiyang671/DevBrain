@@ -13,6 +13,9 @@ public record RecursiveOptions(int chunkSize, int overlapSize) implements Chunki
     private static final int DEFAULT_CHUNK_SIZE = 512;
     private static final int DEFAULT_OVERLAP_SIZE = 128;
 
+    /**
+     * 紧凑构造器，校验并修正非法参数为默认值。
+     */
     public RecursiveOptions {
         if (chunkSize <= 0) {
             chunkSize = DEFAULT_CHUNK_SIZE;
@@ -22,6 +25,11 @@ public record RecursiveOptions(int chunkSize, int overlapSize) implements Chunki
         }
     }
 
+    /**
+     * 将配置项转为 Map，便于序列化和传输。
+     *
+     * @return 包含 chunkSize 和 overlapSize 的配置 Map
+     */
     @Override
     public Map<String, Integer> toConfigMap() {
         return Map.of("chunkSize", chunkSize, "overlapSize", overlapSize);

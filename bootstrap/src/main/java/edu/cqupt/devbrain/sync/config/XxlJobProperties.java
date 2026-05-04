@@ -3,6 +3,9 @@ package edu.cqupt.devbrain.sync.config;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+/**
+ * XXL-Job 执行器配置属性，前缀为 {@code devbrain.sync.xxl-job}。
+ */
 @Data
 @ConfigurationProperties(prefix = "devbrain.sync.xxl-job")
 public class XxlJobProperties {

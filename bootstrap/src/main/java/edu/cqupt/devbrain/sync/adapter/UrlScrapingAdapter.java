@@ -13,21 +13,33 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 
+/**
+ * URL 网页抓取适配器，通过 HTTP 请求获取网页内容并提取正文文本。
+ */
 @Slf4j
 @Component
 public class UrlScrapingAdapter implements DocumentSourceAdapter {
 
     private final OkHttpClient httpClient;
 
+    /**
+     * 构造方法，注入 HTTP 客户端。
+     */
     public UrlScrapingAdapter(OkHttpClient httpClient) {
         this.httpClient = httpClient;
     }
 
+    /**
+     * 返回来源类型标识 {@code url}。
+     */
     @Override
     public String sourceType() {
         return "url";
     }
 
+    /**
+     * 抓取指定 URL 的网页内容，提取正文文本并返回。
+     */
     @Override
     public FetchedContent fetchContent(String sourceLocation) throws Exception {
         if (!sourceLocation.startsWith("http://") && !sourceLocation.startsWith("https://")) {
@@ -78,12 +90,18 @@ public class UrlScrapingAdapter implements DocumentSourceAdapter {
         return new FetchedContent(text, "text/html", title);
     }
 
+    /**
+     * 从 HTML 元素中提取结构化文本。
+     */
     private String extractText(Element element) {
         StringBuilder sb = new StringBuilder();
         element.children().forEach(child -> appendBlockText(child, sb));
         return sb.toString();
     }
 
+    /**
+     * 递归解析块级元素并追加 Markdown 风格的文本。
+     */
     private void appendBlockText(Element element, StringBuilder sb) {
         String tag = element.tagName();
 
@@ -117,6 +135,9 @@ public class UrlScrapingAdapter implements DocumentSourceAdapter {
         }
     }
 
+    /**
+     * 清理文本中的多余空白和连续换行。
+     */
     private String cleanText(String text) {
         return text
                 .replaceAll("[ \t]+", " ")

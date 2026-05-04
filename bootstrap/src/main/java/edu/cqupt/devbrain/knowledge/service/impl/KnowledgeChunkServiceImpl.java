@@ -34,6 +34,9 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
     private final KnowledgeChunkMapper chunkMapper;
     private final VectorStoreService vectorStoreService;
 
+    /**
+     * 分页查询指定文档下的分块列表。
+     */
     @Override
     public PageResult<KnowledgeChunkVO> pageQuery(String docId, KnowledgeChunkPageRequest request) {
         Page<KnowledgeChunkDO> page = new Page<>(request.getPageNo(), request.getPageSize());
@@ -51,11 +54,17 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
                 (int) result.getCurrent(), (int) result.getSize());
     }
 
+    /**
+     * 查询指定文档下的全部分块。
+     */
     @Override
     public List<KnowledgeChunkDO> listByDocId(String docId) {
         return chunkMapper.selectByDocId(docId);
     }
 
+    /**
+     * 创建单个分块并同步到向量库。
+     */
     @Override
     @Transactional
     public KnowledgeChunkVO create(String docId, KnowledgeChunkCreateRequest request) {
@@ -75,6 +84,9 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         return toVO(entity);
     }
 
+    /**
+     * 批量创建分块，可选同步到向量库。
+     */
     @Override
     @Transactional
     public List<KnowledgeChunkDO> batchCreate(List<KnowledgeChunkDO> chunks, boolean syncToVector) {
@@ -107,6 +119,9 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         return chunks;
     }
 
+    /**
+     * 更新分块内容并同步向量库。
+     */
     @Override
     @Transactional
     public KnowledgeChunkVO update(String docId, String chunkId, KnowledgeChunkUpdateRequest request) {
@@ -126,6 +141,9 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         return toVO(entity);
     }
 
+    /**
+     * 删除单个分块并从向量库移除。
+     */
     @Override
     @Transactional
     public void delete(String docId, String chunkId) {
@@ -140,6 +158,9 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         log.info("删除分块 docId={}, chunkId={}", docId, chunkId);
     }
 
+    /**
+     * 删除指定文档下的全部分块并清除对应向量。
+     */
     @Override
     @Transactional
     public void deleteByDocId(String docId) {
@@ -154,6 +175,9 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         }
     }
 
+    /**
+     * 启用或禁用单个分块。
+     */
     @Override
     @Transactional
     public void enableChunk(String chunkId, boolean enabled) {
@@ -165,6 +189,9 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         chunkMapper.updateById(entity);
     }
 
+    /**
+     * 批量启用或禁用分块。
+     */
     @Override
     @Transactional
     public void batchToggleEnabled(List<String> chunkIds, boolean enabled) {
@@ -181,6 +208,9 @@ public class KnowledgeChunkServiceImpl implements KnowledgeChunkService {
         log.info("批量{}分块 count={}", enabled ? "启用" : "禁用", entities.size());
     }
 
+    /**
+     * 按文档批量启用或禁用全部分块。
+     */
     @Override
     @Transactional
     public void updateEnabledByDocId(String docId, boolean enabled) {

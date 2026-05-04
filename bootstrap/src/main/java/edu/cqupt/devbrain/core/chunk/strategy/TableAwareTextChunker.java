@@ -20,11 +20,23 @@ public class TableAwareTextChunker implements ChunkingStrategy {
 
     private static final TextBoundaryOptions DEFAULT_OPTIONS = new TextBoundaryOptions(1400, 0, 1800, 600);
 
+    /**
+     * 返回表格感知分块策略类型。
+     *
+     * @return 表格感知分块模式
+     */
     @Override
     public ChunkingMode getType() {
         return ChunkingMode.TABLE_AWARE;
     }
 
+    /**
+     * 识别 Markdown 表格并保持其完整性，非表格文本按目标字符数分块。
+     *
+     * @param text   待分块的文本内容
+     * @param config 分块配置，非 TextBoundaryOptions 时使用默认配置
+     * @return 分块后的向量 chunk 列表
+     */
     @Override
     public List<VectorChunk> chunk(String text, ChunkingOptions config) {
         if (text == null || text.isBlank()) {
@@ -158,6 +170,12 @@ public class TableAwareTextChunker implements ChunkingStrategy {
         return chunks;
     }
 
+    /**
+     * 合并过小的最后一个 chunk 到前一个 chunk，减少尾部碎片。
+     *
+     * @param chunkGroups chunk 组列表
+     * @param minChars    最小字符数阈值
+     */
     private void mergeSmallTail(List<List<Block>> chunkGroups, int minChars) {
         if (chunkGroups.size() < 2) {
             return;
@@ -185,6 +203,12 @@ public class TableAwareTextChunker implements ChunkingStrategy {
         chunkGroups.remove(chunkGroups.size() - 1);
     }
 
+    /**
+     * 解析表格感知配置，调用方传入其他配置类型时使用默认配置。
+     *
+     * @param config 分块配置
+     * @return 文本边界配置
+     */
     private TextBoundaryOptions resolveOptions(ChunkingOptions config) {
         if (config instanceof TextBoundaryOptions options) {
             return options;
@@ -192,8 +216,18 @@ public class TableAwareTextChunker implements ChunkingStrategy {
         return DEFAULT_OPTIONS;
     }
 
+    /**
+     * 块类型，表格或普通文本。
+     */
     private enum BlockType { TABLE, TEXT }
 
+    /**
+     * 文本块，记录类型、内容和字符数。
+     *
+     * @param type      块类型
+     * @param content   块原始文本内容
+     * @param charCount 块字符数
+     */
     private record Block(BlockType type, String content, int charCount) {
         Block(BlockType type, String content) {
             this(type, content, content.length());

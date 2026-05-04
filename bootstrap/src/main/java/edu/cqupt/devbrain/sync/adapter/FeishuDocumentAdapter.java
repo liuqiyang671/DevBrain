@@ -18,6 +18,9 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicReference;
 
+/**
+ * 飞书文档来源适配器，支持 docx、wiki、sheet 三种类型的文档内容拉取。
+ */
 @Slf4j
 @Component
 public class FeishuDocumentAdapter implements DocumentSourceAdapter {
@@ -29,16 +32,25 @@ public class FeishuDocumentAdapter implements DocumentSourceAdapter {
 
     private final AtomicReference<CachedToken> cachedToken = new AtomicReference<>();
 
+    /**
+     * 构造方法，注入飞书配置和 HTTP 客户端。
+     */
     public FeishuDocumentAdapter(FeishuProperties properties, OkHttpClient httpClient) {
         this.properties = properties;
         this.httpClient = httpClient;
     }
 
+    /**
+     * 返回来源类型标识 {@code feishu}。
+     */
     @Override
     public String sourceType() {
         return "feishu";
     }
 
+    /**
+     * 根据飞书文档地址拉取内容，支持 docx、wiki、sheet 三种格式。
+     */
     @Override
     public FetchedContent fetchContent(String sourceLocation) throws Exception {
         String token = getTenantAccessToken();
@@ -57,6 +69,9 @@ public class FeishuDocumentAdapter implements DocumentSourceAdapter {
         };
     }
 
+    /**
+     * 拉取飞书 docx 文档的纯文本内容。
+     */
     private FetchedContent fetchDocx(String token, String documentId) throws IOException {
         String url = properties.getDocxContentUrl() + "/" + documentId + "/raw_content";
         String body = doGet(url, token);
@@ -67,6 +82,9 @@ public class FeishuDocumentAdapter implements DocumentSourceAdapter {
         return new FetchedContent(content, "text/plain", null);
     }
 
+    /**
+     * 拉取飞书 wiki 节点，根据节点实际类型（docx/sheet）委托到对应方法。
+     */
     private FetchedContent fetchWiki(String token, String nodeToken) throws Exception {
         String url = properties.getWikiNodeUrl() + "?token=" + nodeToken;
         String body = doGet(url, token);
@@ -85,6 +103,9 @@ public class FeishuDocumentAdapter implements DocumentSourceAdapter {
         return new FetchedContent(content.text(), content.contentType(), title);
     }
 
+    /**
+     * 拉取飞书电子表格内容并转换为文本格式。
+     */
     private FetchedContent fetchSheet(String token, String spreadsheetToken) throws IOException {
         String url = properties.getSheetValuesUrl() + "/" + spreadsheetToken + "/values";
         String body = doGet(url, token);
@@ -114,6 +135,9 @@ public class FeishuDocumentAdapter implements DocumentSourceAdapter {
         return new FetchedContent(sb.toString().trim(), "text/plain", null);
     }
 
+    /**
+     * 获取飞书 tenant_access_token，带本地缓存和自动续期。
+     */
     private synchronized String getTenantAccessToken() throws IOException {
         CachedToken ct = cachedToken.get();
         if (ct != null && Instant.now().isBefore(ct.expiresAt)) {
@@ -145,6 +169,9 @@ public class FeishuDocumentAdapter implements DocumentSourceAdapter {
         }
     }
 
+    /**
+     * 发送带 Bearer Token 的 GET 请求。
+     */
     private String doGet(String url, String token) throws IOException {
         Request request = new Request.Builder()
                 .url(url)
@@ -163,6 +190,9 @@ public class FeishuDocumentAdapter implements DocumentSourceAdapter {
         }
     }
 
+    /**
+     * 检查飞书 API 响应中的错误码，有错误时抛出异常。
+     */
     private void checkFeishuError(JsonObject json) {
         if (json.has("code") && json.get("code").getAsInt() != 0) {
             String msg = json.has("msg") ? json.get("msg").getAsString() : "未知错误";
@@ -170,6 +200,12 @@ public class FeishuDocumentAdapter implements DocumentSourceAdapter {
         }
     }
 
+    /**
+     * 缓存的飞书访问令牌。
+     *
+     * @param token     令牌值
+     * @param expiresAt 过期时间
+     */
     private record CachedToken(String token, Instant expiresAt) {
     }
 }

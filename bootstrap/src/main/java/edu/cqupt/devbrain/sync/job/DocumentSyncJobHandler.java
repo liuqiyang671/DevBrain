@@ -14,6 +14,9 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 
+/**
+ * 文档定时同步任务处理器，由 XXL-Job 调度执行。
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -22,6 +25,9 @@ public class DocumentSyncJobHandler {
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
     private final DocumentSyncService documentSyncService;
 
+    /**
+     * 定时同步入口，遍历所有已启用定时同步的文档，按 Cron 表达式判断是否到期并执行同步。
+     */
     @XxlJob("documentSyncHandler")
     public void execute() {
         List<KnowledgeDocumentDO> documents = knowledgeDocumentMapper.selectSyncEnabledDocuments();
@@ -52,6 +58,9 @@ public class DocumentSyncJobHandler {
         log.info("定时文档同步完成：同步 {}，跳过 {}，失败 {}", synced, skipped, failed);
     }
 
+    /**
+     * 根据 Cron 表达式和上次同步时间判断当前是否需要执行同步。
+     */
     private boolean isCronDue(String cron, Date lastSyncTime) {
         if (!StringUtils.hasText(cron)) {
             return true;

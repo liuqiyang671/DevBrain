@@ -7,11 +7,17 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.StringUtils;
 
+/**
+ * XXL-Job 执行器自动配置，仅在 {@code devbrain.sync.xxl-job.enabled=true} 时生效。
+ */
 @Slf4j
 @Configuration
 @ConditionalOnProperty(prefix = "devbrain.sync.xxl-job", name = "enabled", havingValue = "true")
 public class XxlJobAutoConfiguration {
 
+    /**
+     * 注册 XXL-Job 执行器 Bean。
+     */
     @Bean
     public XxlJobSpringExecutor xxlJobExecutor(XxlJobProperties properties) {
         if (!StringUtils.hasText(properties.getAdminAddresses())) {

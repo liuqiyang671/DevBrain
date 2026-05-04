@@ -5,6 +5,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
 
+/**
+ * 飞书开放平台配置属性，前缀为 {@code devbrain.sync.feishu}。
+ */
 @Data
 @ConfigurationProperties(prefix = "devbrain.sync.feishu")
 public class FeishuProperties {
