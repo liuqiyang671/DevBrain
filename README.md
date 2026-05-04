@@ -463,6 +463,8 @@ git diff --check
 | [文档上传功能](docs/document-upload-guide.md) | 上传、解析、分块、限流全流程 |
 | [文档分块策略](docs/document-chunking-guide.md) | 5 种分块策略详解、配置参数、选型建议 |
 | [在线文档同步](docs/document-sync-guide.md) | 飞书/URL 同步、定时调度、同步历史 |
+| [面试总结文档](docs/interview-preparation.md) | 功能概述、技术方案、面试问题预测与解答、优化建议 |
+| [面试 Q&A 大全](docs/interview-qa-comprehensive.md) | 57 道面试题，覆盖 16 个技术领域，三层深度解答 |
 
 ---
 

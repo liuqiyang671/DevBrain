@@ -23,4 +23,14 @@ class DefaultKnowledgeBaseDocumentGuardTest {
         assertEquals(3L, result);
         verify(knowledgeDocumentMapper).selectCount(any());
     }
+
+    @Test
+    void sumActiveDocumentChunksQueriesDocumentTable() {
+        when(knowledgeDocumentMapper.sumChunkCountByKnowledgeBaseId("kb-1")).thenReturn(12L);
+
+        long result = guard.sumActiveDocumentChunks("kb-1");
+
+        assertEquals(12L, result);
+        verify(knowledgeDocumentMapper).sumChunkCountByKnowledgeBaseId("kb-1");
+    }
 }

@@ -1,14 +1,21 @@
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import * as authApi from './services/auth';
 import * as knowledgeBaseApi from './services/knowledgeBase';
-import type { KnowledgeBaseItem, KnowledgeBaseStatus, PermissionItem, ResourceItem, RoleItem, UserItem } from './types';
+import * as syncApi from './services/sync';
+import type { DocumentChunkItem, KnowledgeBaseItem, KnowledgeBaseStatus, KnowledgeChunkItem, KnowledgeDocumentItem, PermissionItem, ResourceItem, RoleItem, SyncHistoryItem, SyncTaskOverviewItem, UserItem } from './types';
+import type { AxiosProgressEvent } from 'axios';
 
 type AuthMode = 'login' | 'register' | 'forgot';
 type AdminTab = 'users' | 'roles' | 'permissions' | 'departments';
 type KnowledgeBaseModalMode = 'create' | 'edit';
 type ShellMode = 'front' | 'admin';
+type DocumentSourceMode = 'file' | 'feishu' | 'url';
+type SyncFrequency = 'none' | 'daily' | 'weekly' | 'monthly';
+type JoinKnowledgeBaseMode = 'search' | 'invite' | 'organization';
+type DocumentActionMode = 'blank' | 'upload';
+type ChunkStrategyMode = 'fixed_size' | 'recursive_character' | 'structure_aware' | 'qa_pair' | 'table_aware';
 type IconName =
   | 'home'
   | 'message'
@@ -47,6 +54,24 @@ interface KnowledgeBaseFormState {
   collectionName: string;
   embeddingModel: string;
   status: KnowledgeBaseStatus;
+  accessLevel: 'private' | 'team' | 'organization';
+}
+
+interface ChunkFormState {
+  strategy: ChunkStrategyMode;
+  chunkSize: number;
+  overlapSize: number;
+  minChars: number;
+  maxChars: number;
+}
+
+interface LocalDocumentVersion {
+  id: string;
+  docId: string;
+  docName: string;
+  version: string;
+  note: string;
+  createdAt: string;
 }
 
 const pageSizeOptions = [10, 20, 50];
@@ -56,7 +81,23 @@ const emptyKnowledgeBaseForm: KnowledgeBaseFormState = {
   collectionName: '',
   embeddingModel: '',
   status: 'enabled',
+  accessLevel: 'team',
 };
+const defaultChunkForm: ChunkFormState = {
+  strategy: 'fixed_size',
+  chunkSize: 512,
+  overlapSize: 128,
+  minChars: 240,
+  maxChars: 900,
+};
+const chunkStrategyOptions: Array<{ value: ChunkStrategyMode; label: string; hint: string }> = [
+  { value: 'fixed_size', label: '固定长度', hint: '通用文档快速处理' },
+  { value: 'recursive_character', label: '递归字符', hint: '优先保留段落边界' },
+  { value: 'structure_aware', label: '结构感知', hint: '适合 Markdown 和标题层级' },
+  { value: 'qa_pair', label: '问答对', hint: '适合 FAQ 和问答材料' },
+  { value: 'table_aware', label: '表格感知', hint: '尽量保持表格完整' },
+];
+const documentVersionStoreKey = 'devbrain.documentVersions.v1';
 
 const frontMenuItems: ShellMenuItem[] = [
   { label: '首页', path: '/workspace', icon: 'home' },
@@ -70,7 +111,6 @@ const frontMenuItems: ShellMenuItem[] = [
 const adminMenuItems: ShellMenuItem[] = [
   { label: '工作台', path: '/admin', icon: 'home' },
   { label: '知识库管理', path: '/admin/knowledge-bases', icon: 'database' },
-  { label: '文档管理', path: '/admin/documents', icon: 'fileText' },
   { label: '问答管理', path: '/admin/qa', icon: 'message' },
   { label: '用户权限', path: '/admin/users', icon: 'shield' },
   { label: '标签分类', path: '/admin/tags', icon: 'tag' },
@@ -107,12 +147,13 @@ function App() {
         <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
         <Route path="/admin" element={<RequireAuth><RequireAdmin><AdminDashboardPage /></RequireAdmin></RequireAuth>} />
         <Route path="/admin/knowledge-bases" element={<RequireAuth><RequireAdmin><KnowledgeBasePage /></RequireAdmin></RequireAuth>} />
-        <Route path="/admin/knowledge-bases/:id/documents" element={<RequireAuth><RequireAdmin><AdminModulePage title="知识库文档管理" description="管理该知识库下的文档列表、解析状态与分块数据。" /></RequireAdmin></RequireAuth>} />
-        <Route path="/admin/documents" element={<RequireAuth><RequireAdmin><AdminModulePage title="文档管理" description="包含文档列表、文档上传、解析状态和分块管理。" /></RequireAdmin></RequireAuth>} />
+        <Route path="/admin/knowledge-bases/:id/documents" element={<RequireAuth><RequireAdmin><KnowledgeBaseDocumentsPage mode="admin" /></RequireAdmin></RequireAuth>} />
+        <Route path="/admin/knowledge-bases/:id/documents/:documentId/chunks" element={<RequireAuth><RequireAdmin><AdminDocumentChunksPage /></RequireAdmin></RequireAuth>} />
+        <Route path="/admin/documents" element={<RequireAuth><RequireAdmin><AdminDocumentsPage /></RequireAdmin></RequireAuth>} />
         <Route path="/admin/qa" element={<RequireAuth><RequireAdmin><AdminModulePage title="问答管理" description="管理问答记录、反馈记录和 FAQ 内容。" /></RequireAdmin></RequireAuth>} />
         <Route path="/admin/users" element={<RequireAuth><RequireAdmin><AdminPage /></RequireAdmin></RequireAuth>} />
         <Route path="/admin/tags" element={<RequireAuth><RequireAdmin><AdminModulePage title="标签分类" description="维护知识库、文档和问答内容的标签体系。" /></RequireAdmin></RequireAuth>} />
-        <Route path="/admin/ingestion" element={<RequireAuth><RequireAdmin><AdminModulePage title="入库任务" description="跟踪文档入库、解析、向量化和失败重试任务。" /></RequireAdmin></RequireAuth>} />
+        <Route path="/admin/ingestion" element={<RequireAuth><RequireAdmin><AdminIngestionPage /></RequireAdmin></RequireAuth>} />
         <Route path="/admin/models" element={<RequireAuth><RequireAdmin><AdminModulePage title="模型配置" description="配置问答模型、Embedding 模型、重排模型和调用策略。" /></RequireAdmin></RequireAuth>} />
         <Route path="/admin/system" element={<RequireAuth><RequireAdmin><AdminModulePage title="系统配置" description="配置平台参数、检索策略和安全策略。" /></RequireAdmin></RequireAuth>} />
         <Route path="/admin/audit" element={<RequireAuth><RequireAdmin><AdminModulePage title="日志审计" description="审计登录、权限、配置变更和关键操作日志。" /></RequireAdmin></RequireAuth>} />
@@ -645,6 +686,7 @@ function KnowledgeBasePage() {
   const [detail, setDetail] = useState<KnowledgeBaseItem | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [joinOpen, setJoinOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -709,6 +751,7 @@ function KnowledgeBasePage() {
       collectionName: item.collectionName,
       embeddingModel: item.embeddingModel,
       status: item.status === 'disabled' ? 'disabled' : 'enabled',
+      accessLevel: 'team',
     });
     setModalMode('edit');
   }
@@ -726,6 +769,7 @@ function KnowledgeBasePage() {
           description: form.description.trim(),
           collectionName: form.collectionName.trim(),
           embeddingModel: form.embeddingModel.trim(),
+          status: form.status,
         });
         setPageNo(1);
         setMessage('知识库已创建');
@@ -781,103 +825,201 @@ function KnowledgeBasePage() {
     }
   }
 
+  const enabledCount = records.filter((item) => item.status !== 'disabled').length;
+  const totalDocuments = records.reduce((sum, item) => sum + (item.documentCount || 0), 0);
+  const totalChunks = records.reduce((sum, item) => sum + (item.chunkCount || 0), 0);
+  const recentRecords = [...records]
+    .sort((a, b) => new Date(b.updateTime || b.createTime || '').getTime() - new Date(a.updateTime || a.createTime || '').getTime())
+    .slice(0, 5);
+  const progressMetrics = [
+    { label: '知识库', value: total, color: 'blue' },
+    { label: '文档', value: totalDocuments, color: 'green' },
+    { label: '分块', value: totalChunks, color: 'teal' },
+    { label: '停用', value: records.filter((item) => item.status === 'disabled').length, color: 'red' },
+  ];
+
   return (
     <AppShell mode="admin">
       <PageContainer
         title="知识库管理"
-        description="统一管理知识空间、向量集合、模型配置和后续文档入口。"
-        actions={<button className="btn btn-primary" type="button" onClick={openCreateModal}>新建知识库</button>}
-      >
-        <form className="card filter-toolbar" onSubmit={submitSearch}>
-          <label className="toolbar-field">
-            关键词
-            <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索名称、描述或集合名" />
-          </label>
-          <label className="toolbar-field compact">
-            状态
-            <select value={status} onChange={(event) => setStatus(event.target.value as KnowledgeBaseStatus | '')}>
-              <option value="">全部</option>
-              <option value="enabled">启用</option>
-              <option value="disabled">停用</option>
-            </select>
-          </label>
-          <div className="toolbar-actions">
-            <button className="btn btn-primary" type="submit">搜索</button>
-            <button className="btn btn-light" type="button" onClick={resetSearch}>重置</button>
+        description="统一管理研发文档、SOP、接口文档与运维知识。"
+        actions={
+          <div className="page-actions">
+            <button className="btn btn-light" type="button" onClick={() => setJoinOpen(true)}>加入知识库</button>
+            <button className="btn btn-primary" type="button" onClick={openCreateModal}>新建知识库</button>
           </div>
-        </form>
-
+        }
+      >
         {error && <div className="error-banner">{error}</div>}
         {message && <p className="toast-line">{message}</p>}
 
-        <article className="card table-card knowledge-table-card">
-          <div className="card-title">
+        <section className="kb-dashboard-metrics">
+          <article className="kb-metric-card primary">
+            <span><UiIcon name="database" /></span>
             <div>
-              <h3>知识库列表</h3>
-              <p>{total} 条记录</p>
+              <p>知识库总数</p>
+              <strong>{total}</strong>
+              <small>当前页 {records.length} 个</small>
             </div>
+          </article>
+          <article className="kb-metric-card green">
+            <span><UiIcon name="fileText" /></span>
+            <div>
+              <p>文档总数</p>
+              <strong>{totalDocuments}</strong>
+              <small>当前页汇总</small>
+            </div>
+          </article>
+          <article className="kb-metric-card violet">
+            <span><UiIcon name="filePlus" /></span>
+            <div>
+              <p>Chunk 数量</p>
+              <strong>{totalChunks || '--'}</strong>
+              <small>已生成分块</small>
+            </div>
+          </article>
+          <article className="kb-metric-card amber">
+            <span><UiIcon name="shield" /></span>
+            <div>
+              <p>启用中</p>
+              <strong>{enabledCount}</strong>
+              <small>{records.length ? `${Math.round((enabledCount / records.length) * 100)}% 可用` : '暂无数据'}</small>
+            </div>
+          </article>
+        </section>
+
+        <section className="kb-dashboard-grid">
+          <div className="kb-main-panel">
+            <div className="kb-quick-actions">
+              <button className="btn btn-primary" type="button" onClick={openCreateModal}>＋ 新建知识库</button>
+              <button className="btn btn-light" type="button" onClick={() => setJoinOpen(true)}>加入知识库</button>
+              <form className="kb-inline-filter" onSubmit={submitSearch}>
+                <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索知识库名称" />
+                <select value={status} onChange={(event) => setStatus(event.target.value as KnowledgeBaseStatus | '')}>
+                  <option value="">状态：全部</option>
+                  <option value="enabled">启用</option>
+                  <option value="disabled">停用</option>
+                </select>
+                <button className="btn btn-light" type="submit">筛选</button>
+                <button className="btn btn-light" type="button" onClick={resetSearch}>重置</button>
+              </form>
+            </div>
+
+            <article className="card table-card knowledge-table-card kb-console-table">
+              <div className="card-title">
+                <div>
+                  <h3>知识库列表</h3>
+                  <p>{total} 条记录</p>
+                </div>
+              </div>
+
+              {loading ? (
+                <div className="loading-state">正在加载知识库...</div>
+              ) : records.length ? (
+                <table className="data-table knowledge-table">
+                  <thead>
+                    <tr>
+                      <th>知识库名称</th>
+                      <th>文档数</th>
+                      <th>更新时间</th>
+                      <th>状态</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {records.map((item, index) => (
+                      <tr key={item.id}>
+                        <td>
+                          <div className="kb-name-cell">
+                            <span className={`kb-row-icon tone-${index % 5}`}><UiIcon name={index % 2 === 0 ? 'database' : 'fileText'} /></span>
+                            <div>
+                              <strong>{item.name}</strong>
+                              <small>{item.description || item.collectionName}</small>
+                            </div>
+                          </div>
+                        </td>
+                        <td>{item.documentCount ?? 0}</td>
+                        <td>{formatDate(item.updateTime || item.createTime)}</td>
+                        <td><StatusBadge status={item.status} /></td>
+                        <td>
+                          <div className="table-actions">
+                            <button className="btn btn-light" type="button" onClick={() => openDetail(item)}>查看</button>
+                            <button className="btn btn-primary" type="button" onClick={() => navigate(`/admin/knowledge-bases/${item.id}/documents`)}>进入</button>
+                            <button className="btn btn-light" type="button" onClick={() => openEditModal(item)}>编辑</button>
+                            <button className="btn btn-danger" type="button" onClick={() => deleteKnowledgeBase(item)}>删除</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="empty-state">
+                  <div className="empty-icon">知</div>
+                  <h3>暂无知识库</h3>
+                  <p>可以新建知识库，或调整搜索条件后再试。</p>
+                </div>
+              )}
+
+              <div className="pagination-bar">
+                <span>第 {pages ? pageNo : 0} / {pages} 页</span>
+                <label>
+                  每页
+                  <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPageNo(1); }}>
+                    {pageSizeOptions.map((size) => <option key={size} value={size}>{size}</option>)}
+                  </select>
+                </label>
+                <button className="btn btn-light" type="button" disabled={loading || pageNo <= 1} onClick={() => setPageNo((value) => Math.max(1, value - 1))}>上一页</button>
+                <button className="btn btn-light" type="button" disabled={loading || pageNo >= pages || pages === 0} onClick={() => setPageNo((value) => value + 1)}>下一页</button>
+              </div>
+            </article>
           </div>
 
-          {loading ? (
-            <div className="loading-state">正在加载知识库...</div>
-          ) : records.length ? (
-            <table className="data-table knowledge-table">
-              <thead>
-                <tr>
-                  <th>知识库名称</th>
-                  <th>描述</th>
-                  <th>Embedding 模型</th>
-                  <th>集合名</th>
-                  <th>文档数量</th>
-                  <th>Chunk 数量</th>
-                  <th>状态</th>
-                  <th>创建时间</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {records.map((item) => (
-                  <tr key={item.id}>
-                    <td><strong>{item.name}</strong></td>
-                    <td className="muted-cell">{item.description || '--'}</td>
-                    <td>{item.embeddingModel}</td>
-                    <td><code>{item.collectionName}</code></td>
-                    <td>{item.documentCount ?? 0}</td>
-                    <td>{item.chunkCount ?? '--'}</td>
-                    <td><StatusBadge status={item.status} /></td>
-                    <td>{formatDate(item.createTime)}</td>
-                    <td>
-                      <div className="table-actions">
-                        <button className="btn btn-light" type="button" onClick={() => openDetail(item)}>查看</button>
-                        <button className="btn btn-light" type="button" onClick={() => navigate(`/admin/knowledge-bases/${item.id}/documents`)}>进入</button>
-                        <button className="btn btn-light" type="button" onClick={() => openEditModal(item)}>编辑</button>
-                        <button className="btn btn-danger" type="button" onClick={() => deleteKnowledgeBase(item)}>删除</button>
-                      </div>
-                    </td>
-                  </tr>
+          <aside className="kb-side-panel">
+            <article className="card kb-activity-card">
+              <header>
+                <h3>最近更新</h3>
+                <button type="button" onClick={refreshList}>查看全部</button>
+              </header>
+              <div className="kb-activity-list">
+                {recentRecords.length ? recentRecords.map((item, index) => (
+                  <button key={item.id} type="button" onClick={() => navigate(`/admin/knowledge-bases/${item.id}/documents`)}>
+                    <span className={`kb-row-icon tone-${index % 5}`}><UiIcon name={index % 2 === 0 ? 'book' : 'settings'} /></span>
+                    <div>
+                      <strong>{item.name}</strong>
+                      <small>{item.updatedBy || item.createdBy || '系统'} 更新了知识库</small>
+                    </div>
+                    <em>{formatShortDate(item.updateTime || item.createTime)}</em>
+                  </button>
+                )) : <p className="muted-empty">暂无更新记录。</p>}
+              </div>
+            </article>
+
+            <article className="card kb-progress-card">
+              <header>
+                <h3>处理进度</h3>
+                <span>当前页</span>
+              </header>
+              <div className="kb-progress-metrics">
+                {progressMetrics.map((item) => (
+                  <div key={item.label} className={`kb-progress-value ${item.color}`}>
+                    <span>{item.label}</span>
+                    <strong>{item.value}</strong>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="empty-state">
-              <div className="empty-icon">知</div>
-              <h3>暂无知识库</h3>
-              <p>可以新建知识库，或调整搜索条件后再试。</p>
-            </div>
-          )}
-
-          <div className="pagination-bar">
-            <span>第 {pages ? pageNo : 0} / {pages} 页</span>
-            <label>
-              每页
-              <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPageNo(1); }}>
-                {pageSizeOptions.map((size) => <option key={size} value={size}>{size}</option>)}
-              </select>
-            </label>
-            <button className="btn btn-light" type="button" disabled={loading || pageNo <= 1} onClick={() => setPageNo((value) => Math.max(1, value - 1))}>上一页</button>
-            <button className="btn btn-light" type="button" disabled={loading || pageNo >= pages || pages === 0} onClick={() => setPageNo((value) => value + 1)}>下一页</button>
-          </div>
-        </article>
+              </div>
+              <div className="kb-progress-chart" aria-hidden="true">
+                <span style={{ height: '42%' }} />
+                <span style={{ height: '56%' }} />
+                <span style={{ height: '48%' }} />
+                <span style={{ height: '72%' }} />
+                <span style={{ height: '68%' }} />
+                <span style={{ height: '61%' }} />
+                <span style={{ height: '74%' }} />
+              </div>
+            </article>
+          </aside>
+        </section>
 
         {modalMode && (
           <Modal
@@ -892,23 +1034,42 @@ function KnowledgeBasePage() {
           >
             {formError && <div className="error-banner modal-error">{formError}</div>}
             <form id="knowledge-base-form" className="stack-form" onSubmit={submitKnowledgeBase}>
-              <label>name<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required maxLength={128} /></label>
-              <label>description<textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} maxLength={512} rows={4} /></label>
+              <label>知识库名称<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required maxLength={128} /></label>
+              <label>描述<textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} maxLength={512} rows={4} /></label>
               {modalMode === 'create' && (
-                <label>collectionName<input value={form.collectionName} onChange={(event) => setForm({ ...form, collectionName: event.target.value })} required maxLength={64} placeholder="dev_knowledge" /></label>
+                <>
+                  <label>集合名<input value={form.collectionName} onChange={(event) => setForm({ ...form, collectionName: event.target.value })} required maxLength={64} placeholder="dev_knowledge" /></label>
+                  <label>
+                    访问权限
+                    <select value={form.accessLevel} onChange={(event) => setForm({ ...form, accessLevel: event.target.value as KnowledgeBaseFormState['accessLevel'] })}>
+                      <option value="private">仅创建者</option>
+                      <option value="team">团队成员</option>
+                      <option value="organization">组织可见</option>
+                    </select>
+                  </label>
+                </>
               )}
-              <label>embeddingModel<input value={form.embeddingModel} onChange={(event) => setForm({ ...form, embeddingModel: event.target.value })} required maxLength={64} placeholder="text-embedding-3-small" /></label>
-              {modalMode === 'edit' && (
-                <label>
-                  status
-                  <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as KnowledgeBaseStatus })}>
-                    <option value="enabled">enabled</option>
-                    <option value="disabled">disabled</option>
-                  </select>
-                </label>
-              )}
+              <label>Embedding 模型<input value={form.embeddingModel} onChange={(event) => setForm({ ...form, embeddingModel: event.target.value })} required maxLength={64} placeholder="text-embedding-3-small" /></label>
+              <label>
+                状态
+                <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as KnowledgeBaseStatus })}>
+                  <option value="enabled">启用</option>
+                  <option value="disabled">停用</option>
+                </select>
+              </label>
             </form>
           </Modal>
+        )}
+
+        {joinOpen && (
+          <JoinKnowledgeBaseModal
+            records={records}
+            onClose={() => setJoinOpen(false)}
+            onEnter={(item) => {
+              setJoinOpen(false);
+              navigate(`/admin/knowledge-bases/${item.id}/documents`);
+            }}
+          />
         )}
 
         {detailOpen && (
@@ -935,22 +1096,2048 @@ function KnowledgeBasePage() {
   );
 }
 
-function KnowledgeBaseDocumentsPage() {
-  const { id } = useParams();
+function JoinKnowledgeBaseModal({
+  records,
+  onClose,
+  onEnter,
+}: {
+  records: KnowledgeBaseItem[];
+  onClose: () => void;
+  onEnter: (item: KnowledgeBaseItem) => void;
+}) {
+  const [mode, setMode] = useState<JoinKnowledgeBaseMode>('search');
+  const [keyword, setKeyword] = useState('');
+  const [inviteLink, setInviteLink] = useState('');
+  const matched = useMemo(() => {
+    const value = keyword.trim().toLowerCase();
+    if (!value) return records.slice(0, 5);
+    return records.filter((item) =>
+      item.name.toLowerCase().includes(value)
+      || item.collectionName.toLowerCase().includes(value)
+      || (item.description || '').toLowerCase().includes(value),
+    ).slice(0, 8);
+  }, [keyword, records]);
+
   return (
-    <AppShell>
+    <Modal
+      title="加入知识库"
+      onClose={onClose}
+      footer={<button className="btn btn-light" type="button" onClick={onClose}>关闭</button>}
+    >
+      <div className="join-kb-modal">
+        <div className="source-mode-tabs" role="tablist" aria-label="加入方式">
+          <button className={mode === 'search' ? 'active' : ''} type="button" onClick={() => setMode('search')}>搜索加入</button>
+          <button className={mode === 'invite' ? 'active' : ''} type="button" onClick={() => setMode('invite')}>邀请链接</button>
+          <button className={mode === 'organization' ? 'active' : ''} type="button" onClick={() => setMode('organization')}>组织列表</button>
+        </div>
+
+        {mode === 'search' && (
+          <div className="stack-form">
+            <label>
+              搜索知识库
+              <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="输入知识库名称、集合名或描述" />
+            </label>
+            <div className="join-result-list">
+              {matched.map((item) => (
+                <button key={item.id} type="button" onClick={() => onEnter(item)}>
+                  <strong>{item.name}</strong>
+                  <span>{item.description || item.collectionName}</span>
+                  <em>{item.status === 'disabled' ? '停用' : '进入'}</em>
+                </button>
+              ))}
+              {!matched.length && <p className="muted-empty">没有匹配的知识库。</p>}
+            </div>
+          </div>
+        )}
+
+        {mode === 'invite' && (
+          <div className="stack-form">
+            <label>
+              邀请链接或邀请码
+              <input value={inviteLink} onChange={(event) => setInviteLink(event.target.value)} placeholder="粘贴邀请链接或输入邀请码" />
+            </label>
+            <div className="hint-panel">
+              <strong>邀请加入</strong>
+              <p>当前前端已预留入口；后端成员邀请接口接入后，这里会校验链接并完成加入。</p>
+            </div>
+          </div>
+        )}
+
+        {mode === 'organization' && (
+          <div className="org-kb-grid">
+            {records.slice(0, 6).map((item) => (
+              <button key={item.id} type="button" onClick={() => onEnter(item)}>
+                <UiIcon name="database" />
+                <strong>{item.name}</strong>
+                <span>{item.documentCount ?? 0} 个文档</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function AdminDocumentsPage() {
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseItem[]>([]);
+  const [records, setRecords] = useState<KnowledgeDocumentItem[]>([]);
+  const [keyword, setKeyword] = useState('');
+  const [kbId, setKbId] = useState('');
+  const [status, setStatus] = useState('');
+  const [enabled, setEnabled] = useState<number | ''>('');
+  const [appliedKeyword, setAppliedKeyword] = useState('');
+  const [appliedKbId, setAppliedKbId] = useState('');
+  const [appliedStatus, setAppliedStatus] = useState('');
+  const [appliedEnabled, setAppliedEnabled] = useState<number | ''>('');
+  const [pageNo, setPageNo] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [total, setTotal] = useState(0);
+  const [pages, setPages] = useState(0);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setLookupLoading(true);
+    knowledgeBaseApi.getKnowledgeBases({ pageNo: 1, pageSize: 100 })
+      .then((page) => {
+        if (active) setKnowledgeBases(page.records || []);
+      })
+      .catch((nextError) => {
+        if (active) setError(getErrorMessage(nextError));
+      })
+      .finally(() => {
+        if (active) setLookupLoading(false);
+      });
+    return () => { active = false; };
+  }, [reloadKey]);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError(null);
+    knowledgeBaseApi.getAllKnowledgeDocuments({
+      pageNo,
+      pageSize,
+      kbId: appliedKbId,
+      keyword: appliedKeyword,
+      status: appliedStatus,
+      enabled: appliedEnabled,
+    }).then((page) => {
+      if (!active) return;
+      setRecords(page.records || []);
+      setTotal(page.total || 0);
+      setPages(page.pages || 0);
+    }).catch((nextError) => {
+      if (!active) return;
+      setRecords([]);
+      setTotal(0);
+      setPages(0);
+      setError(getErrorMessage(nextError));
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+    return () => { active = false; };
+  }, [appliedEnabled, appliedKbId, appliedKeyword, appliedStatus, pageNo, pageSize, reloadKey]);
+
+  const knowledgeBaseNameById = useMemo(() => {
+    return new Map(knowledgeBases.map((item) => [item.id, item.name]));
+  }, [knowledgeBases]);
+
+  function refresh() {
+    setReloadKey((value) => value + 1);
+  }
+
+  function submitSearch(event: FormEvent) {
+    event.preventDefault();
+    setAppliedKeyword(keyword.trim());
+    setAppliedKbId(kbId);
+    setAppliedStatus(status);
+    setAppliedEnabled(enabled);
+    setPageNo(1);
+  }
+
+  function resetSearch() {
+    setKeyword('');
+    setKbId('');
+    setStatus('');
+    setEnabled('');
+    setAppliedKeyword('');
+    setAppliedKbId('');
+    setAppliedStatus('');
+    setAppliedEnabled('');
+    setPageNo(1);
+  }
+
+  async function handleDelete(doc: KnowledgeDocumentItem) {
+    if (!window.confirm(`确认删除文档「${doc.docName}」吗？`)) return;
+    setMessage(null);
+    setError(null);
+    try {
+      await knowledgeBaseApi.deleteKnowledgeDocument(doc.kbId, doc.id);
+      setMessage('文档已删除');
+      if (records.length === 1 && pageNo > 1) {
+        setPageNo((value) => Math.max(1, value - 1));
+      } else {
+        refresh();
+      }
+    } catch (nextError) {
+      setError(getErrorMessage(nextError));
+    }
+  }
+
+  async function handleToggleEnabled(doc: KnowledgeDocumentItem) {
+    setMessage(null);
+    setError(null);
+    try {
+      await knowledgeBaseApi.toggleDocumentEnabled(doc.kbId, doc.id, doc.enabled === 1 ? 0 : 1);
+      setMessage(doc.enabled === 1 ? '文档已禁用' : '文档已启用');
+      refresh();
+    } catch (nextError) {
+      setError(getErrorMessage(nextError));
+    }
+  }
+
+  return (
+    <AppShell mode="admin">
       <PageContainer
-        title="知识库文档"
-        description={`当前知识库 ID：${id || '--'}。文档列表接口接入后将在这里展示。`}
-        actions={<Link className="btn btn-light" to="/knowledge-bases">返回知识库</Link>}
+        title="文档管理"
+        description="集中管理全部知识库文档、上传入口、解析状态和启停操作。"
+        actions={<button className="btn btn-primary" type="button" onClick={() => setUploadOpen(true)}>上传文档</button>}
       >
-        <article className="card">
-          <div className="empty-state">
-            <div className="empty-icon">文</div>
-            <h3>文档页入口已就绪</h3>
-            <p>后续文档上传、解析、Chunk 和向量化状态可以接入此页面。</p>
+        <form className="card filter-toolbar document-filter-toolbar" onSubmit={submitSearch}>
+          <label className="toolbar-field">
+            知识库
+            <select value={kbId} onChange={(event) => setKbId(event.target.value)} disabled={lookupLoading}>
+              <option value="">全部知识库</option>
+              {knowledgeBases.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </label>
+          <label className="toolbar-field">
+            文档名称
+            <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索文档名称" />
+          </label>
+          <label className="toolbar-field compact">
+            状态
+            <select value={status} onChange={(event) => setStatus(event.target.value)}>
+              <option value="">全部</option>
+              <option value="pending">等待处理</option>
+              <option value="processing">处理中</option>
+              <option value="completed">处理成功</option>
+              <option value="failed">处理失败</option>
+            </select>
+          </label>
+          <label className="toolbar-field compact">
+            启用
+            <select value={enabled} onChange={(event) => setEnabled(event.target.value === '' ? '' : Number(event.target.value))}>
+              <option value="">全部</option>
+              <option value={1}>已启用</option>
+              <option value={0}>已禁用</option>
+            </select>
+          </label>
+          <div className="toolbar-actions">
+            <button className="btn btn-primary" type="submit">搜索</button>
+            <button className="btn btn-light" type="button" onClick={resetSearch}>重置</button>
+          </div>
+        </form>
+
+        {error && <div className="error-banner">{error}</div>}
+        {message && <p className="toast-line">{message}</p>}
+
+        <article className="card table-card knowledge-table-card">
+          <div className="card-title">
+            <div>
+              <h3>文档列表</h3>
+              <p>{total} 条记录</p>
+            </div>
+            <button className="btn btn-light" type="button" onClick={refresh} disabled={loading}>刷新</button>
+          </div>
+
+          {loading ? (
+            <div className="loading-state">正在加载文档...</div>
+          ) : records.length ? (
+            <table className="data-table document-table">
+              <thead>
+                <tr>
+                  <th>文档名称</th>
+                  <th>知识库</th>
+                  <th>类型</th>
+                  <th>大小</th>
+                  <th>处理模式</th>
+                  <th>状态</th>
+                  <th>启用</th>
+                  <th>上传时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {records.map((doc) => (
+                  <tr key={doc.id}>
+                    <td><strong>{doc.docName}</strong></td>
+                    <td className="muted-cell">{knowledgeBaseNameById.get(doc.kbId) || doc.kbId}</td>
+                    <td><span className="status-pill muted">{doc.fileType || '--'}</span></td>
+                    <td>{formatFileSize(doc.fileSize)}</td>
+                    <td>{doc.processMode || '--'}</td>
+                    <td><span className={`status-pill doc-status-${docStatusClass(doc.status)}`}>{docStatusLabel(doc.status)}</span></td>
+                    <td>{doc.enabled === 1 ? '已启用' : '已禁用'}</td>
+                    <td>{formatDate(doc.createTime)}</td>
+                    <td>
+                      <div className="table-actions">
+                        <button className={doc.enabled === 1 ? 'btn btn-light' : 'btn btn-primary'} type="button" onClick={() => handleToggleEnabled(doc)}>
+                          {doc.enabled === 1 ? '禁用' : '启用'}
+                        </button>
+                        <button className="btn btn-danger" type="button" onClick={() => handleDelete(doc)}>删除</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="empty-state">
+              <div className="empty-icon">文</div>
+              <h3>暂无文档</h3>
+              <p>点击右上角「上传文档」添加第一份资料。</p>
+              <button className="btn btn-primary" type="button" onClick={() => setUploadOpen(true)}>上传文档</button>
+            </div>
+          )}
+
+          <div className="pagination-bar">
+            <span>第 {pages ? pageNo : 0} / {pages} 页</span>
+            <label>
+              每页
+              <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPageNo(1); }}>
+                {pageSizeOptions.map((size) => <option key={size} value={size}>{size}</option>)}
+              </select>
+            </label>
+            <button className="btn btn-light" type="button" disabled={loading || pageNo <= 1} onClick={() => setPageNo((value) => Math.max(1, value - 1))}>上一页</button>
+            <button className="btn btn-light" type="button" disabled={loading || pageNo >= pages || pages === 0} onClick={() => setPageNo((value) => value + 1)}>下一页</button>
           </div>
         </article>
+
+        {uploadOpen && (
+          <DocumentUploadModal
+            knowledgeBases={knowledgeBases}
+            onClose={() => setUploadOpen(false)}
+            onSuccess={() => { setUploadOpen(false); setPageNo(1); refresh(); setMessage('文档上传成功'); }}
+          />
+        )}
+      </PageContainer>
+    </AppShell>
+  );
+}
+
+function KnowledgeBaseDocumentsPage({ mode = 'front' }: { mode?: ShellMode }) {
+  const { id: kbId } = useParams();
+  const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeBaseItem | null>(null);
+  const [allDocuments, setAllDocuments] = useState<KnowledgeDocumentItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [keyword, setKeyword] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [pageNo, setPageNo] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [documentAction, setDocumentAction] = useState<DocumentActionMode | null>(null);
+  const [editingDocument, setEditingDocument] = useState<KnowledgeDocumentItem | null>(null);
+  const [chunkingDocument, setChunkingDocument] = useState<KnowledgeDocumentItem | null>(null);
+  const [chunkResultDocument, setChunkResultDocument] = useState<KnowledgeDocumentItem | null>(null);
+
+  useEffect(() => {
+    if (!kbId) return;
+    let active = true;
+    setLoading(true);
+    setError(null);
+    Promise.all([
+      knowledgeBaseApi.getKnowledgeBase(kbId),
+      knowledgeBaseApi.getKnowledgeDocuments(kbId),
+    ])
+      .then(([kb, list]) => {
+        if (!active) return;
+        setKnowledgeBase(kb);
+        const filtered = list || [];
+        filtered.sort((a, b) => new Date(b.createTime).getTime() - new Date(a.createTime).getTime());
+        setAllDocuments(filtered);
+      })
+      .catch((err) => { if (active) { setAllDocuments([]); setError(getErrorMessage(err)); } })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [kbId, reloadKey]);
+
+  const hasProcessingDocument = useMemo(
+    () => allDocuments.some((doc) => normalizeDocStatus(doc.status) === 'processing'),
+    [allDocuments],
+  );
+
+  useEffect(() => {
+    if (!kbId || !hasProcessingDocument) return;
+    let active = true;
+    const timer = window.setInterval(() => {
+      knowledgeBaseApi.getKnowledgeDocuments(kbId)
+        .then((list) => {
+          if (!active) return;
+          const next = list || [];
+          next.sort((a, b) => new Date(b.createTime).getTime() - new Date(a.createTime).getTime());
+          setAllDocuments(next);
+        })
+        .catch((err) => {
+          if (active) setError(getErrorMessage(err));
+        });
+    }, 2000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [kbId, hasProcessingDocument]);
+
+  const filteredDocuments = useMemo(() => {
+    let result = allDocuments;
+    if (keyword.trim()) {
+      const kw = keyword.trim().toLowerCase();
+      result = result.filter((doc) => doc.docName.toLowerCase().includes(kw));
+    }
+    if (statusFilter) {
+      result = result.filter((doc) => normalizeDocStatus(doc.status) === statusFilter);
+    }
+    return result;
+  }, [allDocuments, keyword, statusFilter]);
+
+  const total = filteredDocuments.length;
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const safePageNo = Math.min(pageNo, pages);
+  const pagedDocuments = filteredDocuments.slice((safePageNo - 1) * pageSize, safePageNo * pageSize);
+
+  useEffect(() => {
+    if (pageNo > pages) setPageNo(pages);
+  }, [pages, pageNo]);
+
+  const refresh = useCallback(() => setReloadKey((k) => k + 1), []);
+
+  function resetFilters() {
+    setKeyword('');
+    setStatusFilter('');
+    setPageNo(1);
+  }
+
+  async function handleDelete(doc: KnowledgeDocumentItem) {
+    if (!window.confirm(`确认删除文档「${doc.docName}」吗？`)) return;
+    setMessage(null);
+    setError(null);
+    try {
+      await knowledgeBaseApi.deleteKnowledgeDocument(kbId!, doc.id);
+      setMessage('文档已删除');
+      refresh();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
+  async function handleToggleEnabled(doc: KnowledgeDocumentItem) {
+    setMessage(null);
+    setError(null);
+    try {
+      await knowledgeBaseApi.toggleDocumentEnabled(kbId!, doc.id, doc.enabled === 1 ? 0 : 1);
+      setMessage(doc.enabled === 1 ? '文档已禁用' : '文档已启用');
+      refresh();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
+  function handleActionSuccess(nextMessage: string) {
+    setDocumentAction(null);
+    setEditingDocument(null);
+    setChunkingDocument(null);
+    refresh();
+    setMessage(nextMessage);
+  }
+
+  return (
+    <AppShell mode={mode}>
+      <PageContainer
+        title={knowledgeBase ? knowledgeBase.name : '知识库文档'}
+        description="在当前知识库内创建、上传、编辑文档，并由用户手动触发分块处理。"
+        actions={
+          <div className="page-actions">
+            <Link className="btn btn-light" to={mode === 'admin' ? '/admin/knowledge-bases' : '/knowledge-bases'}>返回知识库</Link>
+            <button className="btn btn-light" type="button" onClick={() => setDocumentAction('blank')}>新建文档</button>
+            <button className="btn btn-primary" type="button" onClick={() => { setDocumentAction('upload'); setUploadOpen(true); }}>上传文件</button>
+          </div>
+        }
+      >
+        <section className="kb-context-panel">
+          <div>
+            <span>当前知识库</span>
+            <strong>{knowledgeBase?.name || kbId}</strong>
+            <small>{knowledgeBase?.description || '文档与分块结果都会归属到该知识库。'}</small>
+          </div>
+          <div>
+            <span>文档数</span>
+            <strong>{allDocuments.length}</strong>
+          </div>
+          <div>
+            <span>分块数</span>
+            <strong>{allDocuments.reduce((sum, doc) => sum + (doc.chunkCount || 0), 0)}</strong>
+          </div>
+          <div>
+            <span>集合名</span>
+            <code>{knowledgeBase?.collectionName || '--'}</code>
+          </div>
+        </section>
+
+        <form className="card filter-toolbar" onSubmit={(e) => { e.preventDefault(); setPageNo(1); }}>
+          <label className="toolbar-field">
+            文档名称
+            <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="搜索文档名称" />
+          </label>
+          <label className="toolbar-field compact">
+            状态
+            <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPageNo(1); }}>
+              <option value="">全部</option>
+              <option value="pending">等待处理</option>
+              <option value="processing">处理中</option>
+              <option value="completed">处理成功</option>
+              <option value="failed">处理失败</option>
+            </select>
+          </label>
+          <div className="toolbar-actions">
+            <button className="btn btn-primary" type="submit">搜索</button>
+            <button className="btn btn-light" type="button" onClick={resetFilters}>重置</button>
+          </div>
+        </form>
+
+        {error && <div className="error-banner">{error}</div>}
+        {message && <p className="toast-line">{message}</p>}
+
+        <article className="card table-card">
+          <div className="card-title">
+            <div>
+              <h3>文档列表</h3>
+              <p>{total} 条记录</p>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="loading-state">正在加载文档...</div>
+          ) : pagedDocuments.length ? (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>文档名称</th>
+                  <th>类型</th>
+                  <th>大小</th>
+                  <th>处理模式</th>
+                  <th>分块数</th>
+                  <th>状态</th>
+                  <th>启用</th>
+                  <th>上传时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedDocuments.map((doc) => (
+                  <tr key={doc.id}>
+                    <td><strong>{doc.docName}</strong></td>
+                    <td><span className="status-pill muted">{doc.fileType}</span></td>
+                    <td>{formatFileSize(doc.fileSize)}</td>
+                    <td>{doc.processMode}</td>
+                    <td>{doc.chunkCount ?? 0}</td>
+                    <td><span className={`status-pill doc-status-${docStatusClass(doc.status)}`}>{docStatusLabel(doc.status)}</span></td>
+                    <td>
+                      <button
+                        className={`btn ${doc.enabled === 1 ? 'btn-light' : 'btn-danger'}`}
+                        type="button"
+                        onClick={() => handleToggleEnabled(doc)}
+                      >
+                        {doc.enabled === 1 ? '已启用' : '已禁用'}
+                      </button>
+                    </td>
+                    <td>{formatDate(doc.createTime)}</td>
+                    <td>
+                      <div className="table-actions">
+                        <button className="btn btn-light" type="button" onClick={() => setEditingDocument(doc)}>编辑</button>
+                        <button className="btn btn-primary" type="button" onClick={() => setChunkingDocument(doc)}>分块处理</button>
+                        {mode === 'admin' ? (
+                          <Link className="btn btn-light" to={`/admin/knowledge-bases/${kbId}/documents/${doc.id}/chunks`}>查看分块结果</Link>
+                        ) : (
+                          <button className="btn btn-light" type="button" onClick={() => setChunkResultDocument(doc)}>查看分块结果</button>
+                        )}
+                        <button className="btn btn-danger" type="button" onClick={() => handleDelete(doc)}>删除</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="empty-state">
+              <div className="empty-icon">文</div>
+              <h3>暂无文档</h3>
+              <p>点击右上角「新建文档」或「上传文件」添加文档。</p>
+            </div>
+          )}
+
+          {total > 0 && (
+            <div className="pagination-bar">
+              <span>第 {pages ? safePageNo : 0} / {pages} 页</span>
+              <label>
+                每页
+                <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPageNo(1); }}>
+                  {pageSizeOptions.map((size) => <option key={size} value={size}>{size}</option>)}
+                </select>
+              </label>
+              <button className="btn btn-light" type="button" disabled={loading || safePageNo <= 1} onClick={() => setPageNo((v) => Math.max(1, v - 1))}>上一页</button>
+              <button className="btn btn-light" type="button" disabled={loading || safePageNo >= pages} onClick={() => setPageNo((v) => v + 1)}>下一页</button>
+            </div>
+          )}
+        </article>
+
+        {documentAction === 'blank' && kbId && (
+          <BlankDocumentModal
+            kbId={kbId}
+            onClose={() => setDocumentAction(null)}
+            onSuccess={() => handleActionSuccess('空白文档已创建')}
+          />
+        )}
+
+        {uploadOpen && kbId && documentAction === 'upload' && (
+          <DocumentUploadModal
+            kbId={kbId}
+            onClose={() => { setUploadOpen(false); setDocumentAction(null); }}
+            onSuccess={() => { setUploadOpen(false); handleActionSuccess('文档上传成功'); }}
+          />
+        )}
+
+        {editingDocument && kbId && (
+          <DocumentEditModal
+            kbId={kbId}
+            doc={editingDocument}
+            onClose={() => setEditingDocument(null)}
+            onSuccess={() => handleActionSuccess('文档新版本已保存')}
+          />
+        )}
+
+        {chunkingDocument && (
+          <DocumentChunkModal
+            doc={chunkingDocument}
+            onClose={() => setChunkingDocument(null)}
+            onSuccess={() => handleActionSuccess('已触发分块处理')}
+          />
+        )}
+
+        {chunkResultDocument && (
+          <ChunkResultModal
+            doc={chunkResultDocument}
+            onClose={() => setChunkResultDocument(null)}
+          />
+        )}
+      </PageContainer>
+    </AppShell>
+  );
+}
+
+function BlankDocumentModal({
+  kbId,
+  onClose,
+  onSuccess,
+}: {
+  kbId: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [chunkForm, setChunkForm] = useState<ChunkFormState>(defaultChunkForm);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canSubmit = Boolean(title.trim()) && Boolean(content.trim()) && !saving;
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!title.trim()) {
+      setError('请输入文档标题');
+      return;
+    }
+    if (!content.trim()) {
+      setError('请输入文档内容');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const fileName = ensureMarkdownFileName(title.trim());
+      const file = new File([content], fileName, { type: 'text/markdown;charset=utf-8' });
+      await knowledgeBaseApi.uploadDocument(kbId, {
+        file,
+        processMode: 'manual',
+        chunkStrategy: chunkForm.strategy,
+        chunkConfig: buildChunkConfig(chunkForm),
+      });
+      onSuccess();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal
+      title="新建文档"
+      onClose={() => { if (!saving) onClose(); }}
+      footer={(
+        <>
+          <button className="btn btn-light" type="button" disabled={saving} onClick={onClose}>取消</button>
+          <button className="btn btn-primary" type="submit" form="blank-document-form" disabled={!canSubmit}>
+            {saving ? '创建中...' : '创建文档'}
+          </button>
+        </>
+      )}
+    >
+      {error && <div className="error-banner modal-error">{error}</div>}
+      <form id="blank-document-form" className="stack-form document-editor-form" onSubmit={handleSubmit}>
+        <label>
+          文档标题
+          <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={120} placeholder="例如：接口联调记录" disabled={saving} />
+        </label>
+        <label>
+          正文
+          <textarea
+            className="document-editor-textarea"
+            value={content}
+            onChange={(event) => setContent(event.target.value)}
+            rows={12}
+            placeholder="输入 Markdown 或纯文本内容"
+            disabled={saving}
+          />
+        </label>
+        <ChunkConfigPanel value={chunkForm} onChange={setChunkForm} disabled={saving} compact />
+      </form>
+    </Modal>
+  );
+}
+
+function DocumentEditModal({
+  kbId,
+  doc,
+  onClose,
+  onSuccess,
+}: {
+  kbId: string;
+  doc: KnowledgeDocumentItem;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const existingVersions = useMemo(() => readLocalDocumentVersions(doc.id), [doc.id]);
+  const [title, setTitle] = useState(stripKnownExtension(doc.docName));
+  const [content, setContent] = useState(() => buildEditableDocumentTemplate(doc));
+  const [note, setNote] = useState('');
+  const [chunkForm, setChunkForm] = useState<ChunkFormState>(() => parseChunkForm(doc.chunkStrategy, doc.chunkConfig));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const nextVersion = `v${existingVersions.length + 2}`;
+  const canSubmit = Boolean(title.trim()) && Boolean(content.trim()) && !saving;
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!title.trim() || !content.trim()) {
+      setError('文档标题和正文不能为空');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const fileName = ensureMarkdownFileName(`${title.trim()}-${nextVersion}`);
+      const file = new File([content], fileName, { type: 'text/markdown;charset=utf-8' });
+      const result = await knowledgeBaseApi.uploadDocument(kbId, {
+        file,
+        processMode: 'manual',
+        chunkStrategy: chunkForm.strategy,
+        chunkConfig: buildChunkConfig(chunkForm),
+      });
+      appendLocalDocumentVersion({
+        id: `${doc.id}-${Date.now()}`,
+        docId: doc.id,
+        docName: result.docName,
+        version: nextVersion,
+        note: note.trim() || '保存为新版本',
+        createdAt: new Date().toISOString(),
+      });
+      onSuccess();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal
+      title="编辑文档"
+      onClose={() => { if (!saving) onClose(); }}
+      footer={(
+        <>
+          <button className="btn btn-light" type="button" disabled={saving} onClick={onClose}>取消</button>
+          <button className="btn btn-primary" type="submit" form="document-edit-form" disabled={!canSubmit}>
+            {saving ? '保存中...' : '保存为新版本'}
+          </button>
+        </>
+      )}
+    >
+      {error && <div className="error-banner modal-error">{error}</div>}
+      <form id="document-edit-form" className="stack-form document-editor-form" onSubmit={handleSubmit}>
+        <section className="version-panel">
+          <div>
+            <span>当前文档</span>
+            <strong>{doc.docName}</strong>
+          </div>
+          <div>
+            <span>下一版本</span>
+            <strong>{nextVersion}</strong>
+          </div>
+          <div>
+            <span>分块数</span>
+            <strong>{doc.chunkCount ?? 0}</strong>
+          </div>
+        </section>
+        <label>
+          新版本标题
+          <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={120} disabled={saving} />
+        </label>
+        <label>
+          正文
+          <textarea
+            className="document-editor-textarea"
+            value={content}
+            onChange={(event) => setContent(event.target.value)}
+            rows={12}
+            disabled={saving}
+          />
+        </label>
+        <label>
+          版本说明
+          <input value={note} onChange={(event) => setNote(event.target.value)} maxLength={160} placeholder="例如：补充部署回滚步骤" disabled={saving} />
+        </label>
+        <ChunkConfigPanel value={chunkForm} onChange={setChunkForm} disabled={saving} compact />
+        <div className="version-history">
+          <strong>版本记录</strong>
+          <div>
+            <span>v1</span>
+            <p>{doc.docName} · {formatDate(doc.createTime)}</p>
+          </div>
+          {existingVersions.map((item) => (
+            <div key={item.id}>
+              <span>{item.version}</span>
+              <p>{item.docName} · {formatDate(item.createdAt)} · {item.note}</p>
+            </div>
+          ))}
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function DocumentChunkModal({
+  doc,
+  onClose,
+  onSuccess,
+}: {
+  doc: KnowledgeDocumentItem;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [chunkForm, setChunkForm] = useState<ChunkFormState>(() => parseChunkForm(doc.chunkStrategy, doc.chunkConfig));
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const configJson = buildChunkConfig(chunkForm);
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      await knowledgeBaseApi.triggerDocumentChunk(doc.id, {
+        chunkStrategy: chunkForm.strategy,
+        chunkConfig: configJson,
+      });
+      onSuccess();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal
+      title="分块处理"
+      onClose={() => { if (!submitting) onClose(); }}
+      footer={(
+        <>
+          <button className="btn btn-light" type="button" disabled={submitting} onClick={onClose}>取消</button>
+          <button className="btn btn-primary" type="submit" form="document-chunk-form" disabled={submitting}>
+            {submitting ? '触发中...' : '确认分块处理'}
+          </button>
+        </>
+      )}
+    >
+      {error && <div className="error-banner modal-error">{error}</div>}
+      <form id="document-chunk-form" className="stack-form chunk-action-form" onSubmit={handleSubmit}>
+        <section className="chunk-document-summary">
+          <div>
+            <span>文档</span>
+            <strong>{doc.docName}</strong>
+          </div>
+          <div>
+            <span>当前状态</span>
+            <strong>{docStatusLabel(doc.status)}</strong>
+          </div>
+          <div>
+            <span>已有分块</span>
+            <strong>{doc.chunkCount ?? 0}</strong>
+          </div>
+        </section>
+        <ChunkConfigPanel value={chunkForm} onChange={setChunkForm} disabled={submitting} />
+        <div className="chunk-config-preview">
+          <span>本次配置</span>
+          <code>{configJson}</code>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function ChunkResultModal({
+  doc,
+  onClose,
+}: {
+  doc: KnowledgeDocumentItem;
+  onClose: () => void;
+}) {
+  const [records, setRecords] = useState<DocumentChunkItem[]>([]);
+  const [pageNo, setPageNo] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [total, setTotal] = useState(0);
+  const [pages, setPages] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError(null);
+    knowledgeBaseApi.getDocumentChunks(doc.id, pageNo, pageSize)
+      .then((page) => {
+        if (!active) return;
+        setRecords(page.records || []);
+        setTotal(page.total || 0);
+        setPages(page.pages || 0);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setRecords([]);
+        setTotal(0);
+        setPages(0);
+        setError(getErrorMessage(err));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, [doc.id, pageNo, pageSize]);
+
+  const totalChars = records.reduce((sum, item) => sum + (item.charCount || 0), 0);
+  const averageChars = records.length ? Math.round(totalChars / records.length) : 0;
+
+  return (
+    <Modal
+      title="查看分块结果"
+      onClose={onClose}
+      footer={<button className="btn btn-primary" type="button" onClick={onClose}>关闭</button>}
+    >
+      {error && <div className="error-banner modal-error">{error}</div>}
+      <section className="chunk-result-header">
+        <div>
+          <span>文档</span>
+          <strong>{doc.docName}</strong>
+        </div>
+        <div>
+          <span>总分块</span>
+          <strong>{total}</strong>
+        </div>
+        <div>
+          <span>本页字符</span>
+          <strong>{totalChars}</strong>
+        </div>
+        <div>
+          <span>平均大小</span>
+          <strong>{averageChars || '--'}</strong>
+        </div>
+      </section>
+
+      {loading ? (
+        <div className="loading-state">正在加载分块结果...</div>
+      ) : records.length ? (
+        <>
+          <div className="chunk-flow" aria-label="分块顺序">
+            {records.slice(0, 12).map((item) => (
+              <span key={item.chunkId}>#{item.index + 1}</span>
+            ))}
+          </div>
+          <div className="chunk-list">
+            {records.map((item) => (
+              <article className="chunk-card" key={item.chunkId}>
+                <header>
+                  <strong>Chunk #{item.index + 1}</strong>
+                  <span>{item.charCount} 字符</span>
+                </header>
+                <p>{item.content || '暂无内容预览'}</p>
+                <footer>
+                  <code>{item.chunkId}</code>
+                  <span>{item.index === 0 ? '起始块' : `承接 #${item.index}`}</span>
+                </footer>
+              </article>
+            ))}
+          </div>
+          <div className="pagination-bar">
+            <span>第 {pages ? pageNo : 0} / {pages} 页</span>
+            <label>
+              每页
+              <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPageNo(1); }}>
+                {[10, 20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
+              </select>
+            </label>
+            <button className="btn btn-light" type="button" disabled={loading || pageNo <= 1} onClick={() => setPageNo((value) => Math.max(1, value - 1))}>上一页</button>
+            <button className="btn btn-light" type="button" disabled={loading || pageNo >= pages || pages === 0} onClick={() => setPageNo((value) => value + 1)}>下一页</button>
+          </div>
+        </>
+      ) : (
+        <div className="empty-state compact-empty">
+          <div className="empty-icon">块</div>
+          <h3>暂无分块结果</h3>
+          <p>请先在文档列表中触发「分块处理」。</p>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function ChunkConfigPanel({
+  value,
+  onChange,
+  disabled = false,
+  compact = false,
+}: {
+  value: ChunkFormState;
+  onChange: (value: ChunkFormState) => void;
+  disabled?: boolean;
+  compact?: boolean;
+}) {
+  const strategy = chunkStrategyOptions.find((item) => item.value === value.strategy) || chunkStrategyOptions[0];
+  const usesBoundaryConfig = value.strategy === 'structure_aware' || value.strategy === 'table_aware';
+  const sizeLabel = usesBoundaryConfig ? '目标大小' : '分块大小';
+  const overlapLabel = usesBoundaryConfig ? '重叠字符' : '重叠度';
+
+  function update(partial: Partial<ChunkFormState>) {
+    onChange({ ...value, ...partial });
+  }
+
+  function updateNumber(key: keyof ChunkFormState, nextValue: string) {
+    const parsed = Number(nextValue);
+    update({ [key]: Number.isFinite(parsed) ? parsed : 0 } as Partial<ChunkFormState>);
+  }
+
+  return (
+    <section className={compact ? 'chunk-config-panel compact' : 'chunk-config-panel'}>
+      <div className="chunk-config-title">
+        <div>
+          <strong>分块参数</strong>
+          <span>{strategy.hint}</span>
+        </div>
+        <span>{strategy.label}</span>
+      </div>
+      <label>
+        分块策略
+        <select value={value.strategy} onChange={(event) => update({ strategy: event.target.value as ChunkStrategyMode })} disabled={disabled}>
+          {chunkStrategyOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
+      </label>
+      <div className="chunk-control-grid">
+        <label>
+          {sizeLabel}
+          <input
+            type="number"
+            min={128}
+            max={4000}
+            step={64}
+            value={value.chunkSize}
+            onChange={(event) => updateNumber('chunkSize', event.target.value)}
+            disabled={disabled}
+          />
+        </label>
+        <label>
+          {overlapLabel}
+          <input
+            type="number"
+            min={0}
+            max={Math.max(0, value.chunkSize - 1)}
+            step={16}
+            value={value.overlapSize}
+            onChange={(event) => updateNumber('overlapSize', event.target.value)}
+            disabled={disabled}
+          />
+        </label>
+      </div>
+      {!compact && (
+        <div className="chunk-range-row">
+          <label>
+            {sizeLabel}
+            <input
+              type="range"
+              min={128}
+              max={4000}
+              step={64}
+              value={value.chunkSize}
+              onChange={(event) => updateNumber('chunkSize', event.target.value)}
+              disabled={disabled}
+            />
+          </label>
+          <label>
+            {overlapLabel}
+            <input
+              type="range"
+              min={0}
+              max={Math.max(0, value.chunkSize - 1)}
+              step={16}
+              value={Math.min(value.overlapSize, Math.max(0, value.chunkSize - 1))}
+              onChange={(event) => updateNumber('overlapSize', event.target.value)}
+              disabled={disabled}
+            />
+          </label>
+        </div>
+      )}
+      {usesBoundaryConfig && (
+        <div className="chunk-control-grid">
+          <label>
+            最小字符
+            <input
+              type="number"
+              min={0}
+              max={value.maxChars}
+              step={50}
+              value={value.minChars}
+              onChange={(event) => updateNumber('minChars', event.target.value)}
+              disabled={disabled}
+            />
+          </label>
+          <label>
+            最大字符
+            <input
+              type="number"
+              min={value.chunkSize}
+              max={8000}
+              step={50}
+              value={value.maxChars}
+              onChange={(event) => updateNumber('maxChars', event.target.value)}
+              disabled={disabled}
+            />
+          </label>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ScheduleConfigModal({
+  kbId,
+  doc,
+  onClose,
+  onSuccess,
+}: {
+  kbId: string;
+  doc: KnowledgeDocumentItem;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const initialSchedule = parseScheduleCron(doc.scheduleCron);
+  const [sourceType, setSourceType] = useState(doc.sourceType || 'file');
+  const [sourceLocation, setSourceLocation] = useState(doc.sourceLocation || '');
+  const [syncFrequency, setSyncFrequency] = useState<SyncFrequency>((doc.scheduleEnabled ?? 0) === 1 ? initialSchedule.frequency : 'none');
+  const [syncTime, setSyncTime] = useState(initialSchedule.time);
+  const [syncWeekday, setSyncWeekday] = useState(initialSchedule.weekday);
+  const [syncMonthDay, setSyncMonthDay] = useState(initialSchedule.monthDay);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const scheduleCron = buildScheduleCron(syncFrequency, syncTime, syncWeekday, syncMonthDay);
+      await syncApi.configureSchedule(kbId, doc.id, {
+        sourceType,
+        sourceLocation: sourceType === 'feishu' ? normalizeFeishuSourceLocation(sourceLocation) : sourceLocation,
+        scheduleEnabled: syncFrequency === 'none' ? 0 : 1,
+        scheduleCron,
+      });
+      onSuccess();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-panel" onClick={e => e.stopPropagation()}>
+        <div className="modal-header"><h3>定时同步配置</h3></div>
+        <div className="modal-body">
+          {error && <div className="error-banner modal-error">{error}</div>}
+          <div className="stack-form">
+            <label>
+              来源类型
+              <select value={sourceType} onChange={e => setSourceType(e.target.value)}>
+                <option value="file">本地文件</option>
+                <option value="feishu">飞书文档</option>
+                <option value="url">网页 URL</option>
+              </select>
+            </label>
+            {sourceType !== 'file' && (
+              <label>
+                来源地址
+                <input
+                  value={sourceLocation}
+                  onChange={e => setSourceLocation(e.target.value)}
+                  placeholder={sourceType === 'feishu' ? 'docx:xxxxxx 或 wiki:xxxxxx' : 'https://example.com/article'}
+                />
+              </label>
+            )}
+            <label>
+              启用定时同步
+              <select value={syncFrequency} onChange={e => setSyncFrequency(e.target.value as SyncFrequency)}>
+                <option value="none">不启用</option>
+                <option value="daily">每天</option>
+                <option value="weekly">每周</option>
+                <option value="monthly">每月</option>
+              </select>
+            </label>
+            {syncFrequency !== 'none' && (
+              <label>
+                同步时间
+                <input
+                  type="time"
+                  value={syncTime}
+                  onChange={e => setSyncTime(e.target.value)}
+                />
+              </label>
+            )}
+            {syncFrequency === 'weekly' && (
+              <label>
+                每周几同步
+                <select value={syncWeekday} onChange={e => setSyncWeekday(e.target.value)}>
+                  <option value="1">周一</option>
+                  <option value="2">周二</option>
+                  <option value="3">周三</option>
+                  <option value="4">周四</option>
+                  <option value="5">周五</option>
+                  <option value="6">周六</option>
+                  <option value="7">周日</option>
+                </select>
+              </label>
+            )}
+            {syncFrequency === 'monthly' && (
+              <label>
+                每月几号同步
+                <select value={syncMonthDay} onChange={e => setSyncMonthDay(e.target.value)}>
+                  {Array.from({ length: 28 }, (_, index) => String(index + 1)).map((day) => (
+                    <option key={day} value={day}>{day} 号</option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-light" onClick={onClose} disabled={saving}>取消</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
+            {saving ? '保存中...' : '保存'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DocumentUploadModal({
+  kbId,
+  knowledgeBases = [],
+  onClose,
+  onSuccess,
+}: {
+  kbId?: string;
+  knowledgeBases?: KnowledgeBaseItem[];
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [sourceMode, setSourceMode] = useState<DocumentSourceMode>('file');
+  const [file, setFile] = useState<File | null>(null);
+  const [targetKbId, setTargetKbId] = useState(kbId || knowledgeBases[0]?.id || '');
+  const [sourceLocation, setSourceLocation] = useState('');
+  const [docName, setDocName] = useState('');
+  const [syncFrequency, setSyncFrequency] = useState<SyncFrequency>('none');
+  const [syncTime, setSyncTime] = useState('02:00');
+  const [syncWeekday, setSyncWeekday] = useState('1');
+  const [syncMonthDay, setSyncMonthDay] = useState('1');
+  const [chunkForm, setChunkForm] = useState<ChunkFormState>(defaultChunkForm);
+  const [pipelineId, setPipelineId] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const isFileMode = sourceMode === 'file';
+  const canSubmit = Boolean(kbId || targetKbId)
+    && (isFileMode ? Boolean(file) : Boolean(sourceLocation.trim()))
+    && !submitting;
+
+  useEffect(() => {
+    if (!kbId && !targetKbId && knowledgeBases[0]) {
+      setTargetKbId(knowledgeBases[0].id);
+    }
+  }, [kbId, knowledgeBases, targetKbId]);
+
+  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const selected = event.target.files?.[0] ?? null;
+    setFile(selected);
+    if (selected && !docName.trim()) {
+      setDocName(selected.name);
+    }
+    setError(null);
+  }
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    const actualKbId = kbId || targetKbId;
+    if (!actualKbId) {
+      setError('请选择目标知识库');
+      return;
+    }
+    if (isFileMode && !file) {
+      setError('请选择要上传的文件');
+      return;
+    }
+    if (!isFileMode && !sourceLocation.trim()) {
+      setError(sourceMode === 'feishu' ? '请输入飞书文档地址' : '请输入网页 URL');
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    setProgress(0);
+    try {
+      const normalizedSourceLocation = sourceMode === 'feishu'
+        ? normalizeFeishuSourceLocation(sourceLocation)
+        : sourceLocation.trim();
+      const scheduleCron = buildScheduleCron(syncFrequency, syncTime, syncWeekday, syncMonthDay);
+      if (isFileMode) {
+        await knowledgeBaseApi.uploadDocument(actualKbId, {
+          file: file!,
+          processMode: 'manual',
+          chunkStrategy: chunkForm.strategy,
+          chunkConfig: buildChunkConfig(chunkForm),
+          pipelineId: pipelineId || undefined,
+        }, (event: AxiosProgressEvent) => {
+          if (event.total) setProgress(Math.round((event.loaded / event.total) * 100));
+        });
+      } else {
+        await knowledgeBaseApi.importOnlineDocument(actualKbId, {
+          sourceType: sourceMode,
+          sourceLocation: normalizedSourceLocation,
+          docName: docName.trim() || undefined,
+          processMode: 'manual',
+          chunkStrategy: chunkForm.strategy,
+          chunkConfig: buildChunkConfig(chunkForm),
+          pipelineId: pipelineId || undefined,
+          scheduleEnabled: syncFrequency === 'none' ? 0 : 1,
+          scheduleCron,
+        });
+        setProgress(100);
+      }
+      onSuccess();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function formatSize(bytes: number) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  return (
+    <Modal
+      title="上传文档"
+      onClose={() => { if (!submitting) onClose(); }}
+      footer={
+        <>
+          <button className="btn btn-light" type="button" disabled={submitting} onClick={onClose}>取消</button>
+          <button className="btn btn-primary" type="submit" form="document-upload-form" disabled={!canSubmit}>
+            {submitting ? (isFileMode ? `上传中 ${progress}%` : '导入中...') : (isFileMode ? '开始上传' : '开始导入')}
+          </button>
+        </>
+      }
+    >
+      {error && <div className="error-banner modal-error">{error}</div>}
+      <form id="document-upload-form" className="stack-form" onSubmit={handleSubmit}>
+        <div className="source-mode-tabs" role="tablist" aria-label="文档来源">
+          <button
+            className={sourceMode === 'file' ? 'active' : ''}
+            type="button"
+            role="tab"
+            aria-selected={sourceMode === 'file'}
+            onClick={() => setSourceMode('file')}
+            disabled={submitting}
+          >
+            <UiIcon name="filePlus" />
+            本地文件
+          </button>
+          <button
+            className={sourceMode === 'feishu' ? 'active' : ''}
+            type="button"
+            role="tab"
+            aria-selected={sourceMode === 'feishu'}
+            onClick={() => setSourceMode('feishu')}
+            disabled={submitting}
+          >
+            <UiIcon name="fileText" />
+            飞书文档
+          </button>
+          <button
+            className={sourceMode === 'url' ? 'active' : ''}
+            type="button"
+            role="tab"
+            aria-selected={sourceMode === 'url'}
+            onClick={() => setSourceMode('url')}
+            disabled={submitting}
+          >
+            <UiIcon name="fileSearch" />
+            网页 URL
+          </button>
+        </div>
+
+        {!kbId && (
+          <label>
+            目标知识库
+            <select value={targetKbId} onChange={(e) => setTargetKbId(e.target.value)} disabled={submitting}>
+              <option value="">请选择知识库</option>
+              {knowledgeBases.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </label>
+        )}
+
+        {isFileMode ? (
+          <>
+            <label>
+              选择文件
+              <div className="file-picker">
+                <input ref={fileInputRef} type="file" onChange={handleFileChange} style={{ display: 'none' }} />
+                <button className="btn btn-light" type="button" onClick={() => fileInputRef.current?.click()} disabled={submitting}>
+                  {file ? '重新选择' : '浏览文件'}
+                </button>
+                <span className="file-picker-name">{file ? file.name : '未选择文件'}</span>
+              </div>
+            </label>
+
+            {file && (
+              <div className="file-info-grid">
+                <span>文件名</span><strong>{file.name}</strong>
+                <span>文件大小</span><strong>{formatSize(file.size)}</strong>
+                <span>文件类型</span><strong>{file.type || '未知'}</strong>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="online-source-panel">
+            <label>
+              {sourceMode === 'feishu' ? '飞书文档地址' : '网页 URL'}
+              <input
+                value={sourceLocation}
+                onChange={(e) => setSourceLocation(e.target.value)}
+                disabled={submitting}
+                placeholder={sourceMode === 'feishu' ? 'docx:xxxxxx、wiki:xxxxxx 或 sheet:xxxxxx' : 'https://example.com/article'}
+              />
+            </label>
+            <label>
+              文档名称
+              <input
+                value={docName}
+                onChange={(e) => setDocName(e.target.value)}
+                disabled={submitting}
+                placeholder={sourceMode === 'feishu' ? '留空时使用飞书标题' : '留空时使用网页标题'}
+              />
+            </label>
+            <div className="inline-switch-row">
+              <label>
+                定时同步
+                <select value={syncFrequency} onChange={(e) => setSyncFrequency(e.target.value as SyncFrequency)} disabled={submitting}>
+                  <option value="none">不启用</option>
+                  <option value="daily">每天</option>
+                  <option value="weekly">每周</option>
+                  <option value="monthly">每月</option>
+                </select>
+              </label>
+              {syncFrequency !== 'none' && (
+                <label>
+                  同步时间
+                  <input
+                    type="time"
+                    value={syncTime}
+                    onChange={(e) => setSyncTime(e.target.value)}
+                    disabled={submitting}
+                  />
+                </label>
+              )}
+            </div>
+            {syncFrequency === 'weekly' && (
+              <label>
+                每周几同步
+                <select value={syncWeekday} onChange={(e) => setSyncWeekday(e.target.value)} disabled={submitting}>
+                  <option value="1">周一</option>
+                  <option value="2">周二</option>
+                  <option value="3">周三</option>
+                  <option value="4">周四</option>
+                  <option value="5">周五</option>
+                  <option value="6">周六</option>
+                  <option value="7">周日</option>
+                </select>
+              </label>
+            )}
+            {syncFrequency === 'monthly' && (
+              <label>
+                每月几号同步
+                <select value={syncMonthDay} onChange={(e) => setSyncMonthDay(e.target.value)} disabled={submitting}>
+                  {Array.from({ length: 28 }, (_, index) => String(index + 1)).map((day) => (
+                    <option key={day} value={day}>{day} 号</option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+        )}
+
+        {submitting && (
+          <div className="upload-progress">
+            <div className="progress-track">
+              <div className="progress-fill" style={{ width: `${isFileMode ? progress : 70}%` }} />
+            </div>
+            <small>{isFileMode ? `${progress}%` : '正在抓取来源内容'}</small>
+          </div>
+        )}
+
+        <ChunkConfigPanel value={chunkForm} onChange={setChunkForm} disabled={submitting} />
+
+        <details className="advanced-section">
+          <summary>流水线配置</summary>
+          <label>
+            Pipeline ID
+            <input
+              value={pipelineId}
+              onChange={(e) => setPipelineId(e.target.value)}
+              disabled={submitting}
+              placeholder="可选，留空则使用默认处理链路"
+            />
+          </label>
+        </details>
+      </form>
+    </Modal>
+  );
+}
+
+function formatFileSize(bytes?: number | null) {
+  if (!bytes && bytes !== 0) return '--';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function buildChunkConfig(form: ChunkFormState) {
+  const chunkSize = Math.max(128, Math.round(form.chunkSize || defaultChunkForm.chunkSize));
+  const overlapSize = Math.min(Math.max(0, Math.round(form.overlapSize || 0)), Math.max(0, chunkSize - 1));
+  if (form.strategy === 'structure_aware' || form.strategy === 'table_aware') {
+    const minChars = Math.max(0, Math.round(form.minChars || 0));
+    const maxChars = Math.max(chunkSize, Math.round(form.maxChars || chunkSize));
+    return JSON.stringify({
+      targetChars: chunkSize,
+      overlapChars: overlapSize,
+      maxChars,
+      minChars: Math.min(minChars, maxChars),
+    });
+  }
+  return JSON.stringify({ chunkSize, overlapSize });
+}
+
+function parseChunkForm(strategy?: string | null, config?: string | null): ChunkFormState {
+  const normalizedStrategy = normalizeChunkStrategy(strategy);
+  const next = { ...defaultChunkForm, strategy: normalizedStrategy };
+  if (!config) return next;
+  try {
+    const parsed = JSON.parse(config) as Record<string, unknown>;
+    const chunkSize = readConfigNumber(parsed.chunkSize, parsed.targetChars, next.chunkSize);
+    const overlapSize = readConfigNumber(parsed.overlapSize, parsed.overlapChars, next.overlapSize);
+    return {
+      ...next,
+      chunkSize,
+      overlapSize,
+      minChars: readConfigNumber(parsed.minChars, undefined, next.minChars),
+      maxChars: readConfigNumber(parsed.maxChars, undefined, Math.max(next.maxChars, chunkSize)),
+    };
+  } catch {
+    return next;
+  }
+}
+
+function normalizeChunkStrategy(value?: string | null): ChunkStrategyMode {
+  const normalized = (value || '').trim().toLowerCase().replace(/-/g, '_');
+  if (normalized === 'recursive') return 'recursive_character';
+  if (normalized === 'fixed') return 'fixed_size';
+  if (chunkStrategyOptions.some((item) => item.value === normalized)) {
+    return normalized as ChunkStrategyMode;
+  }
+  return defaultChunkForm.strategy;
+}
+
+function readConfigNumber(primary: unknown, fallback: unknown, defaultValue: number) {
+  const value = typeof primary === 'number' || typeof primary === 'string' ? primary : fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : defaultValue;
+}
+
+function ensureMarkdownFileName(value: string) {
+  const cleaned = value.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim() || '未命名文档';
+  return /\.(md|markdown|txt)$/i.test(cleaned) ? cleaned : `${cleaned}.md`;
+}
+
+function stripKnownExtension(value: string) {
+  return value.replace(/\.(md|markdown|txt|pdf|docx?|xlsx?|pptx?)$/i, '');
+}
+
+function buildEditableDocumentTemplate(doc: KnowledgeDocumentItem) {
+  return [
+    `# ${stripKnownExtension(doc.docName)}`,
+    '',
+    `> 来源：${doc.sourceType || 'file'} · 创建时间：${formatDate(doc.createTime)}`,
+    '',
+    '请在这里整理本版本正文内容。',
+  ].join('\n');
+}
+
+function readLocalDocumentVersions(docId: string): LocalDocumentVersion[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(documentVersionStoreKey);
+    const parsed = raw ? JSON.parse(raw) as LocalDocumentVersion[] : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item) => item.docId === docId);
+  } catch {
+    return [];
+  }
+}
+
+function appendLocalDocumentVersion(version: LocalDocumentVersion) {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = window.localStorage.getItem(documentVersionStoreKey);
+    const parsed = raw ? JSON.parse(raw) as LocalDocumentVersion[] : [];
+    const next = Array.isArray(parsed) ? parsed.concat(version).slice(-100) : [version];
+    window.localStorage.setItem(documentVersionStoreKey, JSON.stringify(next));
+  } catch {
+    // Local version history is a convenience cache; upload success is the source of truth.
+  }
+}
+
+function buildScheduleCron(frequency: SyncFrequency, time: string, weekday: string, monthDay: string) {
+  if (frequency === 'none') return undefined;
+  const [hour = '2', minute = '0'] = time.split(':');
+  const safeHour = Math.min(Math.max(Number(hour) || 0, 0), 23);
+  const safeMinute = Math.min(Math.max(Number(minute) || 0, 0), 59);
+  if (frequency === 'weekly') {
+    const safeWeekday = Math.min(Math.max(Number(weekday) || 1, 1), 7);
+    return `0 ${safeMinute} ${safeHour} ? * ${safeWeekday}`;
+  }
+  if (frequency === 'monthly') {
+    const safeMonthDay = Math.min(Math.max(Number(monthDay) || 1, 1), 28);
+    return `0 ${safeMinute} ${safeHour} ${safeMonthDay} * ?`;
+  }
+  return `0 ${safeMinute} ${safeHour} * * ?`;
+}
+
+function parseScheduleCron(value?: string | null): { frequency: SyncFrequency; time: string; weekday: string; monthDay: string } {
+  if (!value) {
+    return { frequency: 'daily', time: '02:00', weekday: '1', monthDay: '1' };
+  }
+  const parts = value.trim().split(/\s+/);
+  if (parts.length < 6) {
+    return { frequency: 'daily', time: '02:00', weekday: '1', monthDay: '1' };
+  }
+  const minute = parts[1]?.padStart(2, '0') || '00';
+  const hour = parts[2]?.padStart(2, '0') || '02';
+  const time = `${hour}:${minute}`;
+  if (parts[3] === '?' && parts[5] !== '?') {
+    return { frequency: 'weekly', time, weekday: parts[5], monthDay: '1' };
+  }
+  if (parts[3] !== '*' && parts[3] !== '?' && parts[5] === '?') {
+    return { frequency: 'monthly', time, weekday: '1', monthDay: parts[3] };
+  }
+  return { frequency: 'daily', time, weekday: '1', monthDay: '1' };
+}
+
+function formatScheduleCron(value?: string | null) {
+  if (!value) return '未启用';
+  const parsed = parseScheduleCron(value);
+  if (parsed.frequency === 'weekly') {
+    const weekdayLabels: Record<string, string> = {
+      '1': '周一',
+      '2': '周二',
+      '3': '周三',
+      '4': '周四',
+      '5': '周五',
+      '6': '周六',
+      '7': '周日',
+    };
+    return `每${weekdayLabels[parsed.weekday] || '周'} ${parsed.time}`;
+  }
+  if (parsed.frequency === 'monthly') {
+    return `每月 ${parsed.monthDay} 号 ${parsed.time}`;
+  }
+  return `每天 ${parsed.time}`;
+}
+
+function normalizeFeishuSourceLocation(value: string) {
+  const input = value.trim();
+  if (/^(docx|wiki|sheet):/i.test(input)) {
+    return input.replace(/^(docx|wiki|sheet):/i, (prefix) => prefix.toLowerCase());
+  }
+  try {
+    const url = new URL(input);
+    const segments = url.pathname.split('/').filter(Boolean);
+    const wikiIndex = segments.findIndex((segment) => segment === 'wiki');
+    if (wikiIndex >= 0 && segments[wikiIndex + 1]) {
+      return `wiki:${segments[wikiIndex + 1]}`;
+    }
+    const docxIndex = segments.findIndex((segment) => segment === 'docx');
+    if (docxIndex >= 0 && segments[docxIndex + 1]) {
+      return `docx:${segments[docxIndex + 1]}`;
+    }
+    const sheetsIndex = segments.findIndex((segment) => segment === 'sheets' || segment === 'sheet');
+    if (sheetsIndex >= 0 && segments[sheetsIndex + 1]) {
+      return `sheet:${segments[sheetsIndex + 1]}`;
+    }
+  } catch {
+    return input;
+  }
+  return input;
+}
+
+function AdminDocumentChunksPage() {
+  const { id: kbId, documentId } = useParams();
+  const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeBaseItem | null>(null);
+  const [document, setDocument] = useState<KnowledgeDocumentItem | null>(null);
+  const [records, setRecords] = useState<KnowledgeChunkItem[]>([]);
+  const [selectedChunk, setSelectedChunk] = useState<KnowledgeChunkItem | null>(null);
+  const [pageNo, setPageNo] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [total, setTotal] = useState(0);
+  const [pages, setPages] = useState(0);
+  const [loadingMeta, setLoadingMeta] = useState(false);
+  const [loadingChunks, setLoadingChunks] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draftContent, setDraftContent] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const isDirty = editing && selectedChunk != null && draftContent !== (selectedChunk.content || '');
+  const totalChars = records.reduce((sum, item) => sum + (item.charCount || 0), 0);
+  const averageChars = records.length ? Math.round(totalChars / records.length) : 0;
+
+  useEffect(() => {
+    if (!kbId || !documentId) return;
+    let active = true;
+    setLoadingMeta(true);
+    setError(null);
+    Promise.all([
+      knowledgeBaseApi.getKnowledgeBase(kbId),
+      knowledgeBaseApi.getKnowledgeDocuments(kbId),
+    ])
+      .then(([kb, documents]) => {
+        if (!active) return;
+        setKnowledgeBase(kb);
+        const found = (documents || []).find((item) => item.id === documentId) || null;
+        setDocument(found);
+        if (!found) {
+          setError('文档不存在或不属于当前知识库');
+        }
+      })
+      .catch((err) => {
+        if (active) setError(getErrorMessage(err));
+      })
+      .finally(() => {
+        if (active) setLoadingMeta(false);
+      });
+    return () => { active = false; };
+  }, [kbId, documentId]);
+
+  useEffect(() => {
+    if (!documentId) return;
+    let active = true;
+    setLoadingChunks(true);
+    setError(null);
+    knowledgeBaseApi.getKnowledgeDocumentChunks(documentId, pageNo, pageSize)
+      .then((page) => {
+        if (!active) return;
+        const nextRecords = page.records || [];
+        setRecords(nextRecords);
+        setTotal(page.total || 0);
+        setPages(page.pages || 0);
+        const stillSelected = nextRecords.find((item) => item.id === selectedChunk?.id) || null;
+        const nextSelected = stillSelected || nextRecords[0] || null;
+        setSelectedChunk(nextSelected);
+        setDraftContent(nextSelected?.content || '');
+        setEditing(false);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setRecords([]);
+        setTotal(0);
+        setPages(0);
+        setSelectedChunk(null);
+        setDraftContent('');
+        setError(getErrorMessage(err));
+      })
+      .finally(() => {
+        if (active) setLoadingChunks(false);
+      });
+    return () => { active = false; };
+  }, [documentId, pageNo, pageSize]);
+
+  function confirmDiscard() {
+    return !isDirty || window.confirm('当前分块有未保存修改，确认放弃并继续吗？');
+  }
+
+  function selectChunk(chunk: KnowledgeChunkItem) {
+    if (selectedChunk?.id === chunk.id) return;
+    if (!confirmDiscard()) return;
+    setSelectedChunk(chunk);
+    setDraftContent(chunk.content || '');
+    setEditing(false);
+    setMessage(null);
+  }
+
+  function changePage(nextPageNo: number) {
+    if (!confirmDiscard()) return;
+    setMessage(null);
+    setPageNo(Math.min(Math.max(1, nextPageNo), Math.max(1, pages)));
+  }
+
+  function changePageSize(nextPageSize: number) {
+    if (!confirmDiscard()) return;
+    setMessage(null);
+    setPageSize(nextPageSize);
+    setPageNo(1);
+  }
+
+  function startEdit() {
+    if (!selectedChunk) return;
+    setDraftContent(selectedChunk.content || '');
+    setEditing(true);
+    setMessage(null);
+    setError(null);
+  }
+
+  function cancelEdit() {
+    if (!confirmDiscard()) return;
+    setDraftContent(selectedChunk?.content || '');
+    setEditing(false);
+  }
+
+  async function saveChunk() {
+    if (!selectedChunk || !documentId) return;
+    if (!draftContent.trim()) {
+      setError('分块内容不能为空');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const updated = await knowledgeBaseApi.updateKnowledgeDocumentChunk(documentId, selectedChunk.id, draftContent);
+      setRecords((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+      setSelectedChunk(updated);
+      setDraftContent(updated.content || '');
+      setEditing(false);
+      setMessage('保存成功');
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <AppShell mode="admin">
+      <PageContainer
+        title="分块结果"
+        description={document ? `文档：${document.docName}` : '查看并编辑文档分块内容'}
+        actions={(
+          <div className="page-actions">
+            <Link className="btn btn-light" to={`/admin/knowledge-bases/${kbId || ''}/documents`}>返回文档列表</Link>
+          </div>
+        )}
+      >
+        <section className="chunk-workbench-summary">
+          <div>
+            <span>知识库</span>
+            <strong>{knowledgeBase?.name || kbId || '--'}</strong>
+          </div>
+          <div>
+            <span>文档</span>
+            <strong>{document?.docName || documentId || '--'}</strong>
+          </div>
+          <div>
+            <span>总分块</span>
+            <strong>{total || document?.chunkCount || 0}</strong>
+          </div>
+          <div>
+            <span>本页平均</span>
+            <strong>{averageChars ? `${averageChars} 字符` : '--'}</strong>
+          </div>
+        </section>
+
+        {error && <div className="error-banner">{error}</div>}
+        {message && <p className="toast-line">{message}</p>}
+
+        <section className="chunk-workbench card">
+          <aside className="chunk-index-panel">
+            <div className="chunk-panel-title">
+              <div>
+                <h3>分块列表</h3>
+                <p>{loadingChunks ? '正在加载...' : `${total} 条分块`}</p>
+              </div>
+              <label>
+                每页
+                <select value={pageSize} onChange={(event) => changePageSize(Number(event.target.value))} disabled={loadingChunks || saving}>
+                  {[10, 20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
+                </select>
+              </label>
+            </div>
+
+            {loadingMeta || loadingChunks ? (
+              <div className="loading-state compact-empty">正在加载分块...</div>
+            ) : records.length ? (
+              <div className="chunk-index-list">
+                {records.map((chunk) => (
+                  <button
+                    key={chunk.id}
+                    className={selectedChunk?.id === chunk.id ? 'chunk-index-item active' : 'chunk-index-item'}
+                    type="button"
+                    onClick={() => selectChunk(chunk)}
+                  >
+                    <span>
+                      <strong>Chunk #{(chunk.chunkIndex ?? 0) + 1}</strong>
+                      <em>{chunk.enabled === 0 ? '已禁用' : '已启用'}</em>
+                    </span>
+                    <p>{chunk.content || '暂无内容'}</p>
+                    <small>{chunk.charCount ?? 0} 字符 · {formatDate(chunk.updateTime)}</small>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state compact-empty">
+                <div className="empty-icon">块</div>
+                <h3>暂无分块结果</h3>
+                <p>请先在文档列表中触发「分块处理」。</p>
+              </div>
+            )}
+
+            {total > 0 && (
+              <div className="pagination-bar chunk-pagination">
+                <span>第 {pages ? pageNo : 0} / {pages} 页</span>
+                <button className="btn btn-light" type="button" disabled={loadingChunks || pageNo <= 1} onClick={() => changePage(pageNo - 1)}>上一页</button>
+                <button className="btn btn-light" type="button" disabled={loadingChunks || pageNo >= pages || pages === 0} onClick={() => changePage(pageNo + 1)}>下一页</button>
+              </div>
+            )}
+          </aside>
+
+          <article className="chunk-detail-panel">
+            {selectedChunk ? (
+              <>
+                <header className="chunk-detail-header">
+                  <div>
+                    <span>当前分块</span>
+                    <h3>Chunk #{(selectedChunk.chunkIndex ?? 0) + 1}</h3>
+                    <p>{selectedChunk.id}</p>
+                  </div>
+                  <div className="chunk-detail-actions">
+                    {editing && isDirty && <span className="edit-state">未保存</span>}
+                    {editing ? (
+                      <>
+                        <button className="btn btn-light" type="button" onClick={cancelEdit} disabled={saving}>取消</button>
+                        <button className="btn btn-primary" type="button" onClick={saveChunk} disabled={saving || !isDirty}>
+                          {saving ? '保存中...' : '保存修改'}
+                        </button>
+                      </>
+                    ) : (
+                      <button className="btn btn-primary" type="button" onClick={startEdit}>编辑内容</button>
+                    )}
+                  </div>
+                </header>
+
+                <div className="chunk-meta-grid">
+                  <div><span>字符数</span><strong>{selectedChunk.charCount ?? 0}</strong></div>
+                  <div><span>Token 数</span><strong>{selectedChunk.tokenCount ?? '--'}</strong></div>
+                  <div><span>状态</span><strong>{selectedChunk.enabled === 0 ? '已禁用' : '已启用'}</strong></div>
+                  <div><span>更新时间</span><strong>{formatDate(selectedChunk.updateTime)}</strong></div>
+                </div>
+
+                <div className="chunk-hash-line">
+                  <span>内容 Hash</span>
+                  <code>{selectedChunk.contentHash || '--'}</code>
+                </div>
+
+                {editing ? (
+                  <label className="chunk-editor">
+                    分块内容
+                    <textarea
+                      value={draftContent}
+                      onChange={(event) => setDraftContent(event.target.value)}
+                      disabled={saving}
+                      spellCheck={false}
+                    />
+                  </label>
+                ) : (
+                  <section className="chunk-full-content">
+                    <pre>{selectedChunk.content || '暂无内容'}</pre>
+                  </section>
+                )}
+              </>
+            ) : (
+              <div className="empty-state compact-empty">
+                <div className="empty-icon">读</div>
+                <h3>请选择分块</h3>
+                <p>从左侧列表点击任意分块查看完整内容。</p>
+              </div>
+            )}
+          </article>
+        </section>
       </PageContainer>
     </AppShell>
   );
@@ -1281,6 +3468,142 @@ function AdminDashboardPage() {
         </section>
       </section>
     </AppShell>
+  );
+}
+
+function AdminIngestionPage() {
+  const [tasks, setTasks] = useState<SyncTaskOverviewItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [historyDocId, setHistoryDocId] = useState<string | null>(null);
+  const [triggering, setTriggering] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setTasks(await syncApi.getSyncTaskOverview());
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '加载失败');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleTrigger = async (docId: string) => {
+    setTriggering(docId);
+    try {
+      const result = await syncApi.triggerSync(docId);
+      alert(result.message);
+      load();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : '触发同步失败');
+    } finally {
+      setTriggering(null);
+    }
+  };
+
+  return (
+    <AppShell mode="admin">
+      <PageContainer title="入库任务" description="跟踪文档定时同步、解析和向量化任务。">
+        {error && <div className="error-banner" style={{ marginBottom: 12 }}>{error}</div>}
+        <div className="card" style={{ overflow: 'auto' }}>
+          <table className="document-table">
+            <thead>
+              <tr>
+                <th>文档名称</th>
+                <th>来源类型</th>
+                <th>来源地址</th>
+                <th>同步计划</th>
+                <th>最近同步</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 24 }}>加载中...</td></tr>
+              ) : tasks.length === 0 ? (
+                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 24 }}>暂无定时同步任务</td></tr>
+              ) : tasks.map(t => (
+                <tr key={t.docId}>
+                  <td>{t.docName}</td>
+                  <td><span className={`doc-status-${t.sourceType === 'feishu' ? 'running' : 'success'}`}>{t.sourceType}</span></td>
+                  <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.sourceLocation}</td>
+                  <td>{formatScheduleCron(t.scheduleCron)}</td>
+                  <td>{t.lastSyncTime ? new Date(t.lastSyncTime).toLocaleString() : '从未同步'}</td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn-light" disabled={triggering === t.docId} onClick={() => handleTrigger(t.docId)}>
+                        {triggering === t.docId ? '同步中...' : '立即同步'}
+                      </button>
+                      <button className="btn-light" onClick={() => setHistoryDocId(t.docId)}>历史</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {historyDocId && <SyncHistoryModal docId={historyDocId} onClose={() => setHistoryDocId(null)} />}
+      </PageContainer>
+    </AppShell>
+  );
+}
+
+function SyncHistoryModal({ docId, onClose }: { docId: string; onClose: () => void }) {
+  const [history, setHistory] = useState<SyncHistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [pageNo, setPageNo] = useState(1);
+  const [total, setTotal] = useState(0);
+  const pageSize = 10;
+
+  useEffect(() => {
+    setLoading(true);
+    syncApi.getSyncHistory(docId, pageNo, pageSize)
+      .then(res => { setHistory(res.records); setTotal(res.total); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [docId, pageNo]);
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-panel" onClick={e => e.stopPropagation()} style={{ maxWidth: 800 }}>
+        <div className="modal-header"><h3>同步历史</h3></div>
+        <div className="modal-body">
+          <table className="document-table">
+            <thead>
+              <tr><th>时间</th><th>状态</th><th>内容变更</th><th>耗时</th><th>错误信息</th></tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={5} style={{ textAlign: 'center' }}>加载中...</td></tr>
+              ) : history.length === 0 ? (
+                <tr><td colSpan={5} style={{ textAlign: 'center' }}>暂无记录</td></tr>
+              ) : history.map(h => (
+                <tr key={h.id}>
+                  <td>{new Date(h.createTime).toLocaleString()}</td>
+                  <td><span className={`doc-status-${h.syncStatus === 'success' ? 'success' : 'error'}`}>{h.syncStatus === 'success' ? '成功' : '失败'}</span></td>
+                  <td>{h.contentChanged ? '是' : '否'}</td>
+                  <td>{h.durationMs != null ? `${h.durationMs}ms` : '-'}</td>
+                  <td style={{ maxWidth: 200, color: '#a33a2f' }}>{h.errorMessage || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {total > pageSize && (
+            <div className="pagination-bar" style={{ marginTop: 12 }}>
+              <button className="btn-light" disabled={pageNo <= 1} onClick={() => setPageNo(p => p - 1)}>上一页</button>
+              <span>第 {pageNo} 页 / 共 {Math.ceil(total / pageSize)} 页</span>
+              <button className="btn-light" disabled={pageNo * pageSize >= total} onClick={() => setPageNo(p => p + 1)}>下一页</button>
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn-light" onClick={onClose}>关闭</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1638,10 +3961,44 @@ function formatDate(value?: string | null) {
   return date.toLocaleString();
 }
 
+function formatShortDate(value?: string | null) {
+  if (!value) return '--';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  return `${date.getMonth() + 1}-${date.getDate().toString().padStart(2, '0')}`;
+}
+
 function statusLabel(status: string) {
   if (status === 'enabled') return '启用';
   if (status === 'disabled') return '停用';
   return status || '--';
+}
+
+function docStatusLabel(status: string) {
+  const normalized = normalizeDocStatus(status);
+  if (normalized === 'pending') return '等待处理';
+  if (normalized === 'processing') return '处理中';
+  if (normalized === 'completed') return '处理成功';
+  if (normalized === 'failed') return '处理失败';
+  return status || '--';
+}
+
+function docStatusClass(status: string) {
+  const normalized = normalizeDocStatus(status);
+  if (normalized === 'completed') return 'success';
+  if (normalized === 'failed') return 'error';
+  if (normalized === 'processing') return 'running';
+  return 'pending';
+}
+
+function normalizeDocStatus(status: string) {
+  if (status === 'running') return 'processing';
+  if (status === 'success') return 'completed';
+  return status;
 }
 
 function getErrorMessage(error: unknown) {

@@ -155,6 +155,18 @@ class KnowledgeBaseServiceImplTest {
         assertNotNull(page.getRecords());
     }
 
+    @Test
+    void detailReturnsKnowledgeBaseChunkCount() {
+        when(knowledgeBaseMapper.selectById("kb-1")).thenReturn(existingKnowledgeBase());
+        when(documentGuard.countActiveDocuments("kb-1")).thenReturn(2L);
+        when(documentGuard.sumActiveDocumentChunks("kb-1")).thenReturn(12L);
+
+        KnowledgeBaseVO result = knowledgeBaseService.detail("kb-1");
+
+        assertEquals(2L, result.documentCount());
+        assertEquals(12L, result.chunkCount());
+    }
+
     private LoginUser loginUser() {
         return new LoginUser("user-1", "alice", "alice@example.com", "Alice", null, Set.of("admin"), Set.of());
     }

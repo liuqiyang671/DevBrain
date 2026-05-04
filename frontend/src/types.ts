@@ -53,6 +53,7 @@ export interface KnowledgeBaseCreatePayload {
   description?: string;
   collectionName: string;
   embeddingModel: string;
+  status?: KnowledgeBaseStatus;
 }
 
 export interface KnowledgeBaseUpdatePayload {
@@ -60,6 +61,80 @@ export interface KnowledgeBaseUpdatePayload {
   description?: string;
   embeddingModel: string;
   status: KnowledgeBaseStatus;
+}
+
+export interface KnowledgeDocumentItem {
+  id: string;
+  kbId: string;
+  docName: string;
+  enabled: number;
+  chunkCount: number;
+  fileUrl: string;
+  fileType: string;
+  fileSize: number;
+  processMode: string;
+  status: string;
+  sourceType: string;
+  sourceLocation?: string | null;
+  chunkStrategy?: string | null;
+  chunkConfig?: string | null;
+  pipelineId?: string | null;
+  scheduleEnabled?: number;
+  scheduleCron?: string | null;
+  lastSyncTime?: string | null;
+  lastContentHash?: string | null;
+  createTime: string;
+  updateTime: string;
+}
+
+export interface KnowledgeDocumentPageParams {
+  pageNo: number;
+  pageSize: number;
+  kbId?: string;
+  keyword?: string;
+  status?: string;
+  enabled?: number | '';
+}
+
+export interface DocumentUploadPayload {
+  file: File;
+  processMode?: string;
+  chunkStrategy?: string;
+  chunkConfig?: string;
+  pipelineId?: string;
+}
+
+export interface OnlineDocumentImportPayload {
+  sourceType: 'feishu' | 'url';
+  sourceLocation: string;
+  docName?: string;
+  processMode?: string;
+  chunkStrategy?: string;
+  chunkConfig?: string;
+  pipelineId?: string;
+  scheduleEnabled?: number;
+  scheduleCron?: string;
+}
+
+export interface DocumentChunkItem {
+  chunkId: string;
+  index: number;
+  content: string;
+  charCount: number;
+}
+
+export interface KnowledgeChunkItem {
+  id: string;
+  kbId: string;
+  docId: string;
+  chunkIndex: number;
+  content: string;
+  contentHash?: string | null;
+  charCount?: number | null;
+  tokenCount?: number | null;
+  enabled?: number | null;
+  createTime?: string | null;
+  updateTime?: string | null;
 }
 
 export interface RoleItem {
@@ -84,4 +159,34 @@ export interface ResourceItem {
   pathPattern: string;
   permissionCode?: string | null;
   publicAccess: number;
+}
+
+export interface ScheduleConfigPayload {
+  sourceType: string;
+  sourceLocation: string;
+  scheduleEnabled: number;
+  scheduleCron?: string;
+}
+
+export interface SyncHistoryItem {
+  id: string;
+  docId: string;
+  syncStatus: string;
+  contentHash?: string;
+  contentChanged: number;
+  errorMessage?: string;
+  durationMs?: number;
+  createTime: string;
+}
+
+export interface SyncTaskOverviewItem {
+  docId: string;
+  docName: string;
+  kbId: string;
+  sourceType: string;
+  sourceLocation: string;
+  scheduleEnabled: number;
+  scheduleCron?: string;
+  lastSyncTime?: string;
+  lastContentHash?: string;
 }
