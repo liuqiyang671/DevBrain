@@ -71,6 +71,12 @@ public class KnowledgeDocumentDO {
     /** 关联的处理流水线 ID。 */
     private String pipelineId;
 
+    /** 最近一次同步成功时间。 */
+    private Date lastSyncTime;
+
+    /** 最近一次同步内容的 SHA-256 哈希。 */
+    private String lastContentHash;
+
     /** 创建人用户 ID。 */
     private String createdBy;
 

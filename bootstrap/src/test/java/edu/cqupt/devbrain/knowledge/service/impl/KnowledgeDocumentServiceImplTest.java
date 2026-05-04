@@ -1,5 +1,7 @@
 package edu.cqupt.devbrain.knowledge.service.impl;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import edu.cqupt.devbrain.framework.context.LoginUser;
 import edu.cqupt.devbrain.framework.context.UserContext;
 import edu.cqupt.devbrain.framework.exception.ClientException;
@@ -18,6 +20,8 @@ import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.IOException;
+import java.util.Date;
+import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -214,6 +218,87 @@ class KnowledgeDocumentServiceImplTest {
         assertEquals("chunk", result.processMode());
     }
 
+    @Test
+    void listByKnowledgeBaseReturnsDocumentsOrderedByServiceQuery() {
+        when(knowledgeBaseMapper.selectById("kb-1")).thenReturn(existingKnowledgeBase());
+        when(knowledgeDocumentMapper.selectList(any())).thenReturn(List.of(existingDocument("doc-1", "kb-1")));
+
+        List<DocumentVO> result = service.listByKnowledgeBase("kb-1");
+
+        assertEquals(1, result.size());
+        assertEquals("doc-1", result.get(0).id());
+        assertEquals("研发手册.md", result.get(0).docName());
+        verify(knowledgeDocumentMapper).selectList(any());
+    }
+
+    @Test
+    void pageReturnsConvertedDocumentsAndClampsPageSize() {
+        KnowledgeDocumentDO document = existingDocument("doc-1", "kb-1");
+        when(knowledgeBaseMapper.selectById("kb-1")).thenReturn(existingKnowledgeBase());
+        when(knowledgeDocumentMapper.selectPage(any(), any())).thenAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            Page<KnowledgeDocumentDO> page = invocation.getArgument(0);
+            page.setRecords(List.of(document));
+            page.setTotal(1);
+            return page;
+        });
+
+        IPage<DocumentVO> result = service.page(0, 200, "kb-1", "研发", "pending", 1);
+
+        assertEquals(1, result.getCurrent());
+        assertEquals(100, result.getSize());
+        assertEquals(1, result.getTotal());
+        assertEquals("doc-1", result.getRecords().get(0).id());
+        assertEquals("pending", result.getRecords().get(0).status());
+    }
+
+    @Test
+    void updateEnabledChangesOwnedDocument() {
+        UserContext.set(loginUser());
+        when(knowledgeBaseMapper.selectById("kb-1")).thenReturn(existingKnowledgeBase());
+        KnowledgeDocumentDO document = existingDocument("doc-1", "kb-1");
+        when(knowledgeDocumentMapper.selectById("doc-1")).thenReturn(document);
+
+        DocumentVO result = service.updateEnabled("kb-1", "doc-1", 0);
+
+        assertEquals(0, result.enabled());
+        assertEquals("user-1", document.getUpdatedBy());
+        verify(knowledgeDocumentMapper).updateById(document);
+    }
+
+    @Test
+    void updateEnabledRejectsInvalidFlag() {
+        assertThrows(ClientException.class, () -> service.updateEnabled("kb-1", "doc-1", 2));
+
+        verify(knowledgeDocumentMapper, never()).updateById(any(KnowledgeDocumentDO.class));
+    }
+
+    @Test
+    void deleteLogicallyDeletesOwnedDocumentAndStorageObject() {
+        UserContext.set(loginUser());
+        when(knowledgeBaseMapper.selectById("kb-1")).thenReturn(existingKnowledgeBase());
+        KnowledgeDocumentDO document = existingDocument("doc-1", "kb-1");
+        document.setFileUrl("http://localhost:9000/devbrain/abc123.pdf");
+        when(knowledgeDocumentMapper.selectById("doc-1")).thenReturn(document);
+
+        service.delete("kb-1", "doc-1");
+
+        assertEquals("user-1", document.getUpdatedBy());
+        verify(fileStorageService).delete("abc123.pdf");
+        verify(knowledgeDocumentMapper).deleteById(document);
+    }
+
+    @Test
+    void deleteRejectsCrossKnowledgeBaseDocument() {
+        when(knowledgeBaseMapper.selectById("kb-1")).thenReturn(existingKnowledgeBase());
+        when(knowledgeDocumentMapper.selectById("doc-1")).thenReturn(existingDocument("doc-1", "other-kb"));
+
+        assertThrows(ClientException.class, () -> service.delete("kb-1", "doc-1"));
+
+        verify(knowledgeDocumentMapper, never()).deleteById(any(KnowledgeDocumentDO.class));
+        verify(fileStorageService, never()).delete(anyString());
+    }
+
     // ========== helpers ==========
 
     private LoginUser loginUser() {
@@ -231,5 +316,30 @@ class KnowledgeDocumentServiceImplTest {
         kb.setUpdatedBy("user-1");
         kb.setDeleted(0);
         return kb;
+    }
+
+    private KnowledgeDocumentDO existingDocument(String id, String kbId) {
+        KnowledgeDocumentDO document = new KnowledgeDocumentDO();
+        document.setId(id);
+        document.setKbId(kbId);
+        document.setDocName("研发手册.md");
+        document.setEnabled(1);
+        document.setChunkCount(0L);
+        document.setFileUrl("http://localhost:9000/devbrain/doc.md");
+        document.setFileType("md");
+        document.setFileSize(128L);
+        document.setProcessMode("chunk");
+        document.setStatus("pending");
+        document.setSourceType("file");
+        document.setSourceLocation("研发手册.md");
+        document.setChunkStrategy("fixed");
+        document.setChunkConfig("{\"chunkSize\":512}");
+        document.setPipelineId("pipe-1");
+        document.setCreatedBy("user-1");
+        document.setUpdatedBy("user-1");
+        document.setCreateTime(new Date());
+        document.setUpdateTime(new Date());
+        document.setDeleted(0);
+        return document;
     }
 }

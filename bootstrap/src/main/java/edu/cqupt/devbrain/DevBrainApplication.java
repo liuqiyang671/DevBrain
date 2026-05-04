@@ -4,6 +4,9 @@ import edu.cqupt.devbrain.auth.core.AuthSecurityProperties;
 import edu.cqupt.devbrain.knowledge.config.ObjectStorageProperties;
 import edu.cqupt.devbrain.knowledge.config.UploadProperties;
 import edu.cqupt.devbrain.knowledge.config.UploadRateLimitProperties;
+import edu.cqupt.devbrain.sync.config.FeishuProperties;
+import edu.cqupt.devbrain.sync.config.SyncProperties;
+import edu.cqupt.devbrain.sync.config.XxlJobProperties;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -22,9 +25,18 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 @SpringBootApplication
 @MapperScan({
         "edu.cqupt.devbrain.user.dao.mapper",
-        "edu.cqupt.devbrain.knowledge.dao.mapper"
+        "edu.cqupt.devbrain.knowledge.dao.mapper",
+        "edu.cqupt.devbrain.sync.dao.mapper"
 })
-@EnableConfigurationProperties({AuthSecurityProperties.class, UploadProperties.class, ObjectStorageProperties.class, UploadRateLimitProperties.class})
+@EnableConfigurationProperties({
+        AuthSecurityProperties.class,
+        UploadProperties.class,
+        ObjectStorageProperties.class,
+        UploadRateLimitProperties.class,
+        FeishuProperties.class,
+        XxlJobProperties.class,
+        SyncProperties.class
+})
 public class DevBrainApplication {
 
     public static void main(String[] args) {

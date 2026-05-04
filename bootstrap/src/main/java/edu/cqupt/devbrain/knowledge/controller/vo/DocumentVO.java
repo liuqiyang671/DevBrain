@@ -19,9 +19,13 @@ import java.util.Date;
  * @param sourceLocation 来源地址
  * @param chunkStrategy  切片策略
  * @param chunkConfig    切片配置（JSON 字符串）
- * @param pipelineId     处理流水线 ID
- * @param createTime     创建时间
- * @param updateTime     更新时间
+ * @param pipelineId       处理流水线 ID
+ * @param createTime       创建时间
+ * @param updateTime       更新时间
+ * @param scheduleEnabled  是否启用定时同步
+ * @param scheduleCron     定时同步 Cron 表达式
+ * @param lastSyncTime     最近一次同步时间
+ * @param lastContentHash  最近一次同步内容哈希
  */
 public record DocumentVO(
         String id,
@@ -40,6 +44,10 @@ public record DocumentVO(
         String chunkConfig,
         String pipelineId,
         Date createTime,
-        Date updateTime
+        Date updateTime,
+        Integer scheduleEnabled,
+        String scheduleCron,
+        Date lastSyncTime,
+        String lastContentHash
 ) {
 }

@@ -6,6 +6,8 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+import java.util.List;
+
 /**
  * 知识库文档数据访问接口 -- 基于 MyBatis-Plus 提供基础 CRUD 和分页能力。
  * <p>
@@ -40,4 +42,20 @@ public interface KnowledgeDocumentMapper extends BaseMapper<KnowledgeDocumentDO>
             """)
     int updatePendingOrFailedToProcessing(@Param("docId") String docId,
                                           @Param("userId") String userId);
+
+    /**
+     * 查询所有启用了定时同步的文档（source_type 为 feishu 或 url）。
+     */
+    @Select("""
+            SELECT id, kb_id, doc_name, source_type, source_location,
+                   schedule_cron, last_sync_time, last_content_hash,
+                   file_url, file_type, chunk_strategy, chunk_config, process_mode
+              FROM t_knowledge_document
+             WHERE deleted = 0
+               AND schedule_enabled = 1
+               AND source_type IN ('feishu', 'url')
+               AND source_location IS NOT NULL
+               AND source_location != ''
+            """)
+    List<KnowledgeDocumentDO> selectSyncEnabledDocuments();
 }
