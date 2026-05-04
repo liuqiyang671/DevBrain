@@ -62,9 +62,19 @@ DevBrain-CQUPT 是一套端到端的智能知识库管理系统，旨在将非�
 | 功能 | 状态 | 说明 |
 |------|------|------|
 | 多格式解析 | ✅ 已完成 | Apache Tika（PDF/Office/HTML）+ Markdown 专用解析器 |
-| 智能文本分块 | ✅ 已完成 | FixedSizeTextChunker，按自然边界切割，支持重叠窗口 |
+| 5 种智能分块策略 | ✅ 已完成 | 固定大小、结构感知、递归字符、问答对、表格感知 |
 | 文本清理 | ✅ 已完成 | BOM 移除、断行 URL 修复、CJK 软换行处理 |
 | 文档生命周期 | ✅ 已完成 | pending → processing → completed / failed |
+| 异步分块流水线 | ✅ 已完成 | RocketMQ 事务消息驱动，解析→分块→持久化 |
+
+### 分块管理
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 分块 CRUD | ✅ 已完成 | 创建、查询、更新、删除分块 |
+| 分块启用/禁用 | ✅ 已完成 | 控制单个分块是否参与语义检索 |
+| 批量操作 | ✅ 已完成 | 批量启用/禁用、按文档批量删除 |
+| 向量库同步 | ✅ 已完成 | 分块变更自动同步至 pgvector |
 
 ### 在线文档同步
 
@@ -150,9 +160,9 @@ devbrain-cqupt/
 │   └── src/main/java/edu/cqupt/devbrain/
 │       ├── auth/               # 认证、JWT、CSRF、登录风控
 │       ├── user/               # 用户、角色、权限 CRUD
-│       ├── knowledge/          # 知识库、文档上传/管理
-│       ├── sync/               # 在线文档同步（飞书/URL）
-│       └── core/               # 文档解析（Tika/Markdown）与分块
+│       ├── knowledge/          # 知识库、文档上传/管理、分块 CRUD
+│       ├── sync/               # 在线文档同步（飞书/URL/定时调度）
+│       └── core/               # 文档解析（Tika/Markdown）与 5 种分块策略
 ├── framework/                  # 通用框架层（响应、异常、幂等、追踪、MQ、分布式ID）
 ├── infra-ai/                   # AI 供应商适配（规划中）
 ├── mcp-server/                 # MCP 工具服务入口
@@ -409,6 +419,35 @@ git diff --check
 | `PUT` | `/knowledge-base/{kbId}/docs/{docId}/enabled` | 启用/禁用 | `knowledge:write` |
 | `DELETE` | `/knowledge-base/{kbId}/docs/{docId}` | 删除文档 | `knowledge:write` |
 
+### 文档解析接口
+
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| `POST` | `/documents/{docId}/parse` | 触发文档解析 | `knowledge:write` |
+| `GET` | `/documents/{docId}/parse-status` | 查询解析状态 | `knowledge:read` |
+| `GET` | `/documents/{docId}/chunks` | 查询文档分块 | `knowledge:read` |
+| `POST` | `/documents/{docId}/parse/retry` | 重试解析 | `knowledge:write` |
+
+### 分块管理接口
+
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| `GET` | `/documents/{docId}/chunk-page` | 分块分页查询 | `knowledge:read` |
+| `POST` | `/documents/{docId}/chunks` | 创建分块 | `knowledge:write` |
+| `PUT` | `/documents/{docId}/chunks/{chunkId}` | 更新分块 | `knowledge:write` |
+| `DELETE` | `/documents/{docId}/chunks/{chunkId}` | 删除分块 | `knowledge:write` |
+| `PUT` | `/chunks/{chunkId}/enable` | 启用/禁用分块 | `knowledge:write` |
+| `PUT` | `/chunks/batch-enable` | 批量启用/禁用 | `knowledge:write` |
+
+### 同步任务接口
+
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| `PUT` | `/knowledge-base/{kbId}/docs/{docId}/schedule` | 更新定时同步配置 | `knowledge:write` |
+| `POST` | `/sync-tasks/{docId}/trigger` | 手动触发同步 | `knowledge:write` |
+| `GET` | `/sync-tasks/{docId}/history` | 查询同步历史 | `knowledge:read` |
+| `GET` | `/sync-tasks/overview` | 同步任务总览 | `knowledge:read` |
+
 ---
 
 ## 文档
@@ -422,6 +461,8 @@ git diff --check
 | [用户认证与权限](docs/user-auth-and-permission.md) | JWT 认证、CSRF、RBAC 机制详解 |
 | [知识库 CRUD](docs/knowledge-base-crud.md) | 知识库表设计、接口、测试 |
 | [文档上传功能](docs/document-upload-guide.md) | 上传、解析、分块、限流全流程 |
+| [文档分块策略](docs/document-chunking-guide.md) | 5 种分块策略详解、配置参数、选型建议 |
+| [在线文档同步](docs/document-sync-guide.md) | 飞书/URL 同步、定时调度、同步历史 |
 
 ---
 

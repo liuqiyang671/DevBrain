@@ -147,7 +147,7 @@ pending（待处理） → processing（处理中） → completed（已完成�
 | 缓存/限流 | Redisson + Redis | 分布式信号量限流 |
 | 消息队列 | RocketMQ | 异步文档处理（已引入依赖） |
 | 文档解析 | Apache Tika 3.2.3 | PDF/Office/HTML 文本提取 |
-| 分块引擎 | 自研 ChunkingStrategy | 固定大小 / 结构感知两种策略 |
+| 分块引擎 | 自研 ChunkingStrategy | 5 种策略：固定大小、结构感知、递归字符、问答对、表格感知 |
 
 ### 3.3 模块依赖关系
 
@@ -428,10 +428,16 @@ Step 8: 补偿机制（DB 写入失败时）
 |------|------|
 | `ChunkingStrategy`（接口） | 定义 `chunk(text, config)` 分块策略接口 |
 | `FixedSizeTextChunker` | 固定大小分块，支持智能边界切割 |
+| `StructureAwareTextChunker` | Markdown 结构感知分块，保持标题/代码块完整性 |
+| `RecursiveCharacterTextChunker` | 递归字符分块，按分隔符层级递归切分 |
+| `QaPairTextChunker` | 问答对分块，识别 Q:/A: 格式保持完整 |
+| `TableAwareTextChunker` | 表格感知分块，Markdown 表格作为原子块 |
 | `ChunkingStrategyFactory` | 策略注册表，按 `ChunkingMode` 枚举索引 |
 | `VectorChunk` | 分块数据单元，含雪花 ID、内容、元数据、嵌入向量 |
 
-**FixedSizeTextChunker 分块逻辑：**
+> 5 种策略的详细原理、配置参数和选型建议请参阅 [文档分块策略指南](document-chunking-guide.md)。
+
+**FixedSizeTextChunker 分块逻辑（默认策略）：**
 1. 文本规范化：统一换行符、修复断行 URL、处理 CJK 软换行
 2. 按自然边界切割优先级：换行符 > 中文句末 > 英文句末
 3. 在重叠搜索窗口内寻找最佳切割点

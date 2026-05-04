@@ -10,7 +10,9 @@
 | `database-and-middleware-setup.md` | 本地 PostgreSQL、Redis、MinIO、RocketMQ 搭建和验证说明。 |
 | `user-auth-and-permission.md` | Cookie JWT 认证、CSRF、RBAC 表、接口、前端接入和安全注意事项。 |
 | `knowledge-base-crud.md` | 知识库表、后端接口、RBAC 绑定、前端后台页面和测试命令。 |
-| `document-upload-guide.md` | 文档上传、解析、分块、限流、同步全流程技术文档。 |
+| `document-upload-guide.md` | 文档上传、解析、限流全流程技术文档。 |
+| `document-chunking-guide.md` | 5 种分块策略详解（固定大小、结构感知、递归字符、问答对、表格感知）、配置参数、选型建议。 |
+| `document-sync-guide.md` | 在线文档同步（飞书/URL）、定时调度、同步历史、数据源适配器架构。 |
 | `project-initialization-report.md` | 2026-05-01 项目初始化的历史记录。 |
 
 ## 历史构建材料
