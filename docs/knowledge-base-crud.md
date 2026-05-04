@@ -14,9 +14,11 @@
 - 逻辑删除知识库。
 - 通过 RBAC 控制知识库读写权限。
 
-本模块只覆盖知识库本身，不包含文档上传、文档分块、向量写入和 RAG 检索。删除前的文档存在性检查通过 `KnowledgeBaseDocumentGuard` 预留扩展点，后续文档模块接入后替换为真实文档计数。
+本模块只覆盖知识库本身，不包含文档上传、文档分块、向量写入和 RAG 检索。文档上传功能已独立实现，详见 `docs/document-upload-guide.md`。
 
-前端后台页面 `/admin/knowledge-bases` 已接入真实知识库 CRUD API；用户侧 `/knowledge-bases` 和文档详情相关页面目前仍是入口/占位视图，等待文档模块继续接入。
+删除前的文档存在性检查通过 `KnowledgeBaseDocumentGuard` 实现：`DefaultKnowledgeBaseDocumentGuard` 已注入 `KnowledgeDocumentMapper`，查询 `t_knowledge_document` 中 `kb_id = {id}` 且 `deleted = 0` 的记录数，有文档时拒绝删除知识库。
+
+前端后台页面 `/admin/knowledge-bases` 已接入真实知识库 CRUD API；用户侧 `/knowledge-bases` 和文档详情相关页面已接入文档上传和管理功能。
 
 ## 2. 后端分层
 
@@ -30,7 +32,7 @@ Controller -> Service -> Mapper -> PostgreSQL
 | Request | `KnowledgeBaseCreateRequest`、`KnowledgeBaseUpdateRequest`、`KnowledgeBasePageRequest` | 接收创建、更新和分页查询参数，使用 Jakarta Validation |
 | VO | `KnowledgeBaseVO` | 返回给前端的知识库视图对象，避免直接暴露 DO |
 | Service | `KnowledgeBaseService`、`KnowledgeBaseServiceImpl` | 承载业务规则、校验、唯一性检查、逻辑删除 |
-| Guard | `KnowledgeBaseDocumentGuard` | 删除保护扩展点，用于统计未删除文档数量 |
+| Guard | `KnowledgeBaseDocumentGuard`、`DefaultKnowledgeBaseDocumentGuard` | 删除保护，查询 `t_knowledge_document` 统计未删除文档数量 |
 | DAO | `KnowledgeBaseDO`、`KnowledgeBaseMapper` | 映射 `t_knowledge_base` 并复用 MyBatis-Plus CRUD |
 
 Mapper 扫描已在 `DevBrainApplication` 中加入：
@@ -73,6 +75,9 @@ schema 版本记录：
 
 ```text
 04-knowledge-base-crud
+05-knowledge-document          -- 文档表
+06-knowledge-document-management -- 文档管理接口资源
+07-document-sync               -- 文档定时同步（飞书/URL）及同步历史表
 ```
 
 ## 4. 权限与认证
@@ -192,7 +197,7 @@ collectionName 创建后不允许修改
 - 返回 0：允许删除。
 - 大于 0：拒绝删除，提示先删除文档。
 
-当前默认实现 `DefaultKnowledgeBaseDocumentGuard` 返回 0。后续文档模块上线后，应替换为查询 `t_knowledge_document` 中 `kb_id = {id}` 且 `deleted = 0` 的记录数。
+`DefaultKnowledgeBaseDocumentGuard` 已注入 `KnowledgeDocumentMapper`，查询 `t_knowledge_document` 中 `kb_id = {id}` 且 `deleted = 0` 的记录数。
 
 ## 6. 参数校验规则
 
@@ -307,7 +312,7 @@ git diff --check
 - 非法 `collectionName` 创建失败。
 - 更新时拒绝修改 `collectionName`。
 - 查询不存在知识库失败。
-- 知识库下仍有文档时拒绝删除。
+- 知识库下仍有文档时拒绝删除（`DefaultKnowledgeBaseDocumentGuardTest`）。
 - 无文档时执行逻辑删除。
 - 分页参数裁剪到安全范围。
 
@@ -323,25 +328,7 @@ git diff --check
 
 ## 10. 后续接入建议
 
-文档模块上线后，建议新增真实的 `KnowledgeBaseDocumentGuard` 实现：
+文档模块已上线，`DefaultKnowledgeBaseDocumentGuard` 已实现真实文档计数。后续可考虑：
 
-```java
-@Service
-public class DatabaseKnowledgeBaseDocumentGuard implements KnowledgeBaseDocumentGuard {
-
-    private final KnowledgeDocumentMapper knowledgeDocumentMapper;
-
-    public DatabaseKnowledgeBaseDocumentGuard(KnowledgeDocumentMapper knowledgeDocumentMapper) {
-        this.knowledgeDocumentMapper = knowledgeDocumentMapper;
-    }
-
-    @Override
-    public long countActiveDocuments(String knowledgeBaseId) {
-        return knowledgeDocumentMapper.selectCount(Wrappers.lambdaQuery(KnowledgeDocumentDO.class)
-                .eq(KnowledgeDocumentDO::getKbId, knowledgeBaseId)
-                .eq(KnowledgeDocumentDO::getDeleted, 0));
-    }
-}
-```
-
-如果存在多个 `KnowledgeBaseDocumentGuard` Bean，需要移除默认实现或用 `@ConditionalOnMissingBean` 包装默认实现，避免 Bean 注入冲突。
+- 文档解析完成后通过 RocketMQ 消息更新 `chunk_count`，使知识库详情返回准确的文档切片总数。
+- RAG 检索模块接入后，在知识库详情中返回最近活跃文档和检索统计。

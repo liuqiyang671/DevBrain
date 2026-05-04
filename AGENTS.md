@@ -4,10 +4,10 @@
 
 ## 当前结构
 
-- `bootstrap/` 包含可运行的 Spring Boot 应用、认证/RBAC 接口和知识库接口。
+- `bootstrap/` 包含可运行的 Spring Boot 应用、认证/RBAC 接口、知识库接口、文档上传/解析/同步接口。
 - `framework/` 包含可复用约定、异常、请求 ID、用户上下文、MyBatis-Plus 辅助能力、幂等、追踪、Redis key 序列化、RocketMQ 适配器和分布式 ID 支持。
-- `frontend/` 包含 React 应用。认证/RBAC 和后台知识库管理已经调用真实 API；部分其他后台页面仍是路由占位。
-- `resources/database/schema.sql` 是当前本地 schema，包含 pgvector 初始化、认证/RBAC 表和种子数据、知识库表和 RBAC 资源规则，以及 `t_devbrain_schema_info` 版本记录。
+- `frontend/` 包含 React 应用。认证/RBAC、后台知识库管理和文档管理已调用真实 API；部分其他后台页面仍是路由占位。
+- `resources/database/schema.sql` 是当前本地 schema，包含 pgvector 初始化、认证/RBAC 表和种子数据、知识库表和 RBAC 资源规则、文档表、文档同步历史表，以及 `t_devbrain_schema_info` 版本记录（v02-v07）。
 - `docs/build/` 和 `docs/promtForBuild/` 是历史提示词材料，只用于理解意图；查当前文档入口请看 `docs/README.md`。
 
 ## 命令
