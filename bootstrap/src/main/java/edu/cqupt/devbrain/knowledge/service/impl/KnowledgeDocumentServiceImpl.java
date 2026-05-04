@@ -306,7 +306,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         try {
             DocumentSourceAdapter adapter = adapterRegistry.requireAdapter(sourceType);
             return adapter.fetchContent(sourceLocation);
-        } catch (ClientException | ServiceException e) {
+        } catch (ServiceException e) {
             throw e;
         } catch (Exception e) {
             log.error("在线文档抓取失败，sourceType={}, sourceLocation={}", sourceType, sourceLocation, e);
