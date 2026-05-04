@@ -32,6 +32,10 @@ rocketmq:
   name-server: ${ROCKETMQ_NAME_SERVER:localhost:9876}
   producer:
     group: ${ROCKETMQ_PRODUCER_GROUP:devbrain-producer-group}
+  topic:
+    document-chunk: ${ROCKETMQ_TOPIC_DOCUMENT_CHUNK:devbrain-document-chunk}
+  group:
+    document-chunk: ${ROCKETMQ_GROUP_DOCUMENT_CHUNK:devbrain-document-chunk-group}
 
 devbrain:
   auth:

@@ -1,6 +1,7 @@
 package edu.cqupt.devbrain.framework.mq.producer;
 
 import org.apache.rocketmq.client.producer.SendResult;
+import org.apache.rocketmq.client.producer.TransactionSendResult;
 
 import java.util.function.Consumer;
 
@@ -33,7 +34,8 @@ public interface MessageQueueProducer {
      * @param bizDesc          业务描述
      * @param body             业务载荷
      * @param localTransaction 本地事务逻辑，在 half 消息发送成功后执行；抛异常则回滚消息
+     * @return RocketMQ 事务发送结果，包含消息发送状态和本地事务状态
      */
-    void sendInTransaction(String topic, String keys, String bizDesc, Object body,
-                           Consumer<Object> localTransaction);
+    TransactionSendResult sendInTransaction(String topic, String keys, String bizDesc, Object body,
+                                            Consumer<Object> localTransaction);
 }

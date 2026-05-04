@@ -15,6 +15,7 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.InputStream;
@@ -75,6 +76,20 @@ public class S3FileStorageService implements FileStorageService {
         } catch (Exception e) {
             log.error("文件上传失败，objectKey={}", objectKey, e);
             throw new ServiceException("文件上传到对象存储失败：" + e.getMessage(), BaseErrorCode.REMOTE_ERROR);
+        }
+    }
+
+    @Override
+    public InputStream download(String objectKey) {
+        try {
+            log.info("开始下载文件，objectKey={}", objectKey);
+            return s3Client.getObject(GetObjectRequest.builder()
+                    .bucket(properties.getBucket())
+                    .key(objectKey)
+                    .build());
+        } catch (Exception e) {
+            log.error("文件下载失败，objectKey={}", objectKey, e);
+            throw new ServiceException("文件下载失败：" + e.getMessage(), BaseErrorCode.REMOTE_ERROR);
         }
     }
 

@@ -48,8 +48,8 @@ public class RocketMQProducerAdapter implements MessageQueueProducer {
     }
 
     @Override
-    public void sendInTransaction(String topic, String keys, String bizDesc, Object body,
-                                  Consumer<Object> localTransaction) {
+    public TransactionSendResult sendInTransaction(String topic, String keys, String bizDesc, Object body,
+                                                   Consumer<Object> localTransaction) {
         keys = StrUtil.isEmpty(keys) ? UUID.randomUUID().toString() : keys;
         String txId = UUID.randomUUID().toString();
 
@@ -72,5 +72,6 @@ public class RocketMQProducerAdapter implements MessageQueueProducer {
 
         log.info("[生产者] {} - 事务消息发送结果: {}, 本地事务状态: {}, 消息ID: {}, Keys: {}",
                 bizDesc, sendResult.getSendStatus(), sendResult.getLocalTransactionState(), sendResult.getMsgId(), keys);
+        return sendResult;
     }
 }

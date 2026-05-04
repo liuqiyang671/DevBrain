@@ -19,6 +19,14 @@ public interface FileStorageService {
     String upload(String objectKey, InputStream inputStream, String contentType, long size);
 
     /**
+     * 从对象存储中下载文件。
+     *
+     * @param objectKey 对象 key，不含 bucket 前缀
+     * @return 文件输入流，由调用方负责关闭
+     */
+    InputStream download(String objectKey);
+
+    /**
      * 删除对象存储中的文件。
      *
      * @param objectKey 对象 key
