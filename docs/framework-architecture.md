@@ -5,7 +5,7 @@
 
 ## 1. 模块概述
 
-Framework 模块是 DevBrain-CQUPT 项目的基础架构层，提供统一的错误码体系、异常处理、幂等性控制、缓存策略、分布式 ID 生成、消息队列集成、分布式追踪等核心能力。bootstrap 模块中的 `core` 包还包含文档解析（Apache Tika + Markdown）和 5 种文本分块策略（固定大小、结构感知、递归字符、问答对、表格感知）子系统，详见 `docs/document-chunking-guide.md`。在线文档同步模块（飞书/URL）详见 `docs/document-sync-guide.md`。
+Framework 模块是 DevBrain-CQUPT 项目的基础架构层，提供统一的错误码体系、异常处理、幂等性控制、缓存策略、分布式 ID 生成、消息队列集成、分布式追踪等核心能力。bootstrap 模块中的 `core` 包还包含文档解析（Apache Tika + Markdown）和 5 种文本分块策略（固定大小、结构感知、递归字符、问答对、表格感知）子系统，详见 `docs/document-chunking-guide.md`。bootstrap 模块中的 `rag` 包提供 pgvector 向量存储与余弦相似度检索能力。infra-ai 模块提供 Embedding 服务路由与多提供商适配（Ollama 本地 / SiliconFlow 云端），详见 `docs/embedding-configuration-guide.md`。在线文档同步模块（飞书/URL）详见 `docs/document-sync-guide.md`。
 
 该模块遵循"约定优于配置"原则，通过标准化的接口和抽象类，为业务层提供统一的技术底座。
 

@@ -767,12 +767,9 @@ spring:
 
 ### 10.3 异步处理队列
 
-**现状：** 文档上传后状态为 `pending`，但缺少异步处理触发机制。
+**状态：✅ 已实现**
 
-**建议：**
-- 项目已引入 `rocketmq-spring-boot-starter` 依赖
-- 上传成功后发送 RocketMQ 消息，触发文档解析、分块、向量化流程
-- 处理完成后更新文档状态为 `completed` 或 `failed`
+已通过 RocketMQ 事务消息实现异步文档解析流水线。上传成功后发送事务消息，Consumer 消费后执行文本提取、分块、向量化全流程。详见 `DocumentParseServiceImpl` 和 `DocumentParseController`。
 
 ### 10.4 文档解析缓存
 
@@ -792,9 +789,9 @@ spring:
 
 ### 10.7 ChunkLog DDL 补全
 
-**现状：** `t_knowledge_document_chunk_log` 表的 DDL 未出现在 `schema.sql` 中。
+**状态：✅ 已实现**
 
-**建议：** 将该表的建表语句补充至 `schema.sql`，确保数据库迁移的一致性。
+`t_knowledge_document_chunk_log` 表的 DDL 已在 schema 版本 `08-document-chunking` 中补充至 `resources/database/schema.sql`。
 
 ---
 

@@ -313,5 +313,5 @@ t_knowledge_base ──── t_knowledge_document ──── t_knowledge_chun
 | RocketMQ NameServer | 9876 | 消息队列 |
 | RocketMQ Broker | 10911 | 消息代理 |
 | 前端 Dev Server | 5173 | Vite 开发服务器 |
-| 后端 API | 8080 | Spring Boot 应用 |
+| 后端 API | 9090 | Spring Boot 应用 |
 | MCP Server | 9099 | MCP 工具服务器（可选） |

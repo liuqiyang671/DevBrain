@@ -78,6 +78,8 @@ schema 版本记录：
 05-knowledge-document          -- 文档表
 06-knowledge-document-management -- 文档管理接口资源
 07-document-sync               -- 文档定时同步（飞书/URL）及同步历史表
+08-document-chunking           -- 文档分块表与分块处理日志表
+09-knowledge-vector-storage    -- 向量存储表与 pgvector HNSW 索引
 ```
 
 ## 4. 权限与认证

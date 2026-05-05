@@ -85,6 +85,17 @@ DevBrain-CQUPT 是一套端到端的智能知识库管理系统，旨在将非�
 | 定时同步调度 | ✅ 已完成 | Cron 表达式配置，支持 XXL-JOB |
 | 同步历史记录 | ✅ 已完成 | 内容哈希比对，记录变更与耗时 |
 
+### Embedding 向量化与语义检索
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| Embedding 服务 | ✅ 已完成 | 多提供商路由（Ollama 本地 + SiliconFlow 云端），优先级降级 |
+| 向量存储 | ✅ 已完成 | pgvector HNSW 索引，余弦相似度检索 |
+| 向量空间管理 | ✅ 已完成 | 知识库级别向量空间隔离（collectionName） |
+| 向量同步 | ✅ 已完成 | 分块变更自动同步向量库 |
+| 语义检索 | ✅ 已完成 | Top-K 余弦相似度检索，ef_search=200 优化 |
+| RAG 对话 | 🔲 规划中 | 基于知识库的语义问答（LLM 生成） |
+
 ### 前端界面
 
 | 功能 | 状态 | 说明 |
@@ -93,9 +104,9 @@ DevBrain-CQUPT 是一套端到端的智能知识库管理系统，旨在将非�
 | 用户工作台 | ✅ 已完成 | 个人仪表盘 |
 | 后台管理 | ✅ 已完成 | 用户、角色、资源规则管理 |
 | 知识库管理 | ✅ 已完成 | 后台知识库 CRUD |
-| 文档管理 | ✅ 已完成 | 文档上传、列表、启用/禁用、删除 |
-| RAG 对话 | 🔲 规划中 | 基于知识库的语义问答 |
-| AI Embedding 集成 | 🔲 规划中 | 对接向量化模型服务 |
+| 文档管理 | ✅ 已完成 | 文档上传、列表、启用/禁用、删除、在线导入 |
+| 文档分块查看 | ✅ 已完成 | 分块内容查看与编辑 |
+| 同步任务管理 | ✅ 已完成 | 同步配置、手动触发、同步历史 |
 
 ---
 
@@ -162,13 +173,14 @@ devbrain-cqupt/
 │       ├── user/               # 用户、角色、权限 CRUD
 │       ├── knowledge/          # 知识库、文档上传/管理、分块 CRUD
 │       ├── sync/               # 在线文档同步（飞书/URL/定时调度）
-│       └── core/               # 文档解析（Tika/Markdown）与 5 种分块策略
+│       ├── core/               # 文档解析（Tika/Markdown）与 5 种分块策略
+│       └── rag/                # 向量存储（pgvector）与语义检索
 ├── framework/                  # 通用框架层（响应、异常、幂等、追踪、MQ、分布式ID）
-├── infra-ai/                   # AI 供应商适配（规划中）
-├── mcp-server/                 # MCP 工具服务入口
+├── infra-ai/                   # AI 基础设施（Embedding 服务路由、多提供商适配）
+├── mcp-server/                 # MCP 工具服务入口（规划中）
 ├── frontend/                   # React + Vite 前端应用
 ├── resources/
-│   ├── database/schema.sql     # 本地开发 Schema（v02-v07）
+│   ├── database/schema.sql     # 本地开发 Schema（v02-v09）
 │   └── docker/                 # Docker Compose 编排文件
 ├── docs/                       # 开发文档与架构说明
 └── pom.xml                     # Maven 父工程
@@ -289,6 +301,9 @@ docker exec devbrain-postgres psql -U devbrain -d devbrain -f /docker-entrypoint
 | `DEVBRAIN_JWT_SECRET` | `devbrain-local-secret-...` | JWT 签名密钥 |
 | `DEVBRAIN_FEISHU_APP_ID` | 空 | 飞书应用 ID（同步功能） |
 | `DEVBRAIN_FEISHU_APP_SECRET` | 空 | 飞书应用密钥（同步功能） |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama 本地 Embedding 服务地址 |
+| `SILICONFLOW_API_KEY` | 空 | SiliconFlow 云端 Embedding API Key |
+| `RAG_DEFAULT_DIMENSION` | `1536` | Embedding 向量维度 |
 
 > 生产环境必须通过环境变量、密钥管理器或部署配置覆盖所有密码和密钥。
 
@@ -463,6 +478,8 @@ git diff --check
 | [文档上传功能](docs/document-upload-guide.md) | 上传、解析、分块、限流全流程 |
 | [文档分块策略](docs/document-chunking-guide.md) | 5 种分块策略详解、配置参数、选型建议 |
 | [在线文档同步](docs/document-sync-guide.md) | 飞书/URL 同步、定时调度、同步历史 |
+| [Embedding 配置指南](docs/embedding-configuration-guide.md) | Embedding 提供商、模型配置、维度约束、Ollama/SiliconFlow 配置 |
+| [Embedding 安全方案](docs/embedding-security-guide.md) | 数据隐私风险分析、本地化 Embedding、脱敏、加密存储方案 |
 | [面试总结文档](docs/interview-preparation.md) | 功能概述、技术方案、面试问题预测与解答、优化建议 |
 | [面试 Q&A 大全](docs/interview-qa-comprehensive.md) | 57 道面试题，覆盖 16 个技术领域，三层深度解答 |
 
