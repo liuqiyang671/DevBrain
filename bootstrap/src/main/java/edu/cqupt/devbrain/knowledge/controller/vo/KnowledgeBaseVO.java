@@ -12,6 +12,7 @@ import java.util.Date;
  * @param collectionName 向量集合名称
  * @param status         知识库状态
  * @param documentCount  当前知识库下未删除文档数量
+ * @param chunkCount     当前知识库下未删除文档的 Chunk 总数
  * @param createdBy      创建人用户 ID
  * @param updatedBy      最近更新人用户 ID
  * @param createTime     创建时间
@@ -25,6 +26,7 @@ public record KnowledgeBaseVO(
         String collectionName,
         String status,
         Long documentCount,
+        Long chunkCount,
         String createdBy,
         String updatedBy,
         Date createTime,

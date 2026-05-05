@@ -10,6 +10,8 @@ import edu.cqupt.devbrain.knowledge.controller.vo.KnowledgeBaseVO;
 import edu.cqupt.devbrain.knowledge.dao.entity.KnowledgeBaseDO;
 import edu.cqupt.devbrain.knowledge.dao.mapper.KnowledgeBaseMapper;
 import edu.cqupt.devbrain.knowledge.service.KnowledgeBaseDocumentGuard;
+import edu.cqupt.devbrain.rag.core.vector.VectorSpaceSpec;
+import edu.cqupt.devbrain.rag.core.vector.VectorStoreAdmin;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -32,8 +34,9 @@ class KnowledgeBaseServiceImplTest {
 
     private final KnowledgeBaseMapper knowledgeBaseMapper = mock(KnowledgeBaseMapper.class);
     private final KnowledgeBaseDocumentGuard documentGuard = mock(KnowledgeBaseDocumentGuard.class);
+    private final VectorStoreAdmin vectorStoreAdmin = mock(VectorStoreAdmin.class);
     private final KnowledgeBaseServiceImpl knowledgeBaseService =
-            new KnowledgeBaseServiceImpl(knowledgeBaseMapper, documentGuard);
+            new KnowledgeBaseServiceImpl(knowledgeBaseMapper, documentGuard, vectorStoreAdmin);
 
     @AfterEach
     void clearUserContext() {
@@ -55,6 +58,10 @@ class KnowledgeBaseServiceImplTest {
 
         ArgumentCaptor<KnowledgeBaseDO> captor = ArgumentCaptor.forClass(KnowledgeBaseDO.class);
         verify(knowledgeBaseMapper).insert(captor.capture());
+        ArgumentCaptor<VectorSpaceSpec> specCaptor = ArgumentCaptor.forClass(VectorSpaceSpec.class);
+        verify(vectorStoreAdmin).ensureVectorSpace(specCaptor.capture());
+        assertEquals("dev_docs", specCaptor.getValue().spaceId().logicalName());
+        assertEquals("知识库 研发知识库 的向量空间", specCaptor.getValue().remark());
         KnowledgeBaseDO saved = captor.getValue();
         assertEquals("研发知识库", saved.getName());
         assertEquals("qwen-embedding", saved.getEmbeddingModel());
@@ -80,6 +87,7 @@ class KnowledgeBaseServiceImplTest {
         )));
 
         verify(knowledgeBaseMapper, never()).insert(any(KnowledgeBaseDO.class));
+        verify(vectorStoreAdmin, never()).ensureVectorSpace(any(VectorSpaceSpec.class));
     }
 
     @Test
@@ -95,6 +103,7 @@ class KnowledgeBaseServiceImplTest {
         )));
 
         verify(knowledgeBaseMapper, never()).insert(any(KnowledgeBaseDO.class));
+        verify(vectorStoreAdmin, never()).ensureVectorSpace(any(VectorSpaceSpec.class));
     }
 
     @Test

@@ -26,6 +26,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.ByteArrayInputStream;
@@ -33,6 +34,7 @@ import java.io.InputStream;
 import java.util.Date;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -47,6 +49,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
 
 /**
  * 文档分块端到端集成测试。
@@ -81,6 +84,12 @@ class ChunkingIntegrationTest {
     @BeforeEach
     void setUp() {
         UserContext.set(loginUser());
+        doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            Consumer<TransactionStatus> action = invocation.getArgument(0);
+            action.accept(null);
+            return null;
+        }).when(transactionTemplate).executeWithoutResult(any());
     }
 
     @AfterEach
@@ -116,8 +125,8 @@ class ChunkingIntegrationTest {
         when(strategyFactory.requireStrategy(ChunkingMode.FIXED_SIZE)).thenReturn(strategy);
         when(strategy.chunk(anyString(), any())).thenReturn(fakeChunks);
 
-        // 模拟 chunkService.batchCreate 直接返回传入的 chunks
-        when(chunkService.batchCreate(anyList(), eq(true))).thenAnswer(invocation -> {
+        // 模拟 chunkService.batchCreate 直接返回传入的 chunks；向量同步由主流程单独处理。
+        when(chunkService.batchCreate(anyList(), eq(false))).thenAnswer(invocation -> {
             List<KnowledgeChunkDO> input = invocation.getArgument(0);
             return input;
         });
@@ -127,7 +136,7 @@ class ChunkingIntegrationTest {
 
         // then: 验证 chunkService.batchCreate 被调用，传入 3 个 chunk
         ArgumentCaptor<List<KnowledgeChunkDO>> captor = ArgumentCaptor.forClass(List.class);
-        verify(chunkService).batchCreate(captor.capture(), eq(true));
+        verify(chunkService).batchCreate(captor.capture(), eq(false));
         List<KnowledgeChunkDO> persistedChunks = captor.getValue();
 
         assertEquals(3, persistedChunks.size());
@@ -151,6 +160,56 @@ class ChunkingIntegrationTest {
         // 验证文档状态变为 completed
         assertEquals("completed", doc.getStatus());
         assertEquals(3L, doc.getChunkCount());
+        verify(vectorStoreService).deleteDocumentVectors("test_collection", docId);
+        verify(vectorStoreService).indexDocumentChunks("test_collection", docId, fakeChunks);
+    }
+
+    @Test
+    void shouldEmbedAndIndexVectorsAfterChunking() throws Exception {
+        String docId = "doc-vector";
+        String kbId = "kb-1";
+        KnowledgeDocumentDO doc = processingDocument(docId, kbId, "fixed_size", null);
+        when(knowledgeDocumentMapper.selectById(docId)).thenReturn(doc);
+        when(knowledgeBaseMapper.selectById(kbId)).thenReturn(knowledgeBase(kbId));
+
+        String text = "用于向量化的文档内容。".repeat(30);
+        when(fileStorageService.download(anyString()))
+                .thenReturn(new ByteArrayInputStream(text.getBytes()));
+        DocumentParser parser = mock(DocumentParser.class);
+        when(parser.extractText(any(InputStream.class), anyString())).thenReturn(text);
+        when(parserSelector.selectByMimeType("txt")).thenReturn(parser);
+
+        List<VectorChunk> chunks = List.of(
+                new VectorChunk("v1", 0, "vector-0"),
+                new VectorChunk("v2", 1, "vector-1")
+        );
+        ChunkingStrategy strategy = mock(ChunkingStrategy.class);
+        when(strategyFactory.requireStrategy(ChunkingMode.FIXED_SIZE)).thenReturn(strategy);
+        when(strategy.chunk(anyString(), any())).thenReturn(chunks);
+        when(chunkService.batchCreate(anyList(), eq(false))).thenAnswer(invocation -> invocation.getArgument(0));
+        org.mockito.Mockito.doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            List<VectorChunk> embedded = invocation.getArgument(0);
+            for (int i = 0; i < embedded.size(); i++) {
+                embedded.get(i).setEmbedding(new float[]{i + 0.1f, i + 0.2f});
+            }
+            return null;
+        }).when(chunkEmbeddingService).embed(anyList(), eq("qwen-embedding"));
+
+        service.executeChunk(docId);
+
+        verify(chunkEmbeddingService).embed(chunks, "qwen-embedding");
+
+        ArgumentCaptor<List<VectorChunk>> vectorCaptor = ArgumentCaptor.forClass(List.class);
+        verify(vectorStoreService).indexDocumentChunks(eq("test_collection"), eq(docId), vectorCaptor.capture());
+        List<VectorChunk> indexed = vectorCaptor.getValue();
+        assertEquals(2, indexed.size());
+        assertEquals("v1", indexed.get(0).getChunkId());
+        assertEquals("v2", indexed.get(1).getChunkId());
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new float[]{0.1f, 0.2f}, indexed.get(0).getEmbedding());
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new float[]{1.1f, 1.2f}, indexed.get(1).getEmbedding());
+
+        verify(chunkService).batchCreate(anyList(), eq(false));
     }
 
     @Test
@@ -190,7 +249,7 @@ class ChunkingIntegrationTest {
                 .thenReturn(firstChunks)
                 .thenReturn(secondChunks);
 
-        when(chunkService.batchCreate(anyList(), eq(true))).thenAnswer(inv -> inv.getArgument(0));
+        when(chunkService.batchCreate(anyList(), eq(false))).thenAnswer(inv -> inv.getArgument(0));
 
         // when: 执行两次分块
         service.executeChunk(docId);
@@ -200,11 +259,11 @@ class ChunkingIntegrationTest {
         service.executeChunk(docId);
 
         // then: 验证 batchCreate 被调用两次
-        verify(chunkService, times(2)).batchCreate(anyList(), eq(true));
+        verify(chunkService, times(2)).batchCreate(anyList(), eq(false));
 
         // 捕获两次调用的 chunk 列表
         ArgumentCaptor<List<KnowledgeChunkDO>> captor = ArgumentCaptor.forClass(List.class);
-        verify(chunkService, times(2)).batchCreate(captor.capture(), eq(true));
+        verify(chunkService, times(2)).batchCreate(captor.capture(), eq(false));
         List<List<KnowledgeChunkDO>> allCalls = captor.getAllValues();
 
         List<KnowledgeChunkDO> firstPersisted = allCalls.get(0);
@@ -226,6 +285,8 @@ class ChunkingIntegrationTest {
             assertTrue(!firstIds.contains(secondId),
                     "重新分块应生成新的 chunk id，但发现重复: " + secondId);
         }
+        verify(vectorStoreService, times(2)).deleteDocumentVectors("test_collection", docId);
+        verify(vectorStoreService, times(2)).indexDocumentChunks(eq("test_collection"), eq(docId), anyList());
     }
 
     @Test
@@ -269,14 +330,14 @@ class ChunkingIntegrationTest {
         when(strategyFactory.requireStrategy(ChunkingMode.STRUCTURE_AWARE)).thenReturn(strategy);
         when(strategy.chunk(anyString(), any())).thenReturn(chunks);
 
-        when(chunkService.batchCreate(anyList(), eq(true))).thenAnswer(inv -> inv.getArgument(0));
+        when(chunkService.batchCreate(anyList(), eq(false))).thenAnswer(inv -> inv.getArgument(0));
 
         // when
         service.executeChunk(docId);
 
         // then: 至少产生一个 chunk
         ArgumentCaptor<List<KnowledgeChunkDO>> captor = ArgumentCaptor.forClass(List.class);
-        verify(chunkService).batchCreate(captor.capture(), eq(true));
+        verify(chunkService).batchCreate(captor.capture(), eq(false));
         List<KnowledgeChunkDO> persisted = captor.getValue();
 
         assertTrue(persisted.size() >= 1, "至少应产生一个 chunk");

@@ -1,8 +1,11 @@
 package edu.cqupt.devbrain.framework.errorcode;
 
 /**
- * 平台错误码接口
- * 定义错误码抽象接口，由各错误码类实现接口方法
+ * 平台错误码统一接口。
+ * <p>定义错误码和错误消息的抽象契约，所有错误码枚举或实现类均需实现此接口，
+ * 以保证错误码体系的一致性和可扩展性。</p>
+ *
+ * @see edu.cqupt.devbrain.framework.errorcode.BaseErrorCode
  */
 public interface IErrorCode {
 

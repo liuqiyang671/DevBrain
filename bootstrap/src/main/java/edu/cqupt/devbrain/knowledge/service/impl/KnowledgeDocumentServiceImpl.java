@@ -39,7 +39,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -51,6 +50,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.time.LocalDateTime;
@@ -364,6 +365,12 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
+    /**
+     * 执行完整的文档分块处理流程：解析文本 → 分块 → 嵌入向量 → 持久化。
+     *
+     * @param doc      文档记录
+     * @param logEntry 解析日志记录，用于记录各阶段耗时
+     */
     private void runChunkProcess(KnowledgeDocumentDO doc, KnowledgeDocumentChunkLogDO logEntry) {
         // 1. 解析文档
         long extractStart = System.currentTimeMillis();
@@ -407,41 +414,87 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
         // 4. 持久化
         long persistStart = System.currentTimeMillis();
-        persistChunksAndVectorsAtomically(doc, chunks);
+        persistChunksAndVectorsAtomically(doc, kb, chunks);
         long persistDuration = System.currentTimeMillis() - persistStart;
         logEntry.setPersistDuration(persistDuration);
 
         logEntry.setChunkCount(chunks.size());
     }
 
-    @Transactional
-    public void persistChunksAndVectorsAtomically(KnowledgeDocumentDO doc, List<VectorChunk> chunks) {
+    /**
+     * 原子化持久化分块到数据库，并同步更新文档的分块计数。
+     *
+     * @param doc    文档记录
+     * @param chunks 向量分块列表
+     */
+    public void persistChunksAndVectorsAtomically(KnowledgeDocumentDO doc, KnowledgeBaseDO kb, List<VectorChunk> chunks) {
         List<KnowledgeChunkDO> chunkDOs = chunks.stream()
                 .map(vc -> toChunkDO(doc, vc))
                 .toList();
-        chunkService.batchCreate(chunkDOs, true);
+        String collectionName = clean(kb.getCollectionName());
+        if (!StringUtils.hasText(collectionName)) {
+            collectionName = "kb_" + doc.getKbId();
+        }
 
-        doc.setChunkCount((long) chunks.size());
-        knowledgeDocumentMapper.updateById(doc);
+        String finalCollectionName = collectionName;
+        transactionTemplate.executeWithoutResult(status -> {
+            chunkService.batchCreate(chunkDOs, false);
+            vectorStoreService.deleteDocumentVectors(finalCollectionName, doc.getId());
+            vectorStoreService.indexDocumentChunks(finalCollectionName, doc.getId(), chunks);
 
-        log.info("分块持久化完成，docId={}, count={}", doc.getId(), chunks.size());
+            doc.setChunkCount((long) chunks.size());
+            knowledgeDocumentMapper.updateById(doc);
+        });
+
+        log.info("分块和向量持久化完成，docId={}, collectionName={}, count={}",
+                doc.getId(), collectionName, chunks.size());
     }
 
+    /**
+     * 将核心 VectorChunk 模型转换为数据库分块实体。
+     *
+     * @param doc 文档记录
+     * @param vc  向量分块
+     * @return 数据库分块实体
+     */
     private KnowledgeChunkDO toChunkDO(KnowledgeDocumentDO doc, VectorChunk vc) {
+        String chunkId = StringUtils.hasText(vc.getChunkId()) ? vc.getChunkId() : IdUtil.fastSimpleUUID();
+        vc.setChunkId(chunkId);
+        Map<String, Object> metadata = vc.getMetadata() == null ? new HashMap<>() : new HashMap<>(vc.getMetadata());
+        metadata.put("kb_id", doc.getKbId());
+        metadata.put("doc_id", doc.getId());
+        metadata.put("chunk_index", vc.getIndex());
+        vc.setMetadata(metadata);
+
         KnowledgeChunkDO chunk = new KnowledgeChunkDO();
-        chunk.setId(IdUtil.fastSimpleUUID());
+        chunk.setId(chunkId);
         chunk.setKbId(doc.getKbId());
         chunk.setDocId(doc.getId());
         chunk.setChunkIndex(vc.getIndex());
         chunk.setContent(vc.getContent());
         chunk.setContentHash(sha256(vc.getContent()));
         chunk.setCharCount(vc.getContent().length());
+        chunk.setMetadata(writeMetadata(metadata));
         chunk.setEnabled(1);
         chunk.setCreatedBy(doc.getCreatedBy());
         chunk.setUpdatedBy(doc.getUpdatedBy());
         return chunk;
     }
 
+    private String writeMetadata(Map<String, Object> metadata) {
+        try {
+            return objectMapper.writeValueAsString(metadata == null ? Map.of() : metadata);
+        } catch (Exception e) {
+            throw new ServiceException("分块元数据序列化失败", e, BaseErrorCode.SERVICE_ERROR);
+        }
+    }
+
+    /**
+     * 从对象存储下载文档并提取纯文本内容。
+     *
+     * @param doc 文档记录
+     * @return 提取出的纯文本
+     */
     private String extractDocumentText(KnowledgeDocumentDO doc) {
         String objectKey = extractObjectKey(doc.getFileUrl());
         try (var is = fileStorageService.download(objectKey)) {
@@ -453,6 +506,13 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
+    /**
+     * 根据分块模式和 JSON 配置构建分块选项，解析失败时使用默认配置。
+     *
+     * @param mode           分块模式
+     * @param chunkConfigJson 分块配置 JSON 字符串
+     * @return 分块选项
+     */
     private ChunkingOptions buildChunkOptions(ChunkingMode mode, String chunkConfigJson) {
         if (StringUtils.hasText(chunkConfigJson)) {
             try {
@@ -472,6 +532,13 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         return mode.createDefaultOptions(null, null);
     }
 
+    /**
+     * 异步触发文档分块事件，手动模式下跳过自动触发。
+     *
+     * @param docId       文档 ID
+     * @param kbId        知识库 ID
+     * @param processMode 处理模式
+     */
     private void triggerChunkAsync(String docId, String kbId, String processMode) {
         if (MANUAL_PROCESS_MODE.equalsIgnoreCase(clean(processMode))) {
             log.info("文档设置为手动分块模式，跳过上传后自动分块，docId={}, kbId={}", docId, kbId);
@@ -485,6 +552,13 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
+    /**
+     * 截断文本到指定最大长度，超出部分以省略号代替。
+     *
+     * @param text   原始文本
+     * @param maxLen 最大长度
+     * @return 截断后的文本
+     */
     private String truncate(String text, int maxLen) {
         if (text == null) {
             return null;
@@ -506,6 +580,12 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
+    /**
+     * 查询并确认知识库存在且未被逻辑删除。
+     *
+     * @param kbId 知识库 ID
+     * @return 知识库记录
+     */
     private KnowledgeBaseDO requireKnowledgeBase(String kbId) {
         if (!StringUtils.hasText(kbId)) {
             throw new ClientException("知识库 ID 不能为空");
@@ -517,6 +597,13 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         return kb;
     }
 
+    /**
+     * 查询并确认文档存在、未删除且归属指定知识库。
+     *
+     * @param kbId  知识库 ID
+     * @param docId 文档 ID
+     * @return 文档记录
+     */
     private KnowledgeDocumentDO requireDocument(String kbId, String docId) {
         requireKnowledgeBase(kbId);
         if (!StringUtils.hasText(docId)) {
@@ -529,12 +616,24 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         return document;
     }
 
+    /**
+     * 校验启用状态参数是否合法（只能为 0 或 1）。
+     *
+     * @param enabled 启用状态
+     */
     private void ensureEnabledValid(Integer enabled) {
         if (enabled == null || (enabled != 0 && enabled != 1)) {
             throw new ClientException("enabled 只能为 0 或 1");
         }
     }
 
+    /**
+     * 通过适配器抓取在线文档内容。
+     *
+     * @param sourceType     来源类型（feishu、url）
+     * @param sourceLocation 来源地址
+     * @return 抓取到的内容
+     */
     private FetchedContent fetchOnlineContent(String sourceType, String sourceLocation) {
         try {
             DocumentSourceAdapter adapter = adapterRegistry.requireAdapter(sourceType);
@@ -547,6 +646,12 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
+    /**
+     * 校验定时同步的 Cron 表达式格式。
+     *
+     * @param scheduleEnabled 是否启用定时同步
+     * @param scheduleCron    Cron 表达式
+     */
     private void validateSchedule(Integer scheduleEnabled, String scheduleCron) {
         if (scheduleEnabled != null && scheduleEnabled == 1 && StringUtils.hasText(scheduleCron)) {
             try {
@@ -557,6 +662,12 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
+    /**
+     * 标准化分块配置 JSON 字符串，校验合法性后返回。
+     *
+     * @param chunkConfig 分块配置 JSON 字符串
+     * @return 标准化后的 JSON 字符串，空输入返回 null
+     */
     private String normalizeChunkConfig(String chunkConfig) {
         String cleaned = clean(chunkConfig);
         if (!StringUtils.hasText(cleaned)) {
@@ -570,6 +681,14 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
+    /**
+     * 解析在线文档名称，优先使用用户指定名称，其次使用抓取标题，兜底使用来源类型默认名。
+     *
+     * @param requestedName 用户指定的文档名称
+     * @param fetchedTitle  抓取到的文档标题
+     * @param sourceType    来源类型
+     * @return 清洗后的文档名称
+     */
     private String resolveOnlineDocName(String requestedName, String fetchedTitle, String sourceType) {
         String name = clean(requestedName);
         if (!StringUtils.hasText(name)) {
@@ -582,6 +701,12 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         return fileUploadValidator.extractExtension(name).isEmpty() ? name + "." + ONLINE_FILE_TYPE : name;
     }
 
+    /**
+     * 标准化文档状态名称，兼容旧状态值（running→processing，success→completed）。
+     *
+     * @param status 原始状态
+     * @return 标准化后的状态
+     */
     private String normalizeStatus(String status) {
         if ("running".equals(status)) {
             return "processing";
@@ -592,10 +717,22 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         return status;
     }
 
+    /**
+     * 统一去除字符串前后空白，保留 null 语义。
+     *
+     * @param value 原始字符串
+     * @return 清洗后的字符串
+     */
     private String clean(String value) {
         return value == null ? null : value.trim();
     }
 
+    /**
+     * 计算文本的 SHA-256 哈希值，用于内容变更检测。
+     *
+     * @param text 原始文本
+     * @return 十六进制哈希字符串
+     */
     private String sha256(String text) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -606,6 +743,11 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
+    /**
+     * 清理文档对应的对象存储文件，删除失败仅记录日志不阻断流程。
+     *
+     * @param document 文档记录
+     */
     private void cleanupStoredFile(KnowledgeDocumentDO document) {
         String objectKey = extractObjectKey(document.getFileUrl());
         if (!StringUtils.hasText(objectKey)) {
@@ -619,6 +761,12 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
+    /**
+     * 从文件 URL 中提取对象存储 key（最后一段路径）。
+     *
+     * @param fileUrl 文件访问 URL
+     * @return 对象存储 key
+     */
     private String extractObjectKey(String fileUrl) {
         if (!StringUtils.hasText(fileUrl)) {
             return null;
@@ -636,6 +784,12 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         }
     }
 
+    /**
+     * 将文档数据库实体转换为前端视图对象。
+     *
+     * @param doc 文档数据库实体
+     * @return 文档视图对象
+     */
     private DocumentVO toVO(KnowledgeDocumentDO doc) {
         return new DocumentVO(
                 doc.getId(), doc.getKbId(), doc.getDocName(),

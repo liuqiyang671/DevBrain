@@ -12,6 +12,9 @@ import edu.cqupt.devbrain.knowledge.dao.entity.KnowledgeBaseDO;
 import edu.cqupt.devbrain.knowledge.dao.mapper.KnowledgeBaseMapper;
 import edu.cqupt.devbrain.knowledge.service.KnowledgeBaseDocumentGuard;
 import edu.cqupt.devbrain.knowledge.service.KnowledgeBaseService;
+import edu.cqupt.devbrain.rag.core.vector.VectorSpaceId;
+import edu.cqupt.devbrain.rag.core.vector.VectorSpaceSpec;
+import edu.cqupt.devbrain.rag.core.vector.VectorStoreAdmin;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -37,6 +40,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
 
     private final KnowledgeBaseMapper knowledgeBaseMapper;
     private final KnowledgeBaseDocumentGuard documentGuard;
+    private final VectorStoreAdmin vectorStoreAdmin;
 
     @Override
     @Transactional
@@ -57,8 +61,14 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         knowledgeBase.setCreatedBy(userId);
         knowledgeBase.setUpdatedBy(userId);
         knowledgeBaseMapper.insert(knowledgeBase);
+        // 知识库和向量空间一一对应，创建成功后立即确保后端空间可用。
+        vectorStoreAdmin.ensureVectorSpace(new VectorSpaceSpec(
+                new VectorSpaceId(collectionName, null),
+                // remark 给后续 Milvus 等显式 collection 后端标记空间来源。
+                "知识库 " + knowledgeBase.getName() + " 的向量空间"
+        ));
         log.info("Knowledge base created: id={}, collectionName={}", knowledgeBase.getId(), collectionName);
-        return toVO(knowledgeBase, 0L);
+        return toVO(knowledgeBase, 0L, 0L);
     }
 
     @Override
@@ -84,13 +94,17 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                                 .or()
                                 .like(KnowledgeBaseDO::getCollectionName, cleanedKeyword))
                         .orderByDesc(KnowledgeBaseDO::getUpdateTime));
-        return result.convert(each -> toVO(each, documentGuard.countActiveDocuments(each.getId())));
+        return result.convert(each -> toVO(each,
+                documentGuard.countActiveDocuments(each.getId()),
+                documentGuard.sumActiveDocumentChunks(each.getId())));
     }
 
     @Override
     public KnowledgeBaseVO detail(String id) {
         KnowledgeBaseDO knowledgeBase = requireKnowledgeBase(id);
-        return toVO(knowledgeBase, documentGuard.countActiveDocuments(knowledgeBase.getId()));
+        return toVO(knowledgeBase,
+                documentGuard.countActiveDocuments(knowledgeBase.getId()),
+                documentGuard.sumActiveDocumentChunks(knowledgeBase.getId()));
     }
 
     @Override
@@ -118,7 +132,9 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         knowledgeBase.setUpdatedBy(UserContext.requireUser().userId());
         knowledgeBaseMapper.updateById(knowledgeBase);
         log.info("Knowledge base updated: id={}", id);
-        return toVO(knowledgeBase, documentGuard.countActiveDocuments(knowledgeBase.getId()));
+        return toVO(knowledgeBase,
+                documentGuard.countActiveDocuments(knowledgeBase.getId()),
+                documentGuard.sumActiveDocumentChunks(knowledgeBase.getId()));
     }
 
     @Override
@@ -203,7 +219,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     /**
      * 将数据库实体转换为前端视图对象，避免 DO 直接暴露给接口层。
      */
-    private KnowledgeBaseVO toVO(KnowledgeBaseDO knowledgeBase, Long documentCount) {
+    private KnowledgeBaseVO toVO(KnowledgeBaseDO knowledgeBase, Long documentCount, Long chunkCount) {
         return new KnowledgeBaseVO(
                 knowledgeBase.getId(),
                 knowledgeBase.getName(),
@@ -212,6 +228,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                 knowledgeBase.getCollectionName(),
                 knowledgeBase.getStatus(),
                 documentCount == null ? 0L : documentCount,
+                chunkCount == null ? 0L : chunkCount,
                 knowledgeBase.getCreatedBy(),
                 knowledgeBase.getUpdatedBy(),
                 knowledgeBase.getCreateTime(),

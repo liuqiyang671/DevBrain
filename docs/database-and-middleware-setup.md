@@ -88,7 +88,7 @@ bootstrap/src/main/resources/application.yaml
 | `ROCKETMQ_NAME_SERVER` | `localhost:9876` | RocketMQ NameServer |
 | `ROCKETMQ_PRODUCER_GROUP` | `devbrain-producer-group` | 生产者组 |
 | `DEVBRAIN_VECTOR_TYPE` | `pg` | 默认使用 pgvector |
-| `DEVBRAIN_VECTOR_DIMENSION` | `1536` | 默认 Embedding 维度 |
+| `DEVBRAIN_VECTOR_DIMENSION` | `1536` | 默认 Embedding 维度，通过 `qwen3-embedding:8b-fp16` 的 `dimensions` 参数输出 |
 | `DEVBRAIN_VECTOR_TOP_K` | `5` | 默认召回数量 |
 
 生产环境必须通过环境变量、密钥管理器或未提交的部署配置覆盖所有密码、Access Key、Secret Key 和公网连接地址。

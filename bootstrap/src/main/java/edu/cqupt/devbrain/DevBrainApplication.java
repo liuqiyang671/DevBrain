@@ -1,6 +1,8 @@
 package edu.cqupt.devbrain;
 
 import edu.cqupt.devbrain.auth.core.AuthSecurityProperties;
+import edu.cqupt.devbrain.infra.config.AIModelProperties;
+import edu.cqupt.devbrain.infra.config.RAGDefaultProperties;
 import edu.cqupt.devbrain.knowledge.config.ObjectStorageProperties;
 import edu.cqupt.devbrain.knowledge.config.UploadProperties;
 import edu.cqupt.devbrain.knowledge.config.UploadRateLimitProperties;
@@ -33,6 +35,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
         UploadProperties.class,
         ObjectStorageProperties.class,
         UploadRateLimitProperties.class,
+        AIModelProperties.class,
+        RAGDefaultProperties.class,
         FeishuProperties.class,
         XxlJobProperties.class,
         SyncProperties.class

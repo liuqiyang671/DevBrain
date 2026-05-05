@@ -1,55 +1,75 @@
 package edu.cqupt.devbrain.rag.core.vector;
 
-import com.pgvector.PGvector;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import edu.cqupt.devbrain.core.chunk.VectorChunk;
+import edu.cqupt.devbrain.framework.errorcode.BaseErrorCode;
+import edu.cqupt.devbrain.framework.exception.ServiceException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
-import java.sql.Array;
-import java.sql.Connection;
 import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
- * 基于 pgvector 的向量存储服务实现。
- * 每个知识库对应一张向量表，表名格式为 vector_{collectionName}。
+ * 基于 PostgreSQL + pgvector 的向量存储实现。
+ * <p>
+ * 当前实现统一写入 t_knowledge_vector，collection_name 作为知识库隔离字段，
+ * 后续如切换 Milvus，可通过 VectorStoreService 增加另一套条件装配实现。
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "rag.vector.type", havingValue = "pg")
 public class PgVectorStoreService implements VectorStoreService {
 
-    private final JdbcTemplate jdbcTemplate;
+    private static final String COLLECTION_PREFIX = "kb_";
 
-    @Value("${devbrain.vector.dimension:1536}")
-    private int dimension;
+    private static final String INSERT_SQL = """
+            INSERT INTO t_knowledge_vector
+                (id, kb_id, doc_id, collection_name, content, metadata, embedding)
+            VALUES (?, ?, ?, ?, ?, ?::jsonb, ?::vector)
+            """;
+
+    private static final String UPSERT_SQL = """
+            INSERT INTO t_knowledge_vector
+                (id, kb_id, doc_id, collection_name, content, metadata, embedding)
+            VALUES (?, ?, ?, ?, ?, ?::jsonb, ?::vector)
+            ON CONFLICT (id) DO UPDATE SET
+                kb_id = EXCLUDED.kb_id,
+                doc_id = EXCLUDED.doc_id,
+                collection_name = EXCLUDED.collection_name,
+                content = EXCLUDED.content,
+                metadata = EXCLUDED.metadata,
+                embedding = EXCLUDED.embedding
+            """;
+
+    private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
+    private final VectorStoreAdmin vectorStoreAdmin;
 
     @Override
     public void indexDocumentChunks(String collectionName, String docId, List<VectorChunk> chunks) {
         if (chunks == null || chunks.isEmpty()) {
             return;
         }
-        String tableName = getTableName(collectionName);
-        ensureTableExists(tableName);
+        String kbId = resolveKbId(collectionName, chunks);
+        validateDocId(docId);
+        ensureVectorSpace(collectionName, docId);
 
-        String sql = "INSERT INTO " + tableName
-                + " (chunk_id, doc_id, chunk_index, content, embedding) VALUES (?, ?, ?, ?, ?::vector)"
-                + " ON CONFLICT (chunk_id) DO UPDATE SET chunk_index = EXCLUDED.chunk_index, content = EXCLUDED.content, embedding = EXCLUDED.embedding";
-
-        jdbcTemplate.batchUpdate(sql, new org.springframework.jdbc.core.BatchPreparedStatementSetter() {
+        jdbcTemplate.batchUpdate(INSERT_SQL, new BatchPreparedStatementSetter() {
             @Override
             public void setValues(PreparedStatement ps, int i) throws SQLException {
                 VectorChunk chunk = chunks.get(i);
-                ps.setString(1, chunk.getChunkId());
-                ps.setString(2, docId);
-                ps.setInt(3, chunk.getIndex());
-                ps.setString(4, chunk.getContent());
-                ps.setString(5, toVectorString(chunk.getEmbedding()));
+                bindVectorRow(ps, kbId, collectionName, docId, chunk);
             }
 
             @Override
@@ -58,100 +78,181 @@ public class PgVectorStoreService implements VectorStoreService {
             }
         });
 
-        log.info("Indexed {} chunks for doc {} into {}", chunks.size(), docId, tableName);
+        log.info("已写入文档向量，collectionName={}, docId={}, count={}",
+                collectionName, docId, chunks.size());
     }
 
     @Override
     public void updateChunk(String collectionName, String docId, VectorChunk chunk) {
-        String tableName = getTableName(collectionName);
-        ensureTableExists(tableName);
+        String kbId = resolveKbId(collectionName, List.of(chunk));
+        validateDocId(docId);
+        validateChunk(chunk);
+        ensureVectorSpace(collectionName, docId);
 
-        String sql = "INSERT INTO " + tableName
-                + " (chunk_id, doc_id, chunk_index, content, embedding) VALUES (?, ?, ?, ?, ?::vector)"
-                + " ON CONFLICT (chunk_id) DO UPDATE SET chunk_index = EXCLUDED.chunk_index, content = EXCLUDED.content, embedding = EXCLUDED.embedding";
-
-        jdbcTemplate.update(sql,
+        jdbcTemplate.update(UPSERT_SQL,
                 chunk.getChunkId(),
+                kbId,
                 docId,
-                chunk.getIndex(),
+                collectionName,
                 chunk.getContent(),
-                toVectorString(chunk.getEmbedding()));
+                toMetadataJson(collectionName, docId, chunk),
+                toVectorLiteral(chunk.getEmbedding()));
 
-        log.debug("Updated chunk {} in {}", chunk.getChunkId(), tableName);
+        log.debug("已更新文档分块向量，collectionName={}, docId={}, chunkId={}",
+                collectionName, docId, chunk.getChunkId());
     }
 
     @Override
     public void deleteDocumentVectors(String collectionName, String docId) {
-        String tableName = getTableName(collectionName);
-        if (!tableExists(tableName)) {
-            return;
-        }
-        String sql = "DELETE FROM " + tableName + " WHERE doc_id = ?";
-        int deleted = jdbcTemplate.update(sql, docId);
-        log.info("Deleted {} vectors for doc {} from {}", deleted, docId, tableName);
+        validateCollectionName(collectionName);
+        validateDocId(docId);
+        jdbcTemplate.update(
+                "DELETE FROM t_knowledge_vector WHERE collection_name = ? AND doc_id = ?",
+                collectionName, docId);
     }
 
     @Override
     public void deleteChunkById(String collectionName, String chunkId) {
-        String tableName = getTableName(collectionName);
-        if (!tableExists(tableName)) {
-            return;
-        }
-        jdbcTemplate.update("DELETE FROM " + tableName + " WHERE chunk_id = ?", chunkId);
+        validateCollectionName(collectionName);
+        validateChunkId(chunkId);
+        jdbcTemplate.update("DELETE FROM t_knowledge_vector WHERE id = ?", chunkId);
     }
 
     @Override
     public void deleteChunksByIds(String collectionName, List<String> chunkIds) {
+        validateCollectionName(collectionName);
         if (chunkIds == null || chunkIds.isEmpty()) {
             return;
         }
-        String tableName = getTableName(collectionName);
-        if (!tableExists(tableName)) {
-            return;
-        }
+        chunkIds.forEach(this::validateChunkId);
+
         String placeholders = String.join(",", chunkIds.stream().map(id -> "?").toList());
-        jdbcTemplate.update("DELETE FROM " + tableName + " WHERE chunk_id IN (" + placeholders + ")",
+        jdbcTemplate.update("DELETE FROM t_knowledge_vector WHERE id IN (" + placeholders + ")",
                 chunkIds.toArray());
     }
 
-    private String getTableName(String collectionName) {
-        return "vector_" + collectionName.replaceAll("[^A-Za-z0-9_]", "_");
+    /**
+     * 绑定向量行字段。
+     * 写入参数顺序与 INSERT_SQL 保持一致，避免后续增加字段时错位。
+     */
+    private void bindVectorRow(PreparedStatement ps, String kbId, String collectionName,
+                               String docId, VectorChunk chunk) throws SQLException {
+        validateChunk(chunk);
+        ps.setString(1, chunk.getChunkId());
+        ps.setString(2, kbId);
+        ps.setString(3, docId);
+        ps.setString(4, collectionName);
+        ps.setString(5, chunk.getContent());
+        ps.setString(6, toMetadataJson(collectionName, docId, chunk));
+        ps.setString(7, toVectorLiteral(chunk.getEmbedding()));
     }
 
-    private boolean tableExists(String tableName) {
-        Integer count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?",
-                Integer.class, tableName);
-        return count != null && count > 0;
+    /**
+     * 写入前确保向量空间可用。
+     * PgVector 下这是索引幂等创建；未来切到 Milvus 时会变成 collection ensure。
+     */
+    private void ensureVectorSpace(String collectionName, String remark) {
+        vectorStoreAdmin.ensureVectorSpace(new VectorSpaceSpec(
+                new VectorSpaceId(collectionName, null),
+                remark
+        ));
     }
 
-    private void ensureTableExists(String tableName) {
-        if (tableExists(tableName)) {
-            return;
+    /**
+     * 优先从 chunk metadata 中读取 kb_id，兼容知识库创建时的自定义 collectionName。
+     * 旧数据或旧调用方未写 metadata 时，仍支持从 kb_{kbId} 格式的集合名反推。
+     */
+    private String resolveKbId(String collectionName, List<VectorChunk> chunks) {
+        validateCollectionName(collectionName);
+        String metadataKbId = chunks == null ? null : chunks.stream()
+                .filter(chunk -> chunk != null && chunk.getMetadata() != null)
+                .map(chunk -> chunk.getMetadata().get("kb_id"))
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .filter(StringUtils::hasText)
+                .findFirst()
+                .orElse(null);
+        if (StringUtils.hasText(metadataKbId)) {
+            return metadataKbId;
         }
-        jdbcTemplate.execute("CREATE TABLE IF NOT EXISTS " + tableName + " ("
-                + "chunk_id VARCHAR(32) PRIMARY KEY,"
-                + "doc_id VARCHAR(32) NOT NULL,"
-                + "chunk_index INTEGER NOT NULL,"
-                + "content TEXT NOT NULL,"
-                + "embedding vector(" + dimension + ")"
-                + ")");
-        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_" + tableName + "_doc_id ON " + tableName + " (doc_id)");
-        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_" + tableName + "_embedding ON " + tableName
-                + " USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)");
-        log.info("Created vector table: {}", tableName);
+        if (!collectionName.startsWith(COLLECTION_PREFIX)
+                || collectionName.length() <= COLLECTION_PREFIX.length()) {
+            throw new ServiceException("无法解析向量记录 kbId，请在 metadata.kb_id 中提供知识库 ID：" + collectionName,
+                    BaseErrorCode.SERVICE_ERROR);
+        }
+        return collectionName.substring(COLLECTION_PREFIX.length());
     }
 
-    private String toVectorString(float[] embedding) {
+    /**
+     * 合并业务 metadata 和系统 metadata。
+     * 系统字段最后写入，保证 collection/doc/chunk_index 不会被外部 metadata 覆盖。
+     */
+    private String toMetadataJson(String collectionName, String docId, VectorChunk chunk) {
+        Map<String, Object> metadata = new HashMap<>();
+        if (chunk.getMetadata() != null) {
+            metadata.putAll(chunk.getMetadata());
+        }
+        metadata.put("collection_name", collectionName);
+        if (!metadata.containsKey("kb_id")) {
+            metadata.put("kb_id", resolveKbId(collectionName, List.of(chunk)));
+        }
+        metadata.put("doc_id", docId);
+        metadata.put("chunk_index", chunk.getIndex());
+
+        try {
+            return objectMapper.writeValueAsString(metadata);
+        } catch (JsonProcessingException ex) {
+            throw new ServiceException("向量元数据序列化失败", ex, BaseErrorCode.SERVICE_ERROR);
+        }
+    }
+
+    /**
+     * pgvector 文本字面量格式为 [0.1,0.2,0.3]。
+     * 空向量不再补零，避免把未完成 embedding 的 chunk 写成可检索的伪向量。
+     */
+    private String toVectorLiteral(float[] embedding) {
         if (embedding == null || embedding.length == 0) {
-            return "[" + "0,".repeat(dimension - 1) + "0]";
+            throw new ServiceException("向量 embedding 不能为空", BaseErrorCode.SERVICE_ERROR);
         }
-        StringBuilder sb = new StringBuilder("[");
+        StringBuilder builder = new StringBuilder("[");
         for (int i = 0; i < embedding.length; i++) {
-            if (i > 0) sb.append(",");
-            sb.append(embedding[i]);
+            if (i > 0) {
+                builder.append(',');
+            }
+            builder.append(embedding[i]);
         }
-        sb.append("]");
-        return sb.toString();
+        builder.append(']');
+        return builder.toString();
+    }
+
+    private void validateCollectionName(String collectionName) {
+        if (!StringUtils.hasText(collectionName)) {
+            throw new ServiceException("collectionName 不能为空", BaseErrorCode.SERVICE_ERROR);
+        }
+    }
+
+    private void validateDocId(String docId) {
+        if (!StringUtils.hasText(docId)) {
+            throw new ServiceException("docId 不能为空", BaseErrorCode.SERVICE_ERROR);
+        }
+    }
+
+    private void validateChunk(VectorChunk chunk) {
+        if (chunk == null) {
+            throw new ServiceException("VectorChunk 不能为空", BaseErrorCode.SERVICE_ERROR);
+        }
+        validateChunkId(chunk.getChunkId());
+        if (!StringUtils.hasText(chunk.getContent())) {
+            throw new ServiceException("Chunk 内容不能为空", BaseErrorCode.SERVICE_ERROR);
+        }
+        if (chunk.getIndex() == null) {
+            throw new ServiceException("Chunk index 不能为空", BaseErrorCode.SERVICE_ERROR);
+        }
+    }
+
+    private void validateChunkId(String chunkId) {
+        if (!StringUtils.hasText(chunkId)) {
+            throw new ServiceException("chunkId 不能为空", BaseErrorCode.SERVICE_ERROR);
+        }
     }
 }

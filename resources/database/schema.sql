@@ -1,116 +1,129 @@
--- DevBrain-CQUPT local database baseline.
--- Step 02 only prepares infrastructure-level database objects.
-CREATE EXTENSION IF NOT EXISTS vector;
+-- DevBrain-CQUPT 本地数据库基线。
+-- Step 02 仅准备基础设施级别的数据库对象。
+CREATE EXTENSION IF NOT EXISTS vector;  -- 启用 pgvector 向量扩展
 
+-- 数据库版本管理表：记录每次 schema 迁移的版本号和执行时间
 CREATE TABLE IF NOT EXISTS t_devbrain_schema_info (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    version VARCHAR(64) NOT NULL UNIQUE,
-    description TEXT NOT NULL,
-    applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,       -- 自增主键
+    version VARCHAR(64) NOT NULL UNIQUE,                      -- 迁移版本号，全局唯一
+    description TEXT NOT NULL,                                 -- 版本描述信息
+    applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP   -- 迁移执行时间
 );
 
 INSERT INTO t_devbrain_schema_info (version, description)
 VALUES ('02-database-and-middleware', 'PostgreSQL baseline with pgvector extension')
 ON CONFLICT (version) DO NOTHING;
 
+-- 用户账号表：存储系统用户账号信息，密码仅保存 BCrypt 哈希
 CREATE TABLE IF NOT EXISTS t_user (
-    id VARCHAR(32) PRIMARY KEY,
-    username VARCHAR(64) NOT NULL,
-    email VARCHAR(128) NOT NULL,
-    password_hash VARCHAR(128) NOT NULL,
-    display_name VARCHAR(64),
-    avatar VARCHAR(256),
-    status VARCHAR(16) NOT NULL DEFAULT 'enabled',
-    last_login_time TIMESTAMP,
-    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted SMALLINT NOT NULL DEFAULT 0,
+    id VARCHAR(32) PRIMARY KEY,                               -- 用户唯一标识
+    username VARCHAR(64) NOT NULL,                            -- 用户名，全局唯一
+    email VARCHAR(128) NOT NULL,                              -- 邮箱地址，全局唯一
+    password_hash VARCHAR(128) NOT NULL,                      -- BCrypt 密码哈希值
+    display_name VARCHAR(64),                                 -- 显示名称
+    avatar VARCHAR(256),                                      -- 头像 URL
+    status VARCHAR(16) NOT NULL DEFAULT 'enabled',            -- 账号状态：enabled / disabled
+    last_login_time TIMESTAMP,                                -- 最近登录时间
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 更新时间
+    deleted SMALLINT NOT NULL DEFAULT 0,                      -- 逻辑删除标记，0 未删除，1 已删除
     CONSTRAINT uk_user_username UNIQUE (username),
     CONSTRAINT uk_user_email UNIQUE (email)
 );
 COMMENT ON TABLE t_user IS '用户账号表，密码仅保存 BCrypt 哈希';
 
+-- 角色表：定义系统中的角色类型
 CREATE TABLE IF NOT EXISTS t_role (
-    id VARCHAR(32) PRIMARY KEY,
-    role_code VARCHAR(64) NOT NULL,
-    role_name VARCHAR(64) NOT NULL,
-    description VARCHAR(255),
-    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted SMALLINT NOT NULL DEFAULT 0,
+    id VARCHAR(32) PRIMARY KEY,                               -- 角色唯一标识
+    role_code VARCHAR(64) NOT NULL,                           -- 角色编码，全局唯一
+    role_name VARCHAR(64) NOT NULL,                           -- 角色名称
+    description VARCHAR(255),                                 -- 角色描述
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 更新时间
+    deleted SMALLINT NOT NULL DEFAULT 0,                      -- 逻辑删除标记
     CONSTRAINT uk_role_code UNIQUE (role_code)
 );
 COMMENT ON TABLE t_role IS '角色表';
 
+-- 权限码表：定义系统中的细粒度权限码
 CREATE TABLE IF NOT EXISTS t_permission (
-    id VARCHAR(32) PRIMARY KEY,
-    permission_code VARCHAR(128) NOT NULL,
-    permission_name VARCHAR(64) NOT NULL,
-    description VARCHAR(255),
-    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted SMALLINT NOT NULL DEFAULT 0,
+    id VARCHAR(32) PRIMARY KEY,                               -- 权限唯一标识
+    permission_code VARCHAR(128) NOT NULL,                    -- 权限编码，如 user:read，全局唯一
+    permission_name VARCHAR(64) NOT NULL,                     -- 权限名称
+    description VARCHAR(255),                                 -- 权限描述
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 更新时间
+    deleted SMALLINT NOT NULL DEFAULT 0,                      -- 逻辑删除标记
     CONSTRAINT uk_permission_code UNIQUE (permission_code)
 );
 COMMENT ON TABLE t_permission IS '权限码表';
 
+-- 接口资源访问规则表：定义 HTTP 接口与权限码的映射关系
 CREATE TABLE IF NOT EXISTS t_resource (
-    id VARCHAR(32) PRIMARY KEY,
-    resource_name VARCHAR(64) NOT NULL,
-    http_method VARCHAR(16) NOT NULL,
-    path_pattern VARCHAR(160) NOT NULL,
-    permission_code VARCHAR(128),
-    public_access SMALLINT NOT NULL DEFAULT 0,
-    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted SMALLINT NOT NULL DEFAULT 0,
+    id VARCHAR(32) PRIMARY KEY,                               -- 资源规则唯一标识
+    resource_name VARCHAR(64) NOT NULL,                       -- 资源名称
+    http_method VARCHAR(16) NOT NULL,                         -- HTTP 方法：GET / POST / PUT / DELETE
+    path_pattern VARCHAR(160) NOT NULL,                       -- URL 路径匹配模式，支持 ** 通配
+    permission_code VARCHAR(128),                             -- 关联的权限编码，NULL 表示仅需登录
+    public_access SMALLINT NOT NULL DEFAULT 0,                -- 是否公开访问：0 否，1 是
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 更新时间
+    deleted SMALLINT NOT NULL DEFAULT 0,                      -- 逻辑删除标记
     CONSTRAINT uk_resource_rule UNIQUE (http_method, path_pattern)
 );
 COMMENT ON TABLE t_resource IS '接口资源访问规则表';
 
+-- 用户角色关联表：存储用户与角色的多对多关系
 CREATE TABLE IF NOT EXISTS t_user_role (
-    id VARCHAR(32) PRIMARY KEY,
-    user_id VARCHAR(32) NOT NULL,
-    role_id VARCHAR(32) NOT NULL,
-    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted SMALLINT NOT NULL DEFAULT 0,
+    id VARCHAR(32) PRIMARY KEY,                               -- 关联记录唯一标识
+    user_id VARCHAR(32) NOT NULL,                             -- 用户 ID，关联 t_user.id
+    role_id VARCHAR(32) NOT NULL,                             -- 角色 ID，关联 t_role.id
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 更新时间
+    deleted SMALLINT NOT NULL DEFAULT 0,                      -- 逻辑删除标记
     CONSTRAINT uk_user_role UNIQUE (user_id, role_id)
 );
+COMMENT ON TABLE t_user_role IS '用户角色关联表';
 
+-- 角色权限关联表：存储角色与权限的多对多关系
 CREATE TABLE IF NOT EXISTS t_role_permission (
-    id VARCHAR(32) PRIMARY KEY,
-    role_id VARCHAR(32) NOT NULL,
-    permission_id VARCHAR(32) NOT NULL,
-    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted SMALLINT NOT NULL DEFAULT 0,
+    id VARCHAR(32) PRIMARY KEY,                               -- 关联记录唯一标识
+    role_id VARCHAR(32) NOT NULL,                             -- 角色 ID，关联 t_role.id
+    permission_id VARCHAR(32) NOT NULL,                       -- 权限 ID，关联 t_permission.id
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 更新时间
+    deleted SMALLINT NOT NULL DEFAULT 0,                      -- 逻辑删除标记
     CONSTRAINT uk_role_permission UNIQUE (role_id, permission_id)
 );
+COMMENT ON TABLE t_role_permission IS '角色权限关联表';
 
+-- 密码重置令牌表：存储用户密码重置请求的令牌信息
 CREATE TABLE IF NOT EXISTS t_password_reset_token (
-    id VARCHAR(32) PRIMARY KEY,
-    user_id VARCHAR(32) NOT NULL,
-    token_hash VARCHAR(128) NOT NULL,
-    expire_time TIMESTAMP NOT NULL,
-    used SMALLINT NOT NULL DEFAULT 0,
-    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted SMALLINT NOT NULL DEFAULT 0,
+    id VARCHAR(32) PRIMARY KEY,                               -- 令牌记录唯一标识
+    user_id VARCHAR(32) NOT NULL,                             -- 关联用户 ID
+    token_hash VARCHAR(128) NOT NULL,                         -- 令牌哈希值，用于安全比对
+    expire_time TIMESTAMP NOT NULL,                           -- 令牌过期时间
+    used SMALLINT NOT NULL DEFAULT 0,                         -- 是否已使用：0 未使用，1 已使用
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 更新时间
+    deleted SMALLINT NOT NULL DEFAULT 0,                      -- 逻辑删除标记
     CONSTRAINT uk_password_reset_token_hash UNIQUE (token_hash)
 );
+COMMENT ON TABLE t_password_reset_token IS '密码重置令牌表';
 CREATE INDEX IF NOT EXISTS idx_password_reset_user ON t_password_reset_token (user_id);
 
+-- 登录审计表：记录每次登录尝试的详细信息，用于安全审计
 CREATE TABLE IF NOT EXISTS t_login_audit (
-    id VARCHAR(32) PRIMARY KEY,
-    username VARCHAR(64),
-    user_id VARCHAR(32),
-    ip_address VARCHAR(64),
-    user_agent VARCHAR(256),
-    success SMALLINT NOT NULL,
-    failure_reason VARCHAR(255),
-    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id VARCHAR(32) PRIMARY KEY,                               -- 审计记录唯一标识
+    username VARCHAR(64),                                     -- 尝试登录的用户名
+    user_id VARCHAR(32),                                      -- 关联用户 ID，登录失败时可能为空
+    ip_address VARCHAR(64),                                   -- 客户端 IP 地址
+    user_agent VARCHAR(256),                                  -- 客户端 User-Agent 信息
+    success SMALLINT NOT NULL,                                -- 是否登录成功：0 失败，1 成功
+    failure_reason VARCHAR(255),                              -- 登录失败原因
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP  -- 记录创建时间
 );
+COMMENT ON TABLE t_login_audit IS '登录审计表';
 CREATE INDEX IF NOT EXISTS idx_login_audit_username_time ON t_login_audit (username, create_time);
 CREATE INDEX IF NOT EXISTS idx_login_audit_ip_time ON t_login_audit (ip_address, create_time);
 
@@ -177,18 +190,19 @@ INSERT INTO t_devbrain_schema_info (version, description)
 VALUES ('03-user-auth-permission', 'Built-in JWT authentication and RBAC tables')
 ON CONFLICT (version) DO NOTHING;
 
+-- 知识库表：作为文档、Chunk 和向量集合的上层容器
 CREATE TABLE IF NOT EXISTS t_knowledge_base (
-    id VARCHAR(32) PRIMARY KEY,
-    name VARCHAR(128) NOT NULL,
-    description VARCHAR(512),
-    embedding_model VARCHAR(64) NOT NULL,
-    collection_name VARCHAR(64) NOT NULL,
-    status VARCHAR(16) NOT NULL DEFAULT 'enabled',
-    created_by VARCHAR(32) NOT NULL,
-    updated_by VARCHAR(32),
-    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted SMALLINT NOT NULL DEFAULT 0,
+    id VARCHAR(32) PRIMARY KEY,                               -- 知识库唯一标识
+    name VARCHAR(128) NOT NULL,                               -- 知识库名称
+    description VARCHAR(512),                                 -- 知识库描述
+    embedding_model VARCHAR(64) NOT NULL,                     -- Embedding 模型标识
+    collection_name VARCHAR(64) NOT NULL,                     -- 向量集合名称，创建后禁止修改
+    status VARCHAR(16) NOT NULL DEFAULT 'enabled',            -- 状态：enabled / disabled
+    created_by VARCHAR(32) NOT NULL,                          -- 创建人用户 ID
+    updated_by VARCHAR(32),                                   -- 最近更新人用户 ID
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 更新时间
+    deleted SMALLINT NOT NULL DEFAULT 0,                      -- 逻辑删除标记，0 未删除，1 已删除
     CONSTRAINT uk_knowledge_base_collection_name UNIQUE (collection_name),
     CONSTRAINT ck_knowledge_base_status CHECK (status IN ('enabled', 'disabled')),
     CONSTRAINT ck_knowledge_base_collection_name CHECK (collection_name ~ '^[A-Za-z][A-Za-z0-9_-]*$')
@@ -237,29 +251,30 @@ INSERT INTO t_devbrain_schema_info (version, description)
 VALUES ('04-knowledge-base-crud', 'Knowledge base CRUD table and RBAC resources')
 ON CONFLICT (version) DO NOTHING;
 
+-- 知识库文档表：记录上传文档及其处理状态
 CREATE TABLE IF NOT EXISTS t_knowledge_document (
-    id VARCHAR(32) PRIMARY KEY,
-    kb_id VARCHAR(32) NOT NULL,
-    doc_name VARCHAR(256) NOT NULL,
-    enabled SMALLINT NOT NULL DEFAULT 1,
-    chunk_count BIGINT NOT NULL DEFAULT 0,
-    file_url VARCHAR(512),
-    file_type VARCHAR(32),
-    file_size BIGINT,
-    process_mode VARCHAR(32),
-    status VARCHAR(32) NOT NULL DEFAULT 'pending',
-    source_type VARCHAR(32),
-    source_location VARCHAR(512),
-    schedule_enabled SMALLINT NOT NULL DEFAULT 0,
-    schedule_cron VARCHAR(64),
-    chunk_strategy VARCHAR(32),
-    chunk_config JSONB,
-    pipeline_id VARCHAR(32),
-    created_by VARCHAR(32) NOT NULL,
-    updated_by VARCHAR(32),
-    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted SMALLINT NOT NULL DEFAULT 0,
+    id VARCHAR(32) PRIMARY KEY,                               -- 文档唯一标识
+    kb_id VARCHAR(32) NOT NULL,                               -- 所属知识库 ID，关联 t_knowledge_base.id
+    doc_name VARCHAR(256) NOT NULL,                           -- 文档名称
+    enabled SMALLINT NOT NULL DEFAULT 1,                      -- 是否启用：0 禁用，1 启用
+    chunk_count BIGINT NOT NULL DEFAULT 0,                    -- 文档切片数量
+    file_url VARCHAR(512),                                    -- 文件存储 URL
+    file_type VARCHAR(32),                                    -- 文件类型，如 pdf、docx、md、txt
+    file_size BIGINT,                                         -- 文件大小，单位字节
+    process_mode VARCHAR(32),                                 -- 处理模式
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',            -- 文档处理状态：pending / processing / completed / failed
+    source_type VARCHAR(32),                                  -- 来源类型
+    source_location VARCHAR(512),                             -- 来源地址
+    schedule_enabled SMALLINT NOT NULL DEFAULT 0,             -- 是否启用定时同步：0 禁用，1 启用
+    schedule_cron VARCHAR(64),                                -- 定时同步 Cron 表达式
+    chunk_strategy VARCHAR(32),                               -- 切片策略
+    chunk_config JSONB,                                       -- 切片配置，JSONB 类型
+    pipeline_id VARCHAR(32),                                  -- 关联的处理流水线 ID
+    created_by VARCHAR(32) NOT NULL,                          -- 创建人用户 ID
+    updated_by VARCHAR(32),                                   -- 最近更新人用户 ID
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 更新时间
+    deleted SMALLINT NOT NULL DEFAULT 0,                      -- 逻辑删除标记，0 未删除，1 已删除
     CONSTRAINT fk_knowledge_document_kb_id FOREIGN KEY (kb_id) REFERENCES t_knowledge_base (id)
 );
 COMMENT ON TABLE t_knowledge_document IS '知识库文档表，记录上传文档及其处理状态';
@@ -300,7 +315,7 @@ VALUES ('06-knowledge-document-management', 'Knowledge document management endpo
 ON CONFLICT (version) DO NOTHING;
 
 -- ============================================================
--- 07: Document scheduled sync (Feishu / URL)
+-- 07: 文档定时同步（飞书 / URL 来源适配）
 -- ============================================================
 
 ALTER TABLE t_knowledge_document ADD COLUMN IF NOT EXISTS last_sync_time TIMESTAMP;
@@ -308,17 +323,18 @@ ALTER TABLE t_knowledge_document ADD COLUMN IF NOT EXISTS last_content_hash VARC
 COMMENT ON COLUMN t_knowledge_document.last_sync_time IS '最近一次同步成功时间';
 COMMENT ON COLUMN t_knowledge_document.last_content_hash IS '最近一次同步内容的 SHA-256 哈希';
 
+-- 文档同步历史记录表：记录每次文档同步的结果
 CREATE TABLE IF NOT EXISTS t_document_sync_history (
-    id VARCHAR(32) PRIMARY KEY,
-    doc_id VARCHAR(32) NOT NULL,
-    sync_status VARCHAR(16) NOT NULL DEFAULT 'success',
-    content_hash VARCHAR(64),
-    content_changed SMALLINT NOT NULL DEFAULT 0,
-    error_message TEXT,
-    duration_ms BIGINT,
-    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted SMALLINT NOT NULL DEFAULT 0,
+    id VARCHAR(32) PRIMARY KEY,                               -- 同步记录唯一标识
+    doc_id VARCHAR(32) NOT NULL,                              -- 关联文档 ID
+    sync_status VARCHAR(16) NOT NULL DEFAULT 'success',       -- 同步状态：success / failed
+    content_hash VARCHAR(64),                                 -- 本次同步内容的 SHA-256 哈希
+    content_changed SMALLINT NOT NULL DEFAULT 0,              -- 内容是否变更：0 未变更，1 已变更
+    error_message TEXT,                                       -- 失败时的错误信息
+    duration_ms BIGINT,                                       -- 同步耗时（毫秒）
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 更新时间
+    deleted SMALLINT NOT NULL DEFAULT 0,                      -- 逻辑删除标记
     CONSTRAINT fk_sync_history_doc_id FOREIGN KEY (doc_id) REFERENCES t_knowledge_document (id)
 );
 COMMENT ON TABLE t_document_sync_history IS '文档同步历史记录表';
@@ -344,25 +360,26 @@ VALUES ('07-document-sync', 'Document scheduled sync with Feishu/URL source adap
 ON CONFLICT (version) DO NOTHING;
 
 -- ============================================================
--- 08: Document chunking
+-- 08: 文档分块处理
 -- ============================================================
 
+-- 知识库文档分块表：存储文档切片后的文本块
 CREATE TABLE IF NOT EXISTS t_knowledge_chunk (
-    id VARCHAR(32) PRIMARY KEY,
-    kb_id VARCHAR(32) NOT NULL,
-    doc_id VARCHAR(32) NOT NULL,
-    chunk_index INTEGER NOT NULL,
-    content TEXT NOT NULL,
-    content_hash VARCHAR(64),
-    char_count INTEGER,
-    token_count INTEGER,
-    metadata JSONB,
-    enabled SMALLINT NOT NULL DEFAULT 1,
-    created_by VARCHAR(32),
-    updated_by VARCHAR(32),
-    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted SMALLINT NOT NULL DEFAULT 0
+    id VARCHAR(32) PRIMARY KEY,                               -- 分块唯一标识
+    kb_id VARCHAR(32) NOT NULL,                               -- 所属知识库 ID，关联 t_knowledge_base.id
+    doc_id VARCHAR(32) NOT NULL,                              -- 所属文档 ID，关联 t_knowledge_document.id
+    chunk_index INTEGER NOT NULL,                             -- 块在文档中的序号，从 0 开始
+    content TEXT NOT NULL,                                     -- 块的文本内容
+    content_hash VARCHAR(64),                                 -- 内容的 SHA-256 哈希，用于去重和变更检测
+    char_count INTEGER,                                       -- 字符数
+    token_count INTEGER,                                      -- token 数，可后续填充
+    metadata JSONB,                                           -- 扩展元数据，JSON 格式
+    enabled SMALLINT NOT NULL DEFAULT 1,                      -- 是否启用：0 禁用，1 启用，检索时过滤
+    created_by VARCHAR(32),                                   -- 创建人用户 ID
+    updated_by VARCHAR(32),                                   -- 最近更新人用户 ID
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 更新时间
+    deleted SMALLINT NOT NULL DEFAULT 0                       -- 逻辑删除标记，0 未删除，1 已删除
 );
 COMMENT ON TABLE t_knowledge_chunk IS '知识库文档分块表，存储文档切片后的文本块';
 COMMENT ON COLUMN t_knowledge_chunk.kb_id IS '所属知识库 ID，关联 t_knowledge_base.id';
@@ -380,24 +397,25 @@ COMMENT ON COLUMN t_knowledge_chunk.deleted IS '逻辑删除标记，0 表示未
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_doc_id ON t_knowledge_chunk (doc_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_kb_id ON t_knowledge_chunk (kb_id);
 
+-- 文档分块处理日志表：记录每次分块处理的耗时和结果
 CREATE TABLE IF NOT EXISTS t_knowledge_document_chunk_log (
-    id VARCHAR(32) PRIMARY KEY,
-    doc_id VARCHAR(32) NOT NULL,
-    kb_id VARCHAR(32) NOT NULL,
-    process_mode VARCHAR(20) NOT NULL,
-    chunk_strategy VARCHAR(30),
-    pipeline_id VARCHAR(32),
-    chunk_count INTEGER,
-    extract_duration BIGINT,
-    chunk_duration BIGINT,
-    embed_duration BIGINT,
-    persist_duration BIGINT,
-    total_duration BIGINT,
-    status VARCHAR(20),
-    error_message TEXT,
-    start_time TIMESTAMP,
-    end_time TIMESTAMP,
-    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id VARCHAR(32) PRIMARY KEY,                               -- 日志记录唯一标识
+    doc_id VARCHAR(32) NOT NULL,                              -- 关联文档 ID
+    kb_id VARCHAR(32) NOT NULL,                               -- 关联知识库 ID
+    process_mode VARCHAR(20) NOT NULL,                        -- 处理模式：chunk / pipeline
+    chunk_strategy VARCHAR(30),                               -- 使用的分块策略名称
+    pipeline_id VARCHAR(32),                                  -- 关联的处理流水线 ID
+    chunk_count INTEGER,                                      -- 分块数量
+    extract_duration BIGINT,                                  -- 文本提取耗时（毫秒）
+    chunk_duration BIGINT,                                    -- 分块耗时（毫秒）
+    embed_duration BIGINT,                                    -- 嵌入耗时（毫秒）
+    persist_duration BIGINT,                                  -- 持久化耗时（毫秒）
+    total_duration BIGINT,                                    -- 总耗时（毫秒）
+    status VARCHAR(20),                                       -- 处理状态：SUCCESS / FAILED
+    error_message TEXT,                                       -- 失败时的错误信息
+    start_time TIMESTAMP,                                     -- 解析开始时间
+    end_time TIMESTAMP,                                       -- 解析结束时间
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP  -- 创建时间
 );
 COMMENT ON TABLE t_knowledge_document_chunk_log IS '文档分块处理日志表，记录每次分块处理的耗时和结果';
 COMMENT ON COLUMN t_knowledge_document_chunk_log.doc_id IS '关联文档 ID';
@@ -420,10 +438,49 @@ INSERT INTO t_devbrain_schema_info (version, description)
 VALUES ('08-document-chunking', 'Document chunk and chunk processing log tables')
 ON CONFLICT (version) DO NOTHING;
 
--- Migration: add start_time, end_time and pipeline_id columns to chunk log table
+-- 迁移：为分块日志表添加 start_time、end_time 和 pipeline_id 字段
 ALTER TABLE t_knowledge_document_chunk_log ADD COLUMN IF NOT EXISTS start_time TIMESTAMP;
 ALTER TABLE t_knowledge_document_chunk_log ADD COLUMN IF NOT EXISTS end_time TIMESTAMP;
 ALTER TABLE t_knowledge_document_chunk_log ADD COLUMN IF NOT EXISTS pipeline_id VARCHAR(32);
 
--- Migration: add metadata column to chunk table
+-- 迁移：为分块表添加 metadata 字段
 ALTER TABLE t_knowledge_chunk ADD COLUMN IF NOT EXISTS metadata JSONB;
+
+-- ============================================================
+-- 09: 知识库向量存储
+-- ============================================================
+
+-- 知识库向量存储表：保存 Chunk 文本及其 Embedding，用于相似度检索
+CREATE TABLE IF NOT EXISTS t_knowledge_vector (
+    id VARCHAR(32) PRIMARY KEY,                               -- 向量记录 ID，与 t_knowledge_chunk.id 对应
+    kb_id VARCHAR(32) NOT NULL,                               -- 所属知识库 ID，冗余存储便于按知识库过滤检索
+    doc_id VARCHAR(32) NOT NULL,                              -- 所属文档 ID，冗余存储便于返回来源文档
+    collection_name VARCHAR(64) NOT NULL,                     -- 向量集合名称，格式为 kb_{kbId}
+    content TEXT NOT NULL,                                     -- Chunk 文本内容，冗余存储避免检索命中后回表查询
+    metadata JSONB,                                           -- 向量元数据，包含 chunk_index 等扩展信息
+    embedding vector(1536)                                    -- 1536 维向量，需与 Embedding 模型输出维度一致
+);
+COMMENT ON TABLE t_knowledge_vector IS '知识库向量存储表，保存 Chunk 文本及其 Embedding，用于相似度检索';
+COMMENT ON COLUMN t_knowledge_vector.id IS '向量记录 ID，与 t_knowledge_chunk.id 对应';
+COMMENT ON COLUMN t_knowledge_vector.kb_id IS '所属知识库 ID，冗余存储便于按知识库过滤检索';
+COMMENT ON COLUMN t_knowledge_vector.doc_id IS '所属文档 ID，冗余存储便于返回来源文档';
+COMMENT ON COLUMN t_knowledge_vector.collection_name IS '向量集合名称，格式为 kb_{kbId}，用于隔离不同知识库';
+COMMENT ON COLUMN t_knowledge_vector.content IS 'Chunk 文本内容，冗余存储避免检索命中后回表查询';
+COMMENT ON COLUMN t_knowledge_vector.metadata IS '向量元数据，包含 chunk_index、doc_id、collection_name 等扩展信息';
+COMMENT ON COLUMN t_knowledge_vector.embedding IS '1536 维向量，需与本地 qwen3-embedding:8b-fp16 的 dimensions 配置保持一致';
+CREATE INDEX IF NOT EXISTS idx_kv_metadata ON t_knowledge_vector USING gin (metadata);
+CREATE INDEX IF NOT EXISTS idx_kv_embedding_hnsw ON t_knowledge_vector USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS idx_kv_collection ON t_knowledge_vector (collection_name);
+
+INSERT INTO t_devbrain_schema_info (version, description)
+VALUES ('09-knowledge-vector-storage', 'Knowledge vector storage table with pgvector HNSW similarity retrieval index')
+ON CONFLICT (version) DO NOTHING;
+
+-- 迁移：统一向量存储 ID 与知识库/文档/分块的 ID 宽度
+ALTER TABLE t_knowledge_vector ALTER COLUMN id TYPE VARCHAR(32);
+ALTER TABLE t_knowledge_vector ALTER COLUMN kb_id TYPE VARCHAR(32);
+ALTER TABLE t_knowledge_vector ALTER COLUMN doc_id TYPE VARCHAR(32);
+
+INSERT INTO t_devbrain_schema_info (version, description)
+VALUES ('10-knowledge-vector-id-width', 'Align knowledge vector id/kb_id/doc_id width to 32 chars')
+ON CONFLICT (version) DO NOTHING;

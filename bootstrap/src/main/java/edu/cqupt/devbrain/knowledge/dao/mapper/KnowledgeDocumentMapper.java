@@ -25,6 +25,21 @@ public interface KnowledgeDocumentMapper extends BaseMapper<KnowledgeDocumentDO>
     String selectStatusById(@Param("docId") String docId);
 
     /**
+     * 汇总知识库下未删除文档的 chunk_count。
+     * COALESCE 保证没有文档时返回 0，避免 Service 层处理 SQL 聚合 null 值。
+     *
+     * @param kbId 知识库 ID
+     * @return 未删除文档的 Chunk 总数
+     */
+    @Select("""
+            SELECT COALESCE(SUM(chunk_count), 0)
+              FROM t_knowledge_document
+             WHERE kb_id = #{kbId}
+               AND deleted = 0
+            """)
+    Long sumChunkCountByKnowledgeBaseId(@Param("kbId") String kbId);
+
+    /**
      * 仅当文档处于 pending、failed、completed 或可恢复的 processing 状态时，将其原子更新为 processing。
      *
      * @param docId 文档 ID
