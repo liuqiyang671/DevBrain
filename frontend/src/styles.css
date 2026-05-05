@@ -943,6 +943,21 @@ p {
   gap: 12px;
 }
 
+.inline-checkbox {
+  display: inline-flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 800;
+}
+
+.inline-checkbox input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+
 input[type="range"] {
   min-height: 28px;
   padding: 0;

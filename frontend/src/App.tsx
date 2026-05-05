@@ -40,7 +40,9 @@ type ChunkStrategyMode =
   | 'structure_aware'
   | 'qa_pair'
   | 'table_aware'
-  | 'semantic_chunking';
+  | 'semantic_chunking'
+  | 'recursive_semantic'
+  | 'recursive_post_process';
 type IconName =
   | 'home'
   | 'message'
@@ -102,6 +104,16 @@ interface ChunkFormState {
   batchSize: number;
   /** 语义分块可选指定的 Embedding 模型，留空时沿用知识库默认模型 */
   embeddingModel: string;
+  /** 递归 + 语义模式下的语义细切目标大小 */
+  semanticChunkSize: number;
+  /** 递归 + 语义模式下的语义细切重叠大小 */
+  semanticOverlapSize: number;
+  /** 递归 + 后处理模式下合并短块的阈值 */
+  postProcessMinChars: number;
+  /** 递归 + 后处理模式下拆分长块的阈值 */
+  postProcessMaxChars: number;
+  /** 混合分块是否补充章节、字符数等元数据 */
+  includeMetadata: boolean;
 }
 
 /** 本地文档版本记录（存储在 localStorage 中） */
@@ -175,6 +187,11 @@ const defaultChunkForm: ChunkFormState = {
   similarityThreshold: 0.5,
   batchSize: 10,
   embeddingModel: '',
+  semanticChunkSize: 512,
+  semanticOverlapSize: 50,
+  postProcessMinChars: 240,
+  postProcessMaxChars: 1400,
+  includeMetadata: true,
 };
 /** 语义分块默认值需要与后端 SemanticOptions 保持一致。 */
 const defaultSemanticChunkForm: Pick<
@@ -189,6 +206,42 @@ const defaultSemanticChunkForm: Pick<
   batchSize: 10,
   embeddingModel: '',
 };
+/** 递归 + 语义混合分块默认值需要与后端 HybridChunkingOptions 保持一致。 */
+const defaultRecursiveSemanticForm: Pick<
+  ChunkFormState,
+  | 'chunkSize'
+  | 'overlapSize'
+  | 'semanticChunkSize'
+  | 'semanticOverlapSize'
+  | 'minChars'
+  | 'maxChars'
+  | 'similarityThreshold'
+  | 'batchSize'
+  | 'embeddingModel'
+  | 'includeMetadata'
+> = {
+  chunkSize: 1400,
+  overlapSize: 0,
+  semanticChunkSize: 512,
+  semanticOverlapSize: 50,
+  minChars: 100,
+  maxChars: 1024,
+  similarityThreshold: 0.5,
+  batchSize: 10,
+  embeddingModel: '',
+  includeMetadata: true,
+};
+/** 递归 + 后处理混合分块默认值需要与后端 HybridChunkingOptions 保持一致。 */
+const defaultRecursivePostProcessForm: Pick<
+  ChunkFormState,
+  'chunkSize' | 'overlapSize' | 'postProcessMinChars' | 'postProcessMaxChars' | 'includeMetadata'
+> = {
+  chunkSize: 1400,
+  overlapSize: 0,
+  postProcessMinChars: 240,
+  postProcessMaxChars: 1400,
+  includeMetadata: true,
+};
 /** 分块策略选项列表，用于下拉选择 */
 const chunkStrategyOptions: Array<{ value: ChunkStrategyMode; label: string; hint: string }> = [
   { value: 'fixed_size', label: '固定长度', hint: '通用文档快速处理' },
@@ -197,6 +250,8 @@ const chunkStrategyOptions: Array<{ value: ChunkStrategyMode; label: string; hin
   { value: 'qa_pair', label: '问答对', hint: '适合 FAQ 和问答材料' },
   { value: 'table_aware', label: '表格感知', hint: '尽量保持表格完整' },
   { value: 'semantic_chunking', label: '语义分块', hint: '按相邻句子的语义变化切分' },
+  { value: 'recursive_semantic', label: '递归 + 语义', hint: '先按段落粗切，再按语义细切' },
+  { value: 'recursive_post_process', label: '递归 + 后处理', hint: '递归切分后规整大小并补充元数据' },
 ];
 /** 文档版本记录的 localStorage 存储键 */
 const documentVersionStoreKey = 'devbrain.documentVersions.v1';
@@ -2385,8 +2440,17 @@ function ChunkConfigPanel({
 }) {
   const strategy = chunkStrategyOptions.find((item) => item.value === value.strategy) || chunkStrategyOptions[0];
   const isSemanticStrategy = value.strategy === 'semantic_chunking';
-  const usesBoundaryConfig = value.strategy === 'structure_aware' || value.strategy === 'table_aware' || isSemanticStrategy;
-  const sizeLabel = isSemanticStrategy ? '目标块大小' : usesBoundaryConfig ? '目标大小' : '分块大小';
+  const isRecursiveSemanticStrategy = value.strategy === 'recursive_semantic';
+  const isRecursivePostProcessStrategy = value.strategy === 'recursive_post_process';
+  const usesSemanticControls = isSemanticStrategy || isRecursiveSemanticStrategy;
+  const usesPostProcessControls = isRecursivePostProcessStrategy;
+  const usesBoundaryConfig = value.strategy === 'structure_aware'
+    || value.strategy === 'table_aware'
+    || isSemanticStrategy
+    || isRecursiveSemanticStrategy;
+  const sizeLabel = isRecursiveSemanticStrategy || isRecursivePostProcessStrategy
+    ? '递归粗切大小'
+    : isSemanticStrategy ? '目标块大小' : usesBoundaryConfig ? '目标大小' : '分块大小';
   const overlapLabel = usesBoundaryConfig ? '重叠字符' : '重叠度';
 
   function update(partial: Partial<ChunkFormState>) {
@@ -2397,6 +2461,16 @@ function ChunkConfigPanel({
     if (nextStrategy === 'semantic_chunking') {
       // 切到语义分块时使用后端 SemanticOptions 的默认参数，避免沿用固定分块的重叠值导致配置偏大。
       update({ strategy: nextStrategy, ...defaultSemanticChunkForm });
+      return;
+    }
+    if (nextStrategy === 'recursive_semantic') {
+      // 混合模式切换时重置为后端 HybridChunkingOptions 默认值，避免继承普通分块的尺寸导致配置含义错位。
+      update({ strategy: nextStrategy, ...defaultRecursiveSemanticForm });
+      return;
+    }
+    if (nextStrategy === 'recursive_post_process') {
+      // 后处理模式只需要递归粗切和后处理阈值，语义字段保留默认但不展示。
+      update({ strategy: nextStrategy, ...defaultRecursivePostProcessForm });
       return;
     }
     update({ strategy: nextStrategy });
@@ -2441,7 +2515,7 @@ function ChunkConfigPanel({
             type="number"
             min={0}
             max={Math.max(0, value.chunkSize - 1)}
-            step={isSemanticStrategy ? 10 : 16}
+            step={usesSemanticControls ? 10 : 16}
             value={value.overlapSize}
             onChange={(event) => updateNumber('overlapSize', event.target.value)}
             disabled={disabled}
@@ -2468,7 +2542,7 @@ function ChunkConfigPanel({
               type="range"
               min={0}
               max={Math.max(0, value.chunkSize - 1)}
-              step={isSemanticStrategy ? 10 : 16}
+              step={usesSemanticControls ? 10 : 16}
               value={Math.min(value.overlapSize, Math.max(0, value.chunkSize - 1))}
               onChange={(event) => updateNumber('overlapSize', event.target.value)}
               disabled={disabled}
@@ -2479,7 +2553,7 @@ function ChunkConfigPanel({
       {usesBoundaryConfig && (
         <div className="chunk-control-grid">
           <label>
-            {isSemanticStrategy ? '最小块大小' : '最小字符'}
+            {usesSemanticControls ? '最小块大小' : '最小字符'}
             <input
               type="number"
               min={0}
@@ -2491,7 +2565,7 @@ function ChunkConfigPanel({
             />
           </label>
           <label>
-            {isSemanticStrategy ? '最大块大小' : '最大字符'}
+            {usesSemanticControls ? '最大块大小' : '最大字符'}
             <input
               type="number"
               min={value.chunkSize}
@@ -2504,7 +2578,35 @@ function ChunkConfigPanel({
           </label>
         </div>
       )}
-      {isSemanticStrategy && (
+      {isRecursiveSemanticStrategy && (
+        <div className="chunk-control-grid">
+          <label>
+            语义细切大小
+            <input
+              type="number"
+              min={128}
+              max={4000}
+              step={64}
+              value={value.semanticChunkSize}
+              onChange={(event) => updateNumber('semanticChunkSize', event.target.value)}
+              disabled={disabled}
+            />
+          </label>
+          <label>
+            语义细切重叠
+            <input
+              type="number"
+              min={0}
+              max={Math.max(0, value.semanticChunkSize - 1)}
+              step={10}
+              value={value.semanticOverlapSize}
+              onChange={(event) => updateNumber('semanticOverlapSize', event.target.value)}
+              disabled={disabled}
+            />
+          </label>
+        </div>
+      )}
+      {usesSemanticControls && (
         <>
           <div className="chunk-control-grid">
             <label>
@@ -2574,6 +2676,56 @@ function ChunkConfigPanel({
             </select>
           </label>
         </>
+      )}
+      {usesPostProcessControls && (
+        <>
+          <div className="chunk-control-grid">
+            <label>
+              短块合并阈值
+              <input
+                type="number"
+                min={1}
+                max={value.postProcessMaxChars}
+                step={20}
+                value={value.postProcessMinChars}
+                onChange={(event) => updateNumber('postProcessMinChars', event.target.value)}
+                disabled={disabled}
+              />
+            </label>
+            <label>
+              长块拆分阈值
+              <input
+                type="number"
+                min={value.postProcessMinChars}
+                max={8000}
+                step={50}
+                value={value.postProcessMaxChars}
+                onChange={(event) => updateNumber('postProcessMaxChars', event.target.value)}
+                disabled={disabled}
+              />
+            </label>
+          </div>
+          <label className="inline-checkbox">
+            <input
+              type="checkbox"
+              checked={value.includeMetadata}
+              onChange={(event) => update({ includeMetadata: event.target.checked })}
+              disabled={disabled}
+            />
+            补充章节标题、字符数等元数据
+          </label>
+        </>
+      )}
+      {isRecursiveSemanticStrategy && (
+        <label className="inline-checkbox">
+          <input
+            type="checkbox"
+            checked={value.includeMetadata}
+            onChange={(event) => update({ includeMetadata: event.target.checked })}
+            disabled={disabled}
+          />
+          记录粗切来源和字符数元数据
+        </label>
       )}
     </section>
   );
@@ -3016,6 +3168,44 @@ function formatFileSize(bytes?: number | null) {
 function buildChunkConfig(form: ChunkFormState) {
   const chunkSize = Math.max(128, Math.round(form.chunkSize || defaultChunkForm.chunkSize));
   const overlapSize = Math.min(Math.max(0, Math.round(form.overlapSize || 0)), Math.max(0, chunkSize - 1));
+  if (form.strategy === 'recursive_semantic') {
+    const semanticChunkSize = Math.max(128, Math.round(form.semanticChunkSize || defaultRecursiveSemanticForm.semanticChunkSize));
+    const semanticOverlapSize = Math.min(
+      Math.max(0, Math.round(form.semanticOverlapSize || 0)),
+      Math.max(0, semanticChunkSize - 1),
+    );
+    const minChunkSize = Math.max(1, Math.round(form.minChars || defaultRecursiveSemanticForm.minChars));
+    const maxChunkSize = Math.max(minChunkSize, Math.round(form.maxChars || defaultRecursiveSemanticForm.maxChars));
+    const config: Record<string, number | string | boolean> = {
+      coarseChunkSize: chunkSize,
+      coarseOverlapSize: overlapSize,
+      semanticChunkSize,
+      semanticOverlapSize,
+      similarityThreshold: Math.min(1, Math.max(0, Number(form.similarityThreshold || defaultRecursiveSemanticForm.similarityThreshold))),
+      minChunkSize,
+      maxChunkSize,
+      batchSize: Math.max(1, Math.round(form.batchSize || defaultRecursiveSemanticForm.batchSize)),
+      postProcessMinChars: Math.max(1, Math.round(form.postProcessMinChars || defaultChunkForm.postProcessMinChars)),
+      postProcessMaxChars: Math.max(chunkSize, Math.round(form.postProcessMaxChars || defaultChunkForm.postProcessMaxChars)),
+      includeMetadata: form.includeMetadata,
+    };
+    if (form.embeddingModel.trim()) {
+      // 混合语义细切同样支持可选模型，留空时后端沿用默认 Embedding 模型。
+      config.embeddingModel = form.embeddingModel.trim();
+    }
+    return JSON.stringify(config);
+  }
+  if (form.strategy === 'recursive_post_process') {
+    const postProcessMinChars = Math.max(1, Math.round(form.postProcessMinChars || defaultRecursivePostProcessForm.postProcessMinChars));
+    const postProcessMaxChars = Math.max(postProcessMinChars, Math.round(form.postProcessMaxChars || defaultRecursivePostProcessForm.postProcessMaxChars));
+    return JSON.stringify({
+      coarseChunkSize: chunkSize,
+      coarseOverlapSize: overlapSize,
+      postProcessMinChars,
+      postProcessMaxChars,
+      includeMetadata: form.includeMetadata,
+    });
+  }
   if (form.strategy === 'semantic_chunking') {
     const minChunkSize = Math.max(0, Math.round(form.minChars || defaultSemanticChunkForm.minChars));
     const maxChunkSize = Math.max(chunkSize, Math.round(form.maxChars || defaultSemanticChunkForm.maxChars));
@@ -3059,12 +3249,16 @@ function parseChunkForm(strategy?: string | null, config?: string | null): Chunk
   const normalizedStrategy = normalizeChunkStrategy(strategy);
   const next = normalizedStrategy === 'semantic_chunking'
     ? { ...defaultChunkForm, ...defaultSemanticChunkForm, strategy: normalizedStrategy }
+    : normalizedStrategy === 'recursive_semantic'
+      ? { ...defaultChunkForm, ...defaultRecursiveSemanticForm, strategy: normalizedStrategy }
+      : normalizedStrategy === 'recursive_post_process'
+        ? { ...defaultChunkForm, ...defaultRecursivePostProcessForm, strategy: normalizedStrategy }
     : { ...defaultChunkForm, strategy: normalizedStrategy };
   if (!config) return next;
   try {
     const parsed = JSON.parse(config) as Record<string, unknown>;
-    const chunkSize = readConfigNumber(parsed.chunkSize, parsed.targetChars, next.chunkSize);
-    const overlapSize = readConfigNumber(parsed.overlapSize, parsed.overlapChars, next.overlapSize);
+    const chunkSize = readConfigNumber(parsed.coarseChunkSize, readConfigNumber(parsed.chunkSize, parsed.targetChars, next.chunkSize), next.chunkSize);
+    const overlapSize = readConfigNumber(parsed.coarseOverlapSize, readConfigNumber(parsed.overlapSize, parsed.overlapChars, next.overlapSize), next.overlapSize);
     return {
       ...next,
       chunkSize,
@@ -3074,6 +3268,11 @@ function parseChunkForm(strategy?: string | null, config?: string | null): Chunk
       similarityThreshold: readConfigNumber(parsed.similarityThreshold, undefined, next.similarityThreshold),
       batchSize: readConfigNumber(parsed.batchSize, undefined, next.batchSize),
       embeddingModel: typeof parsed.embeddingModel === 'string' ? parsed.embeddingModel : next.embeddingModel,
+      semanticChunkSize: readConfigNumber(parsed.semanticChunkSize, undefined, next.semanticChunkSize),
+      semanticOverlapSize: readConfigNumber(parsed.semanticOverlapSize, undefined, next.semanticOverlapSize),
+      postProcessMinChars: readConfigNumber(parsed.postProcessMinChars, undefined, next.postProcessMinChars),
+      postProcessMaxChars: readConfigNumber(parsed.postProcessMaxChars, undefined, next.postProcessMaxChars),
+      includeMetadata: readConfigBoolean(parsed.includeMetadata, next.includeMetadata),
     };
   } catch {
     return next;
@@ -3100,6 +3299,12 @@ function readConfigNumber(primary: unknown, fallback: unknown, defaultValue: num
   const value = typeof primary === 'number' || typeof primary === 'string' ? primary : fallback;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : defaultValue;
+}
+
+function readConfigBoolean(value: unknown, defaultValue: boolean) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') return value.trim().toLowerCase() === 'true';
+  return defaultValue;
 }
 
 function ensureMarkdownFileName(value: string) {
