@@ -70,6 +70,18 @@ class DocumentParserSelectorTest {
     }
 
     /**
+     * 验证 Pipeline ParserNode 使用的 selectParser 入口复用 MIME 类型选择逻辑。
+     */
+    @Test
+    void shouldSelectParserByMimeTypeAlias() {
+        when(markdownParser.supports("text/plain")).thenReturn(true);
+
+        DocumentParser selectedParser = selector.selectParser("text/plain");
+
+        assertSame(markdownParser, selectedParser);
+    }
+
+    /**
      * 验证所有解析器都未声明支持时会回退到 Tika 解析器。
      */
     @Test

@@ -13,6 +13,8 @@ import edu.cqupt.devbrain.knowledge.dao.mapper.KnowledgeDocumentMapper;
 import edu.cqupt.devbrain.core.chunk.ChunkEmbeddingService;
 import edu.cqupt.devbrain.core.chunk.ChunkingStrategyFactory;
 import edu.cqupt.devbrain.core.parser.DocumentParserSelector;
+import edu.cqupt.devbrain.ingestion.engine.IngestionEngine;
+import edu.cqupt.devbrain.ingestion.service.IngestionPipelineService;
 import edu.cqupt.devbrain.knowledge.dao.mapper.KnowledgeDocumentChunkLogMapper;
 import edu.cqupt.devbrain.knowledge.mq.KnowledgeDocumentChunkProducer;
 import edu.cqupt.devbrain.knowledge.service.KnowledgeChunkService;
@@ -34,8 +36,10 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -63,12 +67,14 @@ class KnowledgeDocumentServiceImplTest {
     private final VectorStoreService vectorStoreService = mock(VectorStoreService.class);
     private final ObjectMapper objectMapper = mock(ObjectMapper.class);
     private final KnowledgeDocumentChunkProducer chunkProducer = mock(KnowledgeDocumentChunkProducer.class);
+    private final IngestionEngine ingestionEngine = mock(IngestionEngine.class);
+    private final IngestionPipelineService ingestionPipelineService = mock(IngestionPipelineService.class);
 
     private final KnowledgeDocumentServiceImpl service = new KnowledgeDocumentServiceImpl(
             knowledgeBaseMapper, knowledgeDocumentMapper, chunkLogMapper, chunkService,
             fileStorageService, fileUploadValidator, transactionTemplate, adapterRegistry,
             parserSelector, strategyFactory, chunkEmbeddingService, vectorStoreService,
-            objectMapper, chunkProducer
+            objectMapper, chunkProducer, ingestionEngine, ingestionPipelineService
     );
 
     @AfterEach
@@ -115,6 +121,7 @@ class KnowledgeDocumentServiceImplTest {
         assertEquals("file", result.sourceType());
 
         verify(knowledgeDocumentMapper).insert(any(KnowledgeDocumentDO.class));
+        verify(chunkProducer, never()).startChunk(any(), any(), any());
     }
 
     @Test
@@ -236,6 +243,7 @@ class KnowledgeDocumentServiceImplTest {
         DocumentVO result = service.upload("kb-1", file, null, null, null, null);
 
         assertEquals("chunk", result.processMode());
+        verify(chunkProducer, never()).startChunk(any(), any(), any());
     }
 
     @Test
@@ -317,6 +325,47 @@ class KnowledgeDocumentServiceImplTest {
 
         verify(knowledgeDocumentMapper, never()).deleteById(any(KnowledgeDocumentDO.class));
         verify(fileStorageService, never()).delete(anyString());
+    }
+
+    @Test
+    void startChunkSendsTransactionalMessageForPendingDocument() {
+        // given
+        UserContext.set(loginUser());
+        KnowledgeDocumentDO document = existingDocument("doc-1", "kb-1");
+        document.setStatus("pending");
+        when(knowledgeDocumentMapper.selectById("doc-1")).thenReturn(document);
+        when(chunkProducer.startChunk("doc-1", "kb-1", "user-1")).thenReturn(true);
+
+        // when
+        boolean triggered = service.startChunk("doc-1");
+
+        // then
+        assertTrue(triggered);
+        verify(chunkProducer).startChunk("doc-1", "kb-1", "user-1");
+    }
+
+    @Test
+    void startChunkReturnsFalseForCompletedDocument() {
+        // given
+        KnowledgeDocumentDO document = existingDocument("doc-1", "kb-1");
+        document.setStatus("completed");
+        when(knowledgeDocumentMapper.selectById("doc-1")).thenReturn(document);
+
+        // when
+        boolean triggered = service.startChunk("doc-1");
+
+        // then
+        assertFalse(triggered);
+        verify(chunkProducer, never()).startChunk(any(), any(), any());
+    }
+
+    @Test
+    void startChunkRejectsMissingDocument() {
+        when(knowledgeDocumentMapper.selectById("missing")).thenReturn(null);
+
+        assertThrows(ClientException.class, () -> service.startChunk("missing"));
+
+        verify(chunkProducer, never()).startChunk(any(), any(), any());
     }
 
     // ========== helpers ==========

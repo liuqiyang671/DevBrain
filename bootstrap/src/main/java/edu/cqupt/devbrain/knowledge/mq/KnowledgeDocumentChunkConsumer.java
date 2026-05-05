@@ -20,7 +20,7 @@ import java.util.Set;
 @Component
 @RequiredArgsConstructor
 @RocketMQMessageListener(
-        topic = "knowledge-document-chunk_topic",
+        topic = "${rocketmq.topic.knowledge-document-chunk:knowledge-document-chunk_topic}",
         consumerGroup = "knowledge-document-chunk_consumer"
 )
 public class KnowledgeDocumentChunkConsumer implements RocketMQListener<MessageWrapper<KnowledgeDocumentChunkEvent>> {

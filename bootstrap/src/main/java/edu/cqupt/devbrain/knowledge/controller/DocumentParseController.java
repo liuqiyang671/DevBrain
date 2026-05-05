@@ -1,7 +1,6 @@
 package edu.cqupt.devbrain.knowledge.controller;
 
 import edu.cqupt.devbrain.core.chunk.VectorChunk;
-import edu.cqupt.devbrain.core.mq.DocumentChunkProducer;
 import edu.cqupt.devbrain.framework.convention.Result;
 import edu.cqupt.devbrain.framework.context.UserContext;
 import edu.cqupt.devbrain.framework.exception.ServiceException;
@@ -25,8 +24,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 
 /**
  * 文档解析控制器，提供触发解析、查询状态、查询分块和重试解析接口。
@@ -49,8 +46,6 @@ public class DocumentParseController {
 
     private final DocumentParseService documentParseService;
     private final KnowledgeDocumentService knowledgeDocumentService;
-    private final DocumentChunkProducer documentChunkProducer;
-    private final Executor applicationTaskExecutor;
 
     /**
      * 触发指定文档解析。
@@ -65,7 +60,8 @@ public class DocumentParseController {
             if (request != null) {
                 knowledgeDocumentService.updateChunkConfig(docId, request.chunkStrategy(), request.chunkConfig());
             }
-            return triggerChunk(docId, UserContext.requireUser().userId());
+            UserContext.requireUser();
+            return triggerChunk(docId);
         } catch (ServiceException e) {
             return Results.failure(e.errorCode, e.getMessage());
         }
@@ -115,29 +111,19 @@ public class DocumentParseController {
     @PostMapping("/parse/{docId}/retry")
     public Result<Void> retry(@PathVariable String docId) {
         try {
-            return triggerChunk(docId, UserContext.requireUser().userId());
+            UserContext.requireUser();
+            return triggerChunk(docId);
         } catch (ServiceException e) {
             return Results.failure(e.errorCode, e.getMessage());
         }
     }
 
-    private Result<Void> triggerChunk(String docId, String userId) {
-        boolean triggered = documentChunkProducer.startChunk(docId, userId, null);
+    private Result<Void> triggerChunk(String docId) {
+        boolean triggered = knowledgeDocumentService.startChunk(docId);
         if (triggered) {
             return Results.success();
         }
-        boolean localPrepared = documentChunkProducer.prepareLocalChunk(docId, userId);
-        if (!localPrepared) {
-            return Results.failure("A000409", "文档正在解析中或当前状态不允许解析");
-        }
-        CompletableFuture.runAsync(() -> {
-            try {
-                knowledgeDocumentService.executeChunk(docId);
-            } catch (Exception e) {
-                log.error("本地文档分块执行失败，docId={}", docId, e);
-            }
-        }, applicationTaskExecutor);
-        return Results.success();
+        return Results.failure("A000409", "文档正在解析中或当前状态不允许解析");
     }
 
     /**

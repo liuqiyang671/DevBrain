@@ -16,6 +16,15 @@ import edu.cqupt.devbrain.framework.context.UserContext;
 import edu.cqupt.devbrain.framework.errorcode.BaseErrorCode;
 import edu.cqupt.devbrain.framework.exception.ClientException;
 import edu.cqupt.devbrain.framework.exception.ServiceException;
+import edu.cqupt.devbrain.ingestion.domain.IngestionStatus;
+import edu.cqupt.devbrain.ingestion.domain.SourceType;
+import edu.cqupt.devbrain.ingestion.domain.context.DocumentSource;
+import edu.cqupt.devbrain.ingestion.domain.context.IngestionContext;
+import edu.cqupt.devbrain.ingestion.domain.context.NodeLog;
+import edu.cqupt.devbrain.ingestion.domain.pipeline.PipelineDefinition;
+import edu.cqupt.devbrain.ingestion.domain.result.IngestionResult;
+import edu.cqupt.devbrain.ingestion.engine.IngestionEngine;
+import edu.cqupt.devbrain.ingestion.service.IngestionPipelineService;
 import edu.cqupt.devbrain.knowledge.controller.request.OnlineDocumentImportRequest;
 import edu.cqupt.devbrain.knowledge.controller.vo.DocumentVO;
 import edu.cqupt.devbrain.knowledge.dao.entity.KnowledgeBaseDO;
@@ -71,9 +80,17 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
     private static final String DEFAULT_STATUS = "pending";
     private static final String DEFAULT_PROCESS_MODE = "chunk";
-    private static final String MANUAL_PROCESS_MODE = "manual";
+    private static final String PIPELINE_PROCESS_MODE = "pipeline";
     private static final String SOURCE_TYPE = "file";
     private static final String ONLINE_FILE_TYPE = "txt";
+    private static final String STATUS_PENDING = "pending";
+    private static final String STATUS_PROCESSING = "processing";
+    private static final String STATUS_RUNNING = "RUNNING";
+    private static final String STATUS_COMPLETED = "completed";
+    private static final String STATUS_FAILED = "failed";
+    private static final String LOG_STATUS_SUCCESS = "SUCCESS";
+    private static final String LOG_STATUS_FAILED = "FAILED";
+    private static final String LOG_STATUS_PROCESSING = "processing";
     private static final Set<String> ONLINE_SOURCE_TYPES = Set.of("feishu", "url");
     private static final Set<String> DOCUMENT_STATUSES = Set.of("pending", "processing", "completed", "failed");
 
@@ -91,6 +108,8 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     private final VectorStoreService vectorStoreService;
     private final ObjectMapper objectMapper;
     private final KnowledgeDocumentChunkProducer chunkProducer;
+    private final IngestionEngine ingestionEngine;
+    private final IngestionPipelineService ingestionPipelineService;
 
     @Override
     public List<DocumentVO> listByKnowledgeBase(String kbId) {
@@ -199,7 +218,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             throw e;
         }
 
-        triggerChunkAsync(result.id(), kbId, result.processMode());
+        log.info("文档上传已入库，等待用户手动确认分块，kbId={}, docId={}", kbId, result.id());
         return result;
     }
 
@@ -271,7 +290,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             throw e;
         }
 
-        triggerChunkAsync(result.id(), kbId, result.processMode());
+        log.info("在线文档导入已入库，等待用户手动确认分块，kbId={}, docId={}", kbId, result.id());
         return result;
     }
 
@@ -301,6 +320,36 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     }
 
     @Override
+    public boolean startChunk(String docId) {
+        if (!StringUtils.hasText(docId)) {
+            throw new ClientException("文档 ID 不能为空");
+        }
+        KnowledgeDocumentDO document = knowledgeDocumentMapper.selectById(docId);
+        if (document == null || Integer.valueOf(1).equals(document.getDeleted())) {
+            throw new ClientException("文档不存在或已删除：" + docId);
+        }
+
+        // 本项目数据库状态仍使用 processing 表示 RUNNING，避免引入新状态破坏既有查询和前端枚举。
+        String status = clean(document.getStatus());
+        if (STATUS_COMPLETED.equalsIgnoreCase(status)) {
+            log.info("文档已分块成功，不再触发异步分块，docId={}", docId);
+            return false;
+        }
+        if (!STATUS_PENDING.equalsIgnoreCase(status) && !STATUS_FAILED.equalsIgnoreCase(status)) {
+            log.info("文档当前状态不允许触发异步分块，docId={}, status={}", docId, status);
+            return false;
+        }
+
+        String operator = resolveOperator(document);
+        boolean triggered = chunkProducer.startChunk(document.getId(), document.getKbId(), operator);
+        if (!triggered) {
+            log.warn("文档异步分块事务消息未提交，docId={}, kbId={}, operator={}",
+                    document.getId(), document.getKbId(), operator);
+        }
+        return triggered;
+    }
+
+    @Override
     public void delete(String kbId, String docId) {
         KnowledgeDocumentDO document = requireDocument(kbId, docId);
         document.setUpdatedBy(UserContext.requireUser().userId());
@@ -313,14 +362,18 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     public void executeChunk(String docId) {
         KnowledgeDocumentDO doc = knowledgeDocumentMapper.selectById(docId);
         if (doc == null || Integer.valueOf(1).equals(doc.getDeleted())) {
-            throw new ClientException("文档不存在或已删除：" + docId);
+            return;
+        }
+        if (!isExecutableStatus(doc.getStatus())) {
+            log.info("文档状态不需要分块，跳过执行，docId={}, status={}", docId, doc.getStatus());
+            return;
         }
 
         long totalStart = System.currentTimeMillis();
         KnowledgeDocumentChunkLogDO logEntry = null;
         boolean logInserted = false;
         try {
-            doc.setStatus("processing");
+            doc.setStatus(STATUS_PROCESSING);
             knowledgeDocumentMapper.updateById(doc);
 
             logEntry = new KnowledgeDocumentChunkLogDO();
@@ -328,21 +381,26 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             logEntry.setKbId(doc.getKbId());
             logEntry.setProcessMode(doc.getProcessMode());
             logEntry.setChunkStrategy(doc.getChunkStrategy());
-            logEntry.setStatus("processing");
+            logEntry.setPipelineId(doc.getPipelineId());
+            logEntry.setStatus(LOG_STATUS_PROCESSING);
             logEntry.setCreateTime(LocalDateTime.now());
             logEntry.setStartTime(LocalDateTime.now());
             chunkLogMapper.insert(logEntry);
             logInserted = true;
 
-            runChunkProcess(doc, logEntry);
+            if (PIPELINE_PROCESS_MODE.equalsIgnoreCase(clean(doc.getProcessMode()))) {
+                runPipelineProcess(doc, logEntry);
+            } else {
+                runChunkProcess(doc, logEntry);
+            }
             long totalDuration = System.currentTimeMillis() - totalStart;
 
-            logEntry.setStatus("completed");
+            logEntry.setStatus(LOG_STATUS_SUCCESS);
             logEntry.setTotalDuration(totalDuration);
             logEntry.setEndTime(LocalDateTime.now());
             chunkLogMapper.updateById(logEntry);
 
-            doc.setStatus("completed");
+            doc.setStatus(STATUS_COMPLETED);
             knowledgeDocumentMapper.updateById(doc);
 
             log.info("文档分块处理完成，docId={}, chunkCount={}, totalDuration={}ms",
@@ -350,14 +408,14 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
         } catch (Exception e) {
             long totalDuration = System.currentTimeMillis() - totalStart;
             if (logInserted) {
-                logEntry.setStatus("failed");
+                logEntry.setStatus(LOG_STATUS_FAILED);
                 logEntry.setErrorMessage(truncate(e.getMessage(), 2000));
                 logEntry.setTotalDuration(totalDuration);
                 logEntry.setEndTime(LocalDateTime.now());
                 chunkLogMapper.updateById(logEntry);
             }
 
-            doc.setStatus("failed");
+            doc.setStatus(STATUS_FAILED);
             knowledgeDocumentMapper.updateById(doc);
 
             log.error("文档分块处理失败，docId={}", docId, e);
@@ -386,10 +444,9 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
         // 2. 分块
         long chunkStart = System.currentTimeMillis();
-        ChunkingMode mode = ChunkingMode.fromValue(doc.getChunkStrategy());
-        if (mode == null) {
-            mode = ChunkingMode.FIXED_SIZE;
-        }
+        ChunkingMode mode = StringUtils.hasText(doc.getChunkStrategy())
+                ? ChunkingMode.fromValue(doc.getChunkStrategy())
+                : ChunkingMode.FIXED_SIZE;
         ChunkingStrategy strategy = strategyFactory.requireStrategy(mode);
         ChunkingOptions options = buildChunkOptions(mode, doc.getChunkConfig());
         List<VectorChunk> chunks = strategy.chunk(text, options);
@@ -414,11 +471,61 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
 
         // 4. 持久化
         long persistStart = System.currentTimeMillis();
-        persistChunksAndVectorsAtomically(doc, kb, chunks);
+        persistChunksAndVectorsAtomically(doc, chunks);
         long persistDuration = System.currentTimeMillis() - persistStart;
         logEntry.setPersistDuration(persistDuration);
 
         logEntry.setChunkCount(chunks.size());
+    }
+
+    /**
+     * 执行 Pipeline 模式处理。Pipeline 节点负责解析、增强、分块和向量生成，
+     * Indexer 节点通过 skipIndexerWrite 只做校验，最终写库仍由知识库模块统一完成。
+     */
+    private void runPipelineProcess(KnowledgeDocumentDO doc, KnowledgeDocumentChunkLogDO logEntry) {
+        long extractStart = System.currentTimeMillis();
+        String objectKey = resolveObjectKey(doc);
+        byte[] fileBytes = loadFileBytes(objectKey);
+        long extractDuration = System.currentTimeMillis() - extractStart;
+        logEntry.setExtractDuration(extractDuration);
+
+        long chunkStart = System.currentTimeMillis();
+        PipelineDefinition pipeline = ingestionPipelineService.getDefinition(
+                cleanRequired(doc.getPipelineId(), "PIPELINE 模式必须配置 pipelineId"));
+        IngestionContext context = IngestionContext.builder()
+                .taskId(doc.getId())
+                .pipelineId(pipeline.getId())
+                .source(DocumentSource.builder()
+                        .type(SourceType.FILE)
+                        .location(objectKey)
+                        .fileName(doc.getDocName())
+                        .build())
+                .rawBytes(fileBytes)
+                .mimeType(doc.getFileType())
+                .vectorSpaceId(collectionName(doc))
+                .skipIndexerWrite(true)
+                .metadata(new HashMap<>(Map.of(
+                        "kb_id", doc.getKbId(),
+                        "doc_id", doc.getId(),
+                        "doc_name", doc.getDocName()
+                )))
+                .status(IngestionStatus.RUNNING)
+                .build();
+        IngestionResult result = ingestionEngine.execute(pipeline, context);
+        if (result.getStatus() == IngestionStatus.FAILED) {
+            throw new ServiceException("Pipeline 执行失败: " + result.getMessage(), BaseErrorCode.SERVICE_ERROR);
+        }
+        List<VectorChunk> chunks = context.getChunks() == null ? List.of() : context.getChunks();
+        long chunkDuration = System.currentTimeMillis() - chunkStart;
+        logEntry.setChunkDuration(chunkDuration);
+        logEntry.setEmbedDuration(0L);
+
+        long persistStart = System.currentTimeMillis();
+        persistChunksAndVectorsAtomically(doc, chunks);
+        long persistDuration = System.currentTimeMillis() - persistStart;
+        logEntry.setPersistDuration(persistDuration);
+        logEntry.setChunkCount(chunks.size());
+        appendPipelineLogs(logEntry, context.getLogs());
     }
 
     /**
@@ -427,27 +534,28 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
      * @param doc    文档记录
      * @param chunks 向量分块列表
      */
-    public void persistChunksAndVectorsAtomically(KnowledgeDocumentDO doc, KnowledgeBaseDO kb, List<VectorChunk> chunks) {
-        List<KnowledgeChunkDO> chunkDOs = chunks.stream()
+    public void persistChunksAndVectorsAtomically(KnowledgeDocumentDO doc, List<VectorChunk> chunks) {
+        List<VectorChunk> safeChunks = chunks == null ? List.of() : chunks;
+        List<KnowledgeChunkDO> chunkDOs = safeChunks.stream()
                 .map(vc -> toChunkDO(doc, vc))
                 .toList();
-        String collectionName = clean(kb.getCollectionName());
-        if (!StringUtils.hasText(collectionName)) {
-            collectionName = "kb_" + doc.getKbId();
-        }
+        String collectionName = collectionName(doc);
 
         String finalCollectionName = collectionName;
         transactionTemplate.executeWithoutResult(status -> {
+            // 先删除旧 chunk，再写入新 chunk；向量清理由本方法统一控制，避免旧索引残留。
+            chunkService.deleteByDocId(doc.getId());
             chunkService.batchCreate(chunkDOs, false);
             vectorStoreService.deleteDocumentVectors(finalCollectionName, doc.getId());
-            vectorStoreService.indexDocumentChunks(finalCollectionName, doc.getId(), chunks);
+            vectorStoreService.indexDocumentChunks(finalCollectionName, doc.getId(), safeChunks);
 
-            doc.setChunkCount((long) chunks.size());
+            doc.setChunkCount((long) safeChunks.size());
+            doc.setStatus(STATUS_COMPLETED);
             knowledgeDocumentMapper.updateById(doc);
         });
 
         log.info("分块和向量持久化完成，docId={}, collectionName={}, count={}",
-                doc.getId(), collectionName, chunks.size());
+                doc.getId(), collectionName, safeChunks.size());
     }
 
     /**
@@ -490,13 +598,87 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     }
 
     /**
+     * 判断文档当前状态是否允许执行分块任务。
+     * completed 直接跳过，防止分块成功后重复触发造成额外写入。
+     */
+    private boolean isExecutableStatus(String status) {
+        if (!StringUtils.hasText(status)) {
+            return true;
+        }
+        return STATUS_PENDING.equalsIgnoreCase(status)
+                || STATUS_PROCESSING.equalsIgnoreCase(status)
+                || STATUS_RUNNING.equalsIgnoreCase(status);
+    }
+
+    /**
+     * 知识库模块统一使用 kb_{kbId} 作为向量集合名，与 KnowledgeChunkService 和 VectorStoreService 约定一致。
+     */
+    private String collectionName(KnowledgeDocumentDO doc) {
+        return "kb_" + doc.getKbId();
+    }
+
+    /**
+     * 解析对象存储 key。上传文件优先从 fileUrl 提取；若缺失则回退到 sourceLocation。
+     */
+    private String resolveObjectKey(KnowledgeDocumentDO doc) {
+        String objectKey = extractObjectKey(doc.getFileUrl());
+        if (!StringUtils.hasText(objectKey)) {
+            objectKey = clean(doc.getSourceLocation());
+        }
+        if (!StringUtils.hasText(objectKey)) {
+            throw new ServiceException("文档存储路径为空", BaseErrorCode.SERVICE_ERROR);
+        }
+        return objectKey;
+    }
+
+    /**
+     * 从对象存储加载文件字节，供 Pipeline 节点复用原始内容。
+     */
+    private byte[] loadFileBytes(String objectKey) {
+        try (var is = fileStorageService.download(objectKey)) {
+            return is.readAllBytes();
+        } catch (Exception e) {
+            log.error("加载 Pipeline 原始文件失败，objectKey={}", objectKey, e);
+            throw new ServiceException("加载 Pipeline 原始文件失败", e, BaseErrorCode.SERVICE_ERROR);
+        }
+    }
+
+    /**
+     * 将 Pipeline 节点日志摘要附加到分块日志 errorMessage 字段，便于在现有日志表中查看节点链路。
+     */
+    private void appendPipelineLogs(KnowledgeDocumentChunkLogDO logEntry, List<NodeLog> logs) {
+        if (logs == null || logs.isEmpty()) {
+            return;
+        }
+        String summary = logs.stream()
+                .map(nodeLog -> nodeLog.getNodeId() + "(" + nodeLog.getNodeType() + "): "
+                        + (nodeLog.isSuccess() ? "OK" : "FAILED")
+                        + ", " + nodeLog.getDurationMs() + "ms"
+                        + (StringUtils.hasText(nodeLog.getMessage()) ? ", " + nodeLog.getMessage() : ""))
+                .reduce((left, right) -> left + "\n" + right)
+                .orElse(null);
+        logEntry.setErrorMessage(truncate(summary, 2000));
+    }
+
+    /**
+     * 清理字符串并校验必填，避免 Pipeline 模式缺少关键配置时继续执行。
+     */
+    private String cleanRequired(String value, String message) {
+        String cleaned = clean(value);
+        if (!StringUtils.hasText(cleaned)) {
+            throw new ClientException(message);
+        }
+        return cleaned;
+    }
+
+    /**
      * 从对象存储下载文档并提取纯文本内容。
      *
      * @param doc 文档记录
      * @return 提取出的纯文本
      */
     private String extractDocumentText(KnowledgeDocumentDO doc) {
-        String objectKey = extractObjectKey(doc.getFileUrl());
+        String objectKey = resolveObjectKey(doc);
         try (var is = fileStorageService.download(objectKey)) {
             DocumentParser parser = parserSelector.selectByMimeType(doc.getFileType());
             return parser.extractText(is, doc.getFileType());
@@ -527,23 +709,19 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
     }
 
     /**
-     * 异步触发文档分块事件，手动模式下跳过自动触发。
+     * 解析异步分块操作人，优先使用当前登录用户，兜底使用文档审计字段。
      *
-     * @param docId       文档 ID
-     * @param kbId        知识库 ID
-     * @param processMode 处理模式
+     * @param document 文档记录
+     * @return 操作人用户 ID，可为空
      */
-    private void triggerChunkAsync(String docId, String kbId, String processMode) {
-        if (MANUAL_PROCESS_MODE.equalsIgnoreCase(clean(processMode))) {
-            log.info("文档设置为手动分块模式，跳过上传后自动分块，docId={}, kbId={}", docId, kbId);
-            return;
+    private String resolveOperator(KnowledgeDocumentDO document) {
+        if (UserContext.hasUser()) {
+            return UserContext.getUserId();
         }
-        try {
-            String operator = UserContext.hasUser() ? UserContext.getUserId() : null;
-            chunkProducer.sendChunkEvent(docId, kbId, operator);
-        } catch (Exception e) {
-            log.warn("异步分块事件发送失败，docId={}，可稍后手动触发", docId, e);
+        if (StringUtils.hasText(document.getUpdatedBy())) {
+            return document.getUpdatedBy();
         }
+        return document.getCreatedBy();
     }
 
     /**

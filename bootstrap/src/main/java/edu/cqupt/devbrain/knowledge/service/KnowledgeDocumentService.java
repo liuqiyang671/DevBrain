@@ -87,6 +87,16 @@ public interface KnowledgeDocumentService {
     void delete(String kbId, String docId);
 
     /**
+     * 异步启动文档分块任务。
+     * <p>
+     * 通过 RocketMQ 事务消息保证“文档状态切换为 processing”和“分块消息发送”保持一致。
+     *
+     * @param docId 文档 ID
+     * @return true 表示事务消息已提交，false 表示当前状态不允许或消息未提交
+     */
+    boolean startChunk(String docId);
+
+    /**
      * 执行文档分块任务：解析 → 分块 → 嵌入 → 持久化。
      *
      * @param docId 文档 ID

@@ -77,6 +77,16 @@ public class DocumentParserSelector {
     }
 
     /**
+     * Pipeline ParserNode 使用的语义化入口，内部复用现有 MIME 类型选择逻辑。
+     *
+     * @param mimeType 文档 MIME 类型
+     * @return 支持该 MIME 类型的解析器，或 Tika 兜底解析器
+     */
+    public DocumentParser selectParser(String mimeType) {
+        return selectByMimeType(mimeType);
+    }
+
+    /**
      * 返回当前 Spring 容器中已注册的所有解析器类型。
      *
      * @return 解析器类型字符串列表

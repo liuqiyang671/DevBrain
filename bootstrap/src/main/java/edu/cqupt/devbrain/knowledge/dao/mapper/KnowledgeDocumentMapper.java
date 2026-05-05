@@ -59,6 +59,25 @@ public interface KnowledgeDocumentMapper extends BaseMapper<KnowledgeDocumentDO>
                                           @Param("userId") String userId);
 
     /**
+     * 仅允许待处理或失败文档进入 processing，避免已成功分块的文档被重复触发。
+     *
+     * @param docId 文档 ID
+     * @param userId 触发解析的用户 ID
+     * @return 更新行数，1 表示成功触发，0 表示状态已变化或不允许触发
+     */
+    @Update("""
+            UPDATE t_knowledge_document
+               SET status = 'processing',
+                   updated_by = #{userId},
+                   update_time = CURRENT_TIMESTAMP
+             WHERE id = #{docId}
+               AND deleted = 0
+               AND status IN ('pending', 'failed')
+            """)
+    int updateStartableToProcessing(@Param("docId") String docId,
+                                    @Param("userId") String userId);
+
+    /**
      * 查询所有启用了定时同步的文档（source_type 为 feishu 或 url）。
      */
     @Select("""

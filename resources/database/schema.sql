@@ -484,3 +484,126 @@ ALTER TABLE t_knowledge_vector ALTER COLUMN doc_id TYPE VARCHAR(32);
 INSERT INTO t_devbrain_schema_info (version, description)
 VALUES ('10-knowledge-vector-id-width', 'Align knowledge vector id/kb_id/doc_id width to 32 chars')
 ON CONFLICT (version) DO NOTHING;
+
+-- ============================================================
+-- 11: 摄入 Pipeline 定义
+-- ============================================================
+
+-- 摄入流水线定义表：保存前端配置的节点链基础信息
+CREATE TABLE IF NOT EXISTS t_ingestion_pipeline (
+    id VARCHAR(20) PRIMARY KEY,                               -- 流水线唯一标识
+    name VARCHAR(100) NOT NULL,                               -- 流水线名称
+    description TEXT,                                         -- 流水线说明
+    created_by VARCHAR(20),                                   -- 创建人用户 ID
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP  -- 更新时间
+);
+COMMENT ON TABLE t_ingestion_pipeline IS '摄入流水线定义表，保存前端配置的节点链基础信息';
+COMMENT ON COLUMN t_ingestion_pipeline.name IS '流水线名称';
+COMMENT ON COLUMN t_ingestion_pipeline.description IS '流水线说明';
+COMMENT ON COLUMN t_ingestion_pipeline.created_by IS '创建人用户 ID';
+
+-- 摄入流水线节点表：保存每条流水线的节点配置和 nextNode 链路
+CREATE TABLE IF NOT EXISTS t_ingestion_pipeline_node (
+    id VARCHAR(20) PRIMARY KEY,                               -- 节点记录唯一标识
+    pipeline_id VARCHAR(20) NOT NULL,                         -- 所属流水线 ID
+    node_id VARCHAR(50) NOT NULL,                             -- 流水线内节点 ID
+    node_type VARCHAR(30) NOT NULL,                           -- 节点类型
+    next_node_id VARCHAR(50),                                 -- 默认下一个节点 ID
+    settings_json TEXT,                                       -- 节点配置 JSON
+    condition_json TEXT,                                      -- 条件配置 JSON 或布尔表达式
+    sort_order INTEGER,                                       -- 节点排序号
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 更新时间
+    CONSTRAINT fk_ingestion_pipeline_node_pipeline_id FOREIGN KEY (pipeline_id) REFERENCES t_ingestion_pipeline (id) ON DELETE CASCADE,
+    CONSTRAINT uk_ingestion_pipeline_node_id UNIQUE (pipeline_id, node_id)
+);
+COMMENT ON TABLE t_ingestion_pipeline_node IS '摄入流水线节点表，保存每条流水线的节点配置和 nextNode 链路';
+COMMENT ON COLUMN t_ingestion_pipeline_node.pipeline_id IS '所属流水线 ID';
+COMMENT ON COLUMN t_ingestion_pipeline_node.node_id IS '流水线内节点 ID';
+COMMENT ON COLUMN t_ingestion_pipeline_node.node_type IS '节点类型，如 fetcher、parser、chunker';
+COMMENT ON COLUMN t_ingestion_pipeline_node.next_node_id IS '默认下一个节点 ID';
+COMMENT ON COLUMN t_ingestion_pipeline_node.settings_json IS '节点配置 JSON';
+COMMENT ON COLUMN t_ingestion_pipeline_node.condition_json IS '条件配置 JSON 或布尔表达式';
+COMMENT ON COLUMN t_ingestion_pipeline_node.sort_order IS '节点排序号';
+CREATE INDEX IF NOT EXISTS idx_ingestion_pipeline_name ON t_ingestion_pipeline (name);
+CREATE INDEX IF NOT EXISTS idx_ingestion_pipeline_node_pipeline_id ON t_ingestion_pipeline_node (pipeline_id, sort_order);
+
+INSERT INTO t_resource (id, resource_name, http_method, path_pattern, permission_code, public_access)
+VALUES
+    ('13000000000000000026', '摄入流水线查询', 'GET', '/ingestion/pipelines/**', 'knowledge:read', 0),
+    ('13000000000000000027', '摄入流水线管理', 'POST', '/ingestion/pipelines', 'knowledge:write', 0),
+    ('13000000000000000028', '摄入流水线管理', 'PUT', '/ingestion/pipelines/*', 'knowledge:write', 0),
+    ('13000000000000000029', '摄入流水线管理', 'DELETE', '/ingestion/pipelines/*', 'knowledge:write', 0)
+ON CONFLICT (http_method, path_pattern) DO NOTHING;
+
+INSERT INTO t_devbrain_schema_info (version, description)
+VALUES ('11-ingestion-pipeline', 'Ingestion pipeline definition and node configuration tables')
+ON CONFLICT (version) DO NOTHING;
+
+-- ============================================================
+-- 12: 摄入 Pipeline 任务执行
+-- ============================================================
+
+-- 摄入任务表：记录每次 Pipeline 执行的来源、状态、日志和元数据快照
+CREATE TABLE IF NOT EXISTS t_ingestion_task (
+    id VARCHAR(20) PRIMARY KEY,                               -- 任务唯一标识
+    pipeline_id VARCHAR(20),                                  -- 关联流水线 ID
+    source_type VARCHAR(20),                                  -- 来源类型：FILE / URL / FEISHU / S3
+    source_location TEXT,                                     -- 来源地址、对象存储 key 或第三方文档标识
+    status VARCHAR(20),                                       -- 任务状态：RUNNING / COMPLETED / FAILED
+    chunk_count INTEGER,                                      -- 最终生成的 chunk 数量
+    logs_json TEXT,                                           -- 节点执行日志 JSON 快照
+    metadata_json TEXT,                                       -- 任务元数据 JSON 快照
+    created_by VARCHAR(20),                                   -- 创建人用户 ID
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 更新时间
+    CONSTRAINT fk_ingestion_task_pipeline_id FOREIGN KEY (pipeline_id) REFERENCES t_ingestion_pipeline (id)
+);
+COMMENT ON TABLE t_ingestion_task IS '摄入任务表，记录每次 Pipeline 执行的来源、状态、日志和元数据快照';
+COMMENT ON COLUMN t_ingestion_task.pipeline_id IS '关联流水线 ID';
+COMMENT ON COLUMN t_ingestion_task.source_type IS '来源类型：FILE / URL / FEISHU / S3';
+COMMENT ON COLUMN t_ingestion_task.source_location IS '来源地址、对象存储 key 或第三方文档标识';
+COMMENT ON COLUMN t_ingestion_task.status IS '任务状态：RUNNING / COMPLETED / FAILED';
+COMMENT ON COLUMN t_ingestion_task.chunk_count IS '最终生成的 chunk 数量';
+COMMENT ON COLUMN t_ingestion_task.logs_json IS '节点执行日志 JSON 快照';
+COMMENT ON COLUMN t_ingestion_task.metadata_json IS '任务元数据 JSON 快照';
+COMMENT ON COLUMN t_ingestion_task.created_by IS '创建人用户 ID';
+
+-- 摄入任务节点日志表：记录单次任务内每个节点的状态、耗时和关键输出
+CREATE TABLE IF NOT EXISTS t_ingestion_task_node (
+    id VARCHAR(20) PRIMARY KEY,                               -- 节点日志唯一标识
+    task_id VARCHAR(20),                                      -- 关联任务 ID
+    pipeline_id VARCHAR(20),                                  -- 关联流水线 ID
+    node_id VARCHAR(50),                                      -- 流水线内节点 ID
+    node_type VARCHAR(30),                                    -- 节点类型
+    node_order INTEGER,                                       -- 节点执行顺序
+    status VARCHAR(20),                                       -- 节点状态：COMPLETED / FAILED
+    duration_ms BIGINT,                                       -- 节点耗时，单位毫秒
+    output_json TEXT,                                         -- 节点关键输出 JSON
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    CONSTRAINT fk_ingestion_task_node_task_id FOREIGN KEY (task_id) REFERENCES t_ingestion_task (id) ON DELETE CASCADE
+);
+COMMENT ON TABLE t_ingestion_task_node IS '摄入任务节点日志表，记录单次任务内每个节点的状态、耗时和关键输出';
+COMMENT ON COLUMN t_ingestion_task_node.task_id IS '关联任务 ID';
+COMMENT ON COLUMN t_ingestion_task_node.pipeline_id IS '关联流水线 ID';
+COMMENT ON COLUMN t_ingestion_task_node.node_id IS '流水线内节点 ID';
+COMMENT ON COLUMN t_ingestion_task_node.node_type IS '节点类型';
+COMMENT ON COLUMN t_ingestion_task_node.node_order IS '节点执行顺序';
+COMMENT ON COLUMN t_ingestion_task_node.status IS '节点状态：COMPLETED / FAILED';
+COMMENT ON COLUMN t_ingestion_task_node.duration_ms IS '节点耗时，单位毫秒';
+COMMENT ON COLUMN t_ingestion_task_node.output_json IS '节点关键输出 JSON';
+CREATE INDEX IF NOT EXISTS idx_ingestion_task_pipeline_status ON t_ingestion_task (pipeline_id, status, update_time DESC);
+CREATE INDEX IF NOT EXISTS idx_ingestion_task_node_task_id ON t_ingestion_task_node (task_id, node_order);
+
+INSERT INTO t_resource (id, resource_name, http_method, path_pattern, permission_code, public_access)
+VALUES
+    ('13000000000000000030', '摄入任务列表', 'GET', '/ingestion/tasks', 'knowledge:read', 0),
+    ('13000000000000000031', '摄入任务查询', 'GET', '/ingestion/tasks/**', 'knowledge:read', 0),
+    ('13000000000000000032', '摄入任务执行', 'POST', '/ingestion/tasks', 'knowledge:write', 0),
+    ('13000000000000000033', '摄入任务上传执行', 'POST', '/ingestion/tasks/upload', 'knowledge:write', 0)
+ON CONFLICT (http_method, path_pattern) DO NOTHING;
+
+INSERT INTO t_devbrain_schema_info (version, description)
+VALUES ('12-ingestion-task', 'Ingestion pipeline task execution and node log tables')
+ON CONFLICT (version) DO NOTHING;

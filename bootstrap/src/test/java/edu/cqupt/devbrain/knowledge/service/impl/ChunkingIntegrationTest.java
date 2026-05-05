@@ -10,8 +10,17 @@ import edu.cqupt.devbrain.core.parser.DocumentParser;
 import edu.cqupt.devbrain.core.parser.DocumentParserSelector;
 import edu.cqupt.devbrain.framework.context.LoginUser;
 import edu.cqupt.devbrain.framework.context.UserContext;
+import edu.cqupt.devbrain.ingestion.domain.IngestionStatus;
+import edu.cqupt.devbrain.ingestion.domain.SourceType;
+import edu.cqupt.devbrain.ingestion.domain.context.IngestionContext;
+import edu.cqupt.devbrain.ingestion.domain.pipeline.NodeConfig;
+import edu.cqupt.devbrain.ingestion.domain.pipeline.PipelineDefinition;
+import edu.cqupt.devbrain.ingestion.domain.result.IngestionResult;
+import edu.cqupt.devbrain.ingestion.engine.IngestionEngine;
+import edu.cqupt.devbrain.ingestion.service.IngestionPipelineService;
 import edu.cqupt.devbrain.knowledge.dao.entity.KnowledgeBaseDO;
 import edu.cqupt.devbrain.knowledge.dao.entity.KnowledgeChunkDO;
+import edu.cqupt.devbrain.knowledge.dao.entity.KnowledgeDocumentChunkLogDO;
 import edu.cqupt.devbrain.knowledge.dao.entity.KnowledgeDocumentDO;
 import edu.cqupt.devbrain.knowledge.dao.mapper.KnowledgeBaseMapper;
 import edu.cqupt.devbrain.knowledge.dao.mapper.KnowledgeDocumentChunkLogMapper;
@@ -47,6 +56,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.doAnswer;
@@ -73,12 +83,14 @@ class ChunkingIntegrationTest {
     private final VectorStoreService vectorStoreService = mock(VectorStoreService.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final KnowledgeDocumentChunkProducer chunkProducer = mock(KnowledgeDocumentChunkProducer.class);
+    private final IngestionEngine ingestionEngine = mock(IngestionEngine.class);
+    private final IngestionPipelineService ingestionPipelineService = mock(IngestionPipelineService.class);
 
     private final KnowledgeDocumentServiceImpl service = new KnowledgeDocumentServiceImpl(
             knowledgeBaseMapper, knowledgeDocumentMapper, chunkLogMapper, chunkService,
             fileStorageService, fileUploadValidator, transactionTemplate, adapterRegistry,
             parserSelector, strategyFactory, chunkEmbeddingService, vectorStoreService,
-            objectMapper, chunkProducer
+            objectMapper, chunkProducer, ingestionEngine, ingestionPipelineService
     );
 
     @BeforeEach
@@ -160,8 +172,80 @@ class ChunkingIntegrationTest {
         // 验证文档状态变为 completed
         assertEquals("completed", doc.getStatus());
         assertEquals(3L, doc.getChunkCount());
-        verify(vectorStoreService).deleteDocumentVectors("test_collection", docId);
-        verify(vectorStoreService).indexDocumentChunks("test_collection", docId, fakeChunks);
+        verify(chunkService).deleteByDocId(docId);
+        verify(vectorStoreService).deleteDocumentVectors("kb_" + kbId, docId);
+        verify(vectorStoreService).indexDocumentChunks("kb_" + kbId, docId, fakeChunks);
+    }
+
+    @Test
+    void shouldRunPipelineProcessAndPersistChunksWithKnowledgeModuleTransaction() {
+        String docId = "doc-pipeline";
+        String kbId = "kb-1";
+        KnowledgeDocumentDO doc = processingDocument(docId, kbId, "fixed_size", null);
+        doc.setProcessMode("pipeline");
+        doc.setPipelineId("pipe-1");
+        when(knowledgeDocumentMapper.selectById(docId)).thenReturn(doc);
+        when(fileStorageService.download("doc-pipeline.txt"))
+                .thenReturn(new ByteArrayInputStream("pipeline bytes".getBytes()));
+        PipelineDefinition pipeline = PipelineDefinition.builder()
+                .id("pipe-1")
+                .name("知识库 Pipeline")
+                .nodes(List.of(NodeConfig.builder().nodeId("chunker-1").nodeType("chunker").build()))
+                .build();
+        when(ingestionPipelineService.getDefinition("pipe-1")).thenReturn(pipeline);
+        List<VectorChunk> chunks = List.of(
+                new VectorChunk("p1", 0, "pipeline chunk 1"),
+                new VectorChunk("p2", 1, "pipeline chunk 2")
+        );
+        when(ingestionEngine.execute(eq(pipeline), any(IngestionContext.class))).thenAnswer(invocation -> {
+            IngestionContext context = invocation.getArgument(1);
+            context.setChunks(chunks);
+            context.setStatus(IngestionStatus.COMPLETED);
+            return IngestionResult.builder()
+                    .taskId(context.getTaskId())
+                    .pipelineId("pipe-1")
+                    .status(IngestionStatus.COMPLETED)
+                    .chunkCount(chunks.size())
+                    .message("ok")
+                    .build();
+        });
+        when(chunkService.batchCreate(anyList(), eq(false))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.executeChunk(docId);
+
+        ArgumentCaptor<IngestionContext> contextCaptor = ArgumentCaptor.forClass(IngestionContext.class);
+        verify(ingestionEngine).execute(eq(pipeline), contextCaptor.capture());
+        IngestionContext context = contextCaptor.getValue();
+        assertEquals(docId, context.getTaskId());
+        assertEquals("pipe-1", context.getPipelineId());
+        assertEquals(SourceType.FILE, context.getSource().getType());
+        assertEquals("doc-pipeline.txt", context.getSource().getLocation());
+        assertEquals("测试文档.txt", context.getSource().getFileName());
+        assertEquals("kb_" + kbId, context.getVectorSpaceId());
+        assertTrue(context.isSkipIndexerWrite());
+        org.junit.jupiter.api.Assertions.assertArrayEquals(
+                "pipeline bytes".getBytes(), context.getRawBytes());
+
+        verify(chunkService).deleteByDocId(docId);
+        verify(chunkService).batchCreate(anyList(), eq(false));
+        verify(vectorStoreService).deleteDocumentVectors("kb_" + kbId, docId);
+        verify(vectorStoreService).indexDocumentChunks("kb_" + kbId, docId, chunks);
+        assertEquals("completed", doc.getStatus());
+        assertEquals(2L, doc.getChunkCount());
+    }
+
+    @Test
+    void shouldSkipCompletedDocumentWhenExecuteChunkIsCalledAgain() {
+        String docId = "doc-completed";
+        KnowledgeDocumentDO doc = processingDocument(docId, "kb-1", "fixed_size", null);
+        doc.setStatus("completed");
+        when(knowledgeDocumentMapper.selectById(docId)).thenReturn(doc);
+
+        service.executeChunk(docId);
+
+        verify(chunkLogMapper, never()).insert(any(KnowledgeDocumentChunkLogDO.class));
+        verify(chunkService, never()).batchCreate(anyList(), anyBoolean());
+        verify(ingestionEngine, never()).execute(any(), any());
     }
 
     @Test
@@ -201,7 +285,7 @@ class ChunkingIntegrationTest {
         verify(chunkEmbeddingService).embed(chunks, "qwen-embedding");
 
         ArgumentCaptor<List<VectorChunk>> vectorCaptor = ArgumentCaptor.forClass(List.class);
-        verify(vectorStoreService).indexDocumentChunks(eq("test_collection"), eq(docId), vectorCaptor.capture());
+        verify(vectorStoreService).indexDocumentChunks(eq("kb_" + kbId), eq(docId), vectorCaptor.capture());
         List<VectorChunk> indexed = vectorCaptor.getValue();
         assertEquals(2, indexed.size());
         assertEquals("v1", indexed.get(0).getChunkId());
@@ -285,8 +369,8 @@ class ChunkingIntegrationTest {
             assertTrue(!firstIds.contains(secondId),
                     "重新分块应生成新的 chunk id，但发现重复: " + secondId);
         }
-        verify(vectorStoreService, times(2)).deleteDocumentVectors("test_collection", docId);
-        verify(vectorStoreService, times(2)).indexDocumentChunks(eq("test_collection"), eq(docId), anyList());
+        verify(vectorStoreService, times(2)).deleteDocumentVectors("kb_" + kbId, docId);
+        verify(vectorStoreService, times(2)).indexDocumentChunks(eq("kb_" + kbId), eq(docId), anyList());
     }
 
     @Test
