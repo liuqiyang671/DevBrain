@@ -39,7 +39,17 @@ public enum ChunkingMode {
     /**
      * 语义分块，利用 Embedding 相似度在语义变化处切分。
      */
-    SEMANTIC_CHUNKING("semantic_chunking", "语义分块");
+    SEMANTIC_CHUNKING("semantic_chunking", "语义分块"),
+
+    /**
+     * 递归分块 + 语义分块，先按结构粗切，再在粗块内部做语义细切。
+     */
+    RECURSIVE_SEMANTIC("recursive_semantic", "递归 + 语义"),
+
+    /**
+     * 递归分块 + 后处理，递归切分后统一合并短块、拆分长块并补充元数据。
+     */
+    RECURSIVE_POST_PROCESS("recursive_post_process", "递归 + 后处理");
 
     private final String value;
     private final String label;
@@ -130,6 +140,7 @@ public enum ChunkingMode {
                     toInt(config.get("batchSize"), 10),
                     toString(config.get("embeddingModel"))
             );
+            case RECURSIVE_SEMANTIC, RECURSIVE_POST_PROCESS -> createHybridOptions(config);
         };
     }
 
@@ -169,7 +180,41 @@ public enum ChunkingMode {
                     overlapSize != null ? overlapSize : 50,
                     0.5, 100, 1024, 10, null
             );
+            case RECURSIVE_SEMANTIC, RECURSIVE_POST_PROCESS -> new HybridChunkingOptions(
+                    targetSize != null ? targetSize : 1400,
+                    overlapSize != null ? overlapSize : 0,
+                    512,
+                    50,
+                    0.5,
+                    100,
+                    1024,
+                    10,
+                    null,
+                    240,
+                    1400,
+                    true
+            );
         };
+    }
+
+    /**
+     * 从通用配置 Map 创建混合分块配置。
+     */
+    private HybridChunkingOptions createHybridOptions(Map<String, Object> config) {
+        return new HybridChunkingOptions(
+                toInt(config.get("coarseChunkSize"), toInt(config.get("chunkSize"), 1400)),
+                toInt(config.get("coarseOverlapSize"), toInt(config.get("overlapSize"), 0)),
+                toInt(config.get("semanticChunkSize"), 512),
+                toInt(config.get("semanticOverlapSize"), 50),
+                toDouble(config.get("similarityThreshold"), 0.5),
+                toInt(config.get("minChunkSize"), 100),
+                toInt(config.get("maxChunkSize"), 1024),
+                toInt(config.get("batchSize"), 10),
+                toString(config.get("embeddingModel")),
+                toInt(config.get("postProcessMinChars"), 240),
+                toInt(config.get("postProcessMaxChars"), 1400),
+                toBoolean(config.get("includeMetadata"), true)
+        );
     }
 
     /**
@@ -215,5 +260,18 @@ public enum ChunkingMode {
         }
         String text = val.toString().trim();
         return text.isEmpty() ? null : text;
+    }
+
+    /**
+     * 安全地将 Object 转为 boolean，转换失败时返回默认值。
+     */
+    private static boolean toBoolean(Object val, boolean defaultVal) {
+        if (val == null) {
+            return defaultVal;
+        }
+        if (val instanceof Boolean bool) {
+            return bool;
+        }
+        return Boolean.parseBoolean(val.toString().trim());
     }
 }

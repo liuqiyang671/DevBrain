@@ -45,18 +45,37 @@ rag:
     dimension: ${RAG_DEFAULT_DIMENSION:1536}
     metric-type: COSINE
 
-chunking:
-  semantic:
-    chunk-size: 512
-    overlap-size: 50
-    similarity-threshold: 0.5
-    min-chunk-size: 100
-    max-chunk-size: 1024
-    batch-size: 10
-    # 可选：为语义边界判断单独指定更强的 Embedding 模型；留空时保持原默认 Embedding 计算路径。
-    embedding-model: ${SEMANTIC_CHUNKING_EMBEDDING_MODEL:}
+  chunking:
+    semantic:
+      chunk-size: 512
+      overlap-size: 50
+      similarity-threshold: 0.5
+      min-chunk-size: 100
+      max-chunk-size: 1024
+      batch-size: 10
+      # 可选：为语义边界判断单独指定更强的 Embedding 模型；留空时保持原默认 Embedding 计算路径。
+      embedding-model: ${SEMANTIC_CHUNKING_EMBEDDING_MODEL:}
+    hybrid:
+      recursive-semantic:
+        coarse-chunk-size: 1400
+        coarse-overlap-size: 0
+        semantic-chunk-size: 512
+        semantic-overlap-size: 50
+        similarity-threshold: 0.5
+        min-chunk-size: 100
+        max-chunk-size: 1024
+        batch-size: 10
+        include-metadata: true
+        # 可选：为语义细切单独指定 Embedding 模型；留空时保持知识库默认 Embedding 路径。
+        embedding-model: ${RECURSIVE_SEMANTIC_EMBEDDING_MODEL:}
+      recursive-post-process:
+        coarse-chunk-size: 1400
+        coarse-overlap-size: 0
+        post-process-min-chars: 240
+        post-process-max-chars: 1400
+        include-metadata: true
 
-ai:
+  ai:
   providers:
     siliconflow:
       url: https://api.siliconflow.cn

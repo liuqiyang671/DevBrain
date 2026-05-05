@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
+import static java.util.Map.entry;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
@@ -55,5 +57,46 @@ class ChunkingModeTest {
         assertEquals(1024, semanticOptions.maxChunkSize());
         assertEquals(10, semanticOptions.batchSize());
         assertEquals(null, semanticOptions.embeddingModel());
+    }
+
+    @Test
+    void shouldCreateHybridOptionsFromConfig() {
+        ChunkingOptions options = ChunkingMode.RECURSIVE_SEMANTIC.createOptions(Map.ofEntries(
+                entry("coarseChunkSize", 1600),
+                entry("coarseOverlapSize", 20),
+                entry("semanticChunkSize", 600),
+                entry("semanticOverlapSize", 60),
+                entry("similarityThreshold", 0.68),
+                entry("minChunkSize", 120),
+                entry("maxChunkSize", 900),
+                entry("batchSize", 12),
+                entry("embeddingModel", "qwen-emb-local"),
+                entry("postProcessMinChars", 260),
+                entry("postProcessMaxChars", 1300),
+                entry("includeMetadata", false)
+        ));
+
+        HybridChunkingOptions hybridOptions = assertInstanceOf(HybridChunkingOptions.class, options);
+        assertEquals(1600, hybridOptions.coarseChunkSize());
+        assertEquals(20, hybridOptions.coarseOverlapSize());
+        assertEquals(600, hybridOptions.semanticChunkSize());
+        assertEquals(60, hybridOptions.semanticOverlapSize());
+        assertEquals(0.68, hybridOptions.similarityThreshold());
+        assertEquals(120, hybridOptions.minChunkSize());
+        assertEquals(900, hybridOptions.maxChunkSize());
+        assertEquals(12, hybridOptions.batchSize());
+        assertEquals("qwen-emb-local", hybridOptions.embeddingModel());
+        assertEquals(260, hybridOptions.postProcessMinChars());
+        assertEquals(1300, hybridOptions.postProcessMaxChars());
+        assertEquals(false, hybridOptions.includeMetadata());
+    }
+
+    @Test
+    void shouldResolveRecursivePostProcessMode() {
+        ChunkingMode mode = ChunkingMode.fromValue("recursive-post-process");
+
+        assertEquals(ChunkingMode.RECURSIVE_POST_PROCESS, mode);
+        assertEquals("recursive_post_process", mode.getValue());
+        assertEquals("递归 + 后处理", mode.getLabel());
     }
 }
