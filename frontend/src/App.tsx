@@ -34,7 +34,13 @@ type JoinKnowledgeBaseMode = 'search' | 'invite' | 'organization';
 /** 文档操作模式：空白文档或上传文件 */
 type DocumentActionMode = 'blank' | 'upload';
 /** 分块策略模式 */
-type ChunkStrategyMode = 'fixed_size' | 'recursive_character' | 'structure_aware' | 'qa_pair' | 'table_aware';
+type ChunkStrategyMode =
+  | 'fixed_size'
+  | 'recursive_character'
+  | 'structure_aware'
+  | 'qa_pair'
+  | 'table_aware'
+  | 'semantic_chunking';
 type IconName =
   | 'home'
   | 'message'
@@ -90,6 +96,12 @@ interface ChunkFormState {
   minChars: number;
   /** 最大字符数 */
   maxChars: number;
+  /** 语义相似度阈值，低于该值时视为语义边界 */
+  similarityThreshold: number;
+  /** Embedding 批处理大小 */
+  batchSize: number;
+  /** 语义分块可选指定的 Embedding 模型，留空时沿用知识库默认模型 */
+  embeddingModel: string;
 }
 
 /** 本地文档版本记录（存储在 localStorage 中） */
@@ -160,6 +172,22 @@ const defaultChunkForm: ChunkFormState = {
   overlapSize: 128,
   minChars: 240,
   maxChars: 900,
+  similarityThreshold: 0.5,
+  batchSize: 10,
+  embeddingModel: '',
+};
+/** 语义分块默认值需要与后端 SemanticOptions 保持一致。 */
+const defaultSemanticChunkForm: Pick<
+  ChunkFormState,
+  'chunkSize' | 'overlapSize' | 'minChars' | 'maxChars' | 'similarityThreshold' | 'batchSize' | 'embeddingModel'
+> = {
+  chunkSize: 512,
+  overlapSize: 50,
+  minChars: 100,
+  maxChars: 1024,
+  similarityThreshold: 0.5,
+  batchSize: 10,
+  embeddingModel: '',
 };
 /** 分块策略选项列表，用于下拉选择 */
 const chunkStrategyOptions: Array<{ value: ChunkStrategyMode; label: string; hint: string }> = [
@@ -168,6 +196,7 @@ const chunkStrategyOptions: Array<{ value: ChunkStrategyMode; label: string; hin
   { value: 'structure_aware', label: '结构感知', hint: '适合 Markdown 和标题层级' },
   { value: 'qa_pair', label: '问答对', hint: '适合 FAQ 和问答材料' },
   { value: 'table_aware', label: '表格感知', hint: '尽量保持表格完整' },
+  { value: 'semantic_chunking', label: '语义分块', hint: '按相邻句子的语义变化切分' },
 ];
 /** 文档版本记录的 localStorage 存储键 */
 const documentVersionStoreKey = 'devbrain.documentVersions.v1';
@@ -1729,6 +1758,16 @@ function KnowledgeBaseDocumentsPage({ mode = 'front' }: { mode?: ShellMode }) {
     setMessage(nextMessage);
   }
 
+  function openChunkModal(doc: KnowledgeDocumentItem) {
+    const disabledReason = getChunkActionDisabledReason(doc);
+    if (disabledReason) {
+      // 这里保留点击守卫，避免后续从其他入口误触发已完成文档的重复分块。
+      setMessage(disabledReason);
+      return;
+    }
+    setChunkingDocument(doc);
+  }
+
   return (
     <AppShell mode={mode}>
       <PageContainer
@@ -1812,38 +1851,49 @@ function KnowledgeBaseDocumentsPage({ mode = 'front' }: { mode?: ShellMode }) {
                 </tr>
               </thead>
               <tbody>
-                {pagedDocuments.map((doc) => (
-                  <tr key={doc.id}>
-                    <td><strong>{doc.docName}</strong></td>
-                    <td><span className="status-pill muted">{doc.fileType}</span></td>
-                    <td>{formatFileSize(doc.fileSize)}</td>
-                    <td>{doc.processMode}</td>
-                    <td>{doc.chunkCount ?? 0}</td>
-                    <td><span className={`status-pill doc-status-${docStatusClass(doc.status)}`}>{docStatusLabel(doc.status)}</span></td>
-                    <td>
-                      <button
-                        className={`btn ${doc.enabled === 1 ? 'btn-light' : 'btn-danger'}`}
-                        type="button"
-                        onClick={() => handleToggleEnabled(doc)}
-                      >
-                        {doc.enabled === 1 ? '已启用' : '已禁用'}
-                      </button>
-                    </td>
-                    <td>{formatDate(doc.createTime)}</td>
-                    <td>
-                      <div className="table-actions">
-                        <button className="btn btn-light" type="button" onClick={() => setEditingDocument(doc)}>编辑</button>
-                        <button className="btn btn-primary" type="button" onClick={() => setChunkingDocument(doc)}>分块处理</button>
-                        {mode === 'admin' ? (
-                          <Link className="btn btn-light" to={`/admin/knowledge-bases/${kbId}/documents/${doc.id}/chunks`}>查看分块结果</Link>
-                        ) : (
-                          <button className="btn btn-light" type="button" onClick={() => setChunkResultDocument(doc)}>查看分块结果</button>
-                        )}
-                        <button className="btn btn-danger" type="button" onClick={() => handleDelete(doc)}>删除</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {pagedDocuments.map((doc) => {
+                  const chunkDisabledReason = getChunkActionDisabledReason(doc);
+                  return (
+                    <tr key={doc.id}>
+                      <td><strong>{doc.docName}</strong></td>
+                      <td><span className="status-pill muted">{doc.fileType}</span></td>
+                      <td>{formatFileSize(doc.fileSize)}</td>
+                      <td>{doc.processMode}</td>
+                      <td>{doc.chunkCount ?? 0}</td>
+                      <td><span className={`status-pill doc-status-${docStatusClass(doc.status)}`}>{docStatusLabel(doc.status)}</span></td>
+                      <td>
+                        <button
+                          className={`btn ${doc.enabled === 1 ? 'btn-light' : 'btn-danger'}`}
+                          type="button"
+                          onClick={() => handleToggleEnabled(doc)}
+                        >
+                          {doc.enabled === 1 ? '已启用' : '已禁用'}
+                        </button>
+                      </td>
+                      <td>{formatDate(doc.createTime)}</td>
+                      <td>
+                        <div className="table-actions">
+                          <button className="btn btn-light" type="button" onClick={() => setEditingDocument(doc)}>编辑</button>
+                          <button
+                            className="btn btn-primary"
+                            type="button"
+                            onClick={() => openChunkModal(doc)}
+                            disabled={Boolean(chunkDisabledReason)}
+                            title={chunkDisabledReason || '配置分块参数'}
+                          >
+                            {chunkDisabledReason ? '已分块' : '分块处理'}
+                          </button>
+                          {mode === 'admin' ? (
+                            <Link className="btn btn-light" to={`/admin/knowledge-bases/${kbId}/documents/${doc.id}/chunks`}>查看分块结果</Link>
+                          ) : (
+                            <button className="btn btn-light" type="button" onClick={() => setChunkResultDocument(doc)}>查看分块结果</button>
+                          )}
+                          <button className="btn btn-danger" type="button" onClick={() => handleDelete(doc)}>删除</button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           ) : (
@@ -2017,7 +2067,6 @@ function DocumentEditModal({
   const [title, setTitle] = useState(stripKnownExtension(doc.docName));
   const [content, setContent] = useState(() => buildEditableDocumentTemplate(doc));
   const [note, setNote] = useState('');
-  const [chunkForm, setChunkForm] = useState<ChunkFormState>(() => parseChunkForm(doc.chunkStrategy, doc.chunkConfig));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nextVersion = `v${existingVersions.length + 2}`;
@@ -2037,8 +2086,9 @@ function DocumentEditModal({
       const result = await knowledgeBaseApi.uploadDocument(kbId, {
         file,
         processMode: 'manual',
-        chunkStrategy: chunkForm.strategy,
-        chunkConfig: buildChunkConfig(chunkForm),
+        // 编辑文档只保存正文新版本，分块策略由原文档继承，避免在编辑入口误改分块规则。
+        chunkStrategy: doc.chunkStrategy || undefined,
+        chunkConfig: doc.chunkConfig || undefined,
       });
       appendLocalDocumentVersion({
         id: `${doc.id}-${Date.now()}`,
@@ -2081,8 +2131,8 @@ function DocumentEditModal({
             <strong>{nextVersion}</strong>
           </div>
           <div>
-            <span>分块数</span>
-            <strong>{doc.chunkCount ?? 0}</strong>
+            <span>处理状态</span>
+            <strong>{docStatusLabel(doc.status)}</strong>
           </div>
         </section>
         <label>
@@ -2103,7 +2153,6 @@ function DocumentEditModal({
           版本说明
           <input value={note} onChange={(event) => setNote(event.target.value)} maxLength={160} placeholder="例如：补充部署回滚步骤" disabled={saving} />
         </label>
-        <ChunkConfigPanel value={chunkForm} onChange={setChunkForm} disabled={saving} compact />
         <div className="version-history">
           <strong>版本记录</strong>
           <div>
@@ -2335,12 +2384,22 @@ function ChunkConfigPanel({
   compact?: boolean;
 }) {
   const strategy = chunkStrategyOptions.find((item) => item.value === value.strategy) || chunkStrategyOptions[0];
-  const usesBoundaryConfig = value.strategy === 'structure_aware' || value.strategy === 'table_aware';
-  const sizeLabel = usesBoundaryConfig ? '目标大小' : '分块大小';
+  const isSemanticStrategy = value.strategy === 'semantic_chunking';
+  const usesBoundaryConfig = value.strategy === 'structure_aware' || value.strategy === 'table_aware' || isSemanticStrategy;
+  const sizeLabel = isSemanticStrategy ? '目标块大小' : usesBoundaryConfig ? '目标大小' : '分块大小';
   const overlapLabel = usesBoundaryConfig ? '重叠字符' : '重叠度';
 
   function update(partial: Partial<ChunkFormState>) {
     onChange({ ...value, ...partial });
+  }
+
+  function handleStrategyChange(nextStrategy: ChunkStrategyMode) {
+    if (nextStrategy === 'semantic_chunking') {
+      // 切到语义分块时使用后端 SemanticOptions 的默认参数，避免沿用固定分块的重叠值导致配置偏大。
+      update({ strategy: nextStrategy, ...defaultSemanticChunkForm });
+      return;
+    }
+    update({ strategy: nextStrategy });
   }
 
   function updateNumber(key: keyof ChunkFormState, nextValue: string) {
@@ -2359,7 +2418,7 @@ function ChunkConfigPanel({
       </div>
       <label>
         分块策略
-        <select value={value.strategy} onChange={(event) => update({ strategy: event.target.value as ChunkStrategyMode })} disabled={disabled}>
+        <select value={value.strategy} onChange={(event) => handleStrategyChange(event.target.value as ChunkStrategyMode)} disabled={disabled}>
           {chunkStrategyOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
         </select>
       </label>
@@ -2382,7 +2441,7 @@ function ChunkConfigPanel({
             type="number"
             min={0}
             max={Math.max(0, value.chunkSize - 1)}
-            step={16}
+            step={isSemanticStrategy ? 10 : 16}
             value={value.overlapSize}
             onChange={(event) => updateNumber('overlapSize', event.target.value)}
             disabled={disabled}
@@ -2409,7 +2468,7 @@ function ChunkConfigPanel({
               type="range"
               min={0}
               max={Math.max(0, value.chunkSize - 1)}
-              step={16}
+              step={isSemanticStrategy ? 10 : 16}
               value={Math.min(value.overlapSize, Math.max(0, value.chunkSize - 1))}
               onChange={(event) => updateNumber('overlapSize', event.target.value)}
               disabled={disabled}
@@ -2420,7 +2479,7 @@ function ChunkConfigPanel({
       {usesBoundaryConfig && (
         <div className="chunk-control-grid">
           <label>
-            最小字符
+            {isSemanticStrategy ? '最小块大小' : '最小字符'}
             <input
               type="number"
               min={0}
@@ -2432,7 +2491,7 @@ function ChunkConfigPanel({
             />
           </label>
           <label>
-            最大字符
+            {isSemanticStrategy ? '最大块大小' : '最大字符'}
             <input
               type="number"
               min={value.chunkSize}
@@ -2444,6 +2503,77 @@ function ChunkConfigPanel({
             />
           </label>
         </div>
+      )}
+      {isSemanticStrategy && (
+        <>
+          <div className="chunk-control-grid">
+            <label>
+              相似度阈值
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                value={value.similarityThreshold}
+                onChange={(event) => updateNumber('similarityThreshold', event.target.value)}
+                disabled={disabled}
+              />
+            </label>
+            <label>
+              批处理大小
+              <input
+                type="number"
+                min={1}
+                max={100}
+                step={1}
+                value={value.batchSize}
+                onChange={(event) => updateNumber('batchSize', event.target.value)}
+                disabled={disabled}
+              />
+            </label>
+          </div>
+          {!compact && (
+            <div className="chunk-range-row">
+              <label>
+                相似度阈值
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={value.similarityThreshold}
+                  onChange={(event) => updateNumber('similarityThreshold', event.target.value)}
+                  disabled={disabled}
+                />
+              </label>
+              <label>
+                批处理大小
+                <input
+                  type="range"
+                  min={1}
+                  max={100}
+                  step={1}
+                  value={value.batchSize}
+                  onChange={(event) => updateNumber('batchSize', event.target.value)}
+                  disabled={disabled}
+                />
+              </label>
+            </div>
+          )}
+          <label>
+            语义 Embedding 模型
+            <select
+              value={value.embeddingModel}
+              onChange={(event) => update({ embeddingModel: event.target.value })}
+              disabled={disabled}
+            >
+              <option value="">使用知识库默认模型</option>
+              {embeddingModelOptions.map((item) => (
+                <option key={item.value} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+        </>
       )}
     </section>
   );
@@ -2886,6 +3016,25 @@ function formatFileSize(bytes?: number | null) {
 function buildChunkConfig(form: ChunkFormState) {
   const chunkSize = Math.max(128, Math.round(form.chunkSize || defaultChunkForm.chunkSize));
   const overlapSize = Math.min(Math.max(0, Math.round(form.overlapSize || 0)), Math.max(0, chunkSize - 1));
+  if (form.strategy === 'semantic_chunking') {
+    const minChunkSize = Math.max(0, Math.round(form.minChars || defaultSemanticChunkForm.minChars));
+    const maxChunkSize = Math.max(chunkSize, Math.round(form.maxChars || defaultSemanticChunkForm.maxChars));
+    const similarityThreshold = Math.min(1, Math.max(0, Number(form.similarityThreshold || defaultSemanticChunkForm.similarityThreshold)));
+    const batchSize = Math.max(1, Math.round(form.batchSize || defaultSemanticChunkForm.batchSize));
+    const config: Record<string, number | string> = {
+      chunkSize,
+      overlapSize,
+      similarityThreshold,
+      minChunkSize: Math.min(minChunkSize, maxChunkSize),
+      maxChunkSize,
+      batchSize,
+    };
+    if (form.embeddingModel.trim()) {
+      // 只有显式选择模型时才传给后端，留空代表沿用知识库默认 Embedding 计算路径。
+      config.embeddingModel = form.embeddingModel.trim();
+    }
+    return JSON.stringify(config);
+  }
   if (form.strategy === 'structure_aware' || form.strategy === 'table_aware') {
     const minChars = Math.max(0, Math.round(form.minChars || 0));
     const maxChars = Math.max(chunkSize, Math.round(form.maxChars || chunkSize));
@@ -2908,7 +3057,9 @@ function buildChunkConfig(form: ChunkFormState) {
  */
 function parseChunkForm(strategy?: string | null, config?: string | null): ChunkFormState {
   const normalizedStrategy = normalizeChunkStrategy(strategy);
-  const next = { ...defaultChunkForm, strategy: normalizedStrategy };
+  const next = normalizedStrategy === 'semantic_chunking'
+    ? { ...defaultChunkForm, ...defaultSemanticChunkForm, strategy: normalizedStrategy }
+    : { ...defaultChunkForm, strategy: normalizedStrategy };
   if (!config) return next;
   try {
     const parsed = JSON.parse(config) as Record<string, unknown>;
@@ -2918,8 +3069,11 @@ function parseChunkForm(strategy?: string | null, config?: string | null): Chunk
       ...next,
       chunkSize,
       overlapSize,
-      minChars: readConfigNumber(parsed.minChars, undefined, next.minChars),
-      maxChars: readConfigNumber(parsed.maxChars, undefined, Math.max(next.maxChars, chunkSize)),
+      minChars: readConfigNumber(parsed.minChunkSize, parsed.minChars, next.minChars),
+      maxChars: readConfigNumber(parsed.maxChunkSize, parsed.maxChars, Math.max(next.maxChars, chunkSize)),
+      similarityThreshold: readConfigNumber(parsed.similarityThreshold, undefined, next.similarityThreshold),
+      batchSize: readConfigNumber(parsed.batchSize, undefined, next.batchSize),
+      embeddingModel: typeof parsed.embeddingModel === 'string' ? parsed.embeddingModel : next.embeddingModel,
     };
   } catch {
     return next;
@@ -4335,6 +4489,13 @@ function docStatusClass(status: string) {
   if (normalized === 'failed') return 'error';
   if (normalized === 'processing') return 'running';
   return 'pending';
+}
+
+function getChunkActionDisabledReason(doc: KnowledgeDocumentItem) {
+  if (normalizeDocStatus(doc.status) === 'completed') {
+    return '该文档已处理成功，不允许重复分块处理';
+  }
+  return '';
 }
 
 function normalizeDocStatus(status: string) {
