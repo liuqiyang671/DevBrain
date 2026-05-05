@@ -1,39 +1,73 @@
+/**
+ * 前端全局类型定义模块
+ * 包含用户、知识库、文档、分块、权限、同步等业务领域的 TypeScript 接口
+ */
+
+/**
+ * 当前登录用户信息
+ * 登录成功后由后端返回，存储在 authStore 中
+ */
 export interface CurrentUser {
   userId: string;
   username: string;
   email: string;
   displayName?: string | null;
   avatar?: string | null;
+  /** 用户拥有的角色编码列表，如 ['admin'] */
   roles: string[];
+  /** 用户拥有的权限编码列表 */
   permissions: string[];
 }
 
+/**
+ * 用户管理列表项（管理员视角）
+ * 继承 CurrentUser，额外包含状态、登录时间等管理字段
+ */
 export interface UserItem extends CurrentUser {
   id: string;
+  /** 用户状态，如 'active'、'disabled' */
   status: string;
   lastLoginTime?: string | null;
   createTime?: string | null;
   updateTime?: string | null;
 }
 
+/**
+ * 通用分页结果包装
+ * @template T - 列表项的类型
+ */
 export interface PageResult<T> {
+  /** 数据记录列表 */
   records: T[];
+  /** 总记录数 */
   total: number;
+  /** 每页大小 */
   size: number;
+  /** 当前页码 */
   current: number;
+  /** 总页数 */
   pages: number;
 }
 
+/** 知识库状态类型 */
 export type KnowledgeBaseStatus = 'enabled' | 'disabled';
 
+/**
+ * 知识库信息
+ * 表示一个知识库的完整配置和统计信息
+ */
 export interface KnowledgeBaseItem {
   id: string;
   name: string;
   description?: string | null;
+  /** 使用的 Embedding 模型标识 */
   embeddingModel: string;
+  /** 向量数据库中的集合名称 */
   collectionName: string;
   status: KnowledgeBaseStatus | string;
+  /** 知识库中的文档数量 */
   documentCount: number;
+  /** 知识库中的分块总数 */
   chunkCount?: number | null;
   createdBy?: string | null;
   updatedBy?: string | null;
@@ -41,6 +75,9 @@ export interface KnowledgeBaseItem {
   updateTime?: string | null;
 }
 
+/**
+ * 知识库分页查询参数
+ */
 export interface KnowledgeBasePageParams {
   pageNo: number;
   pageSize: number;
@@ -48,14 +85,21 @@ export interface KnowledgeBasePageParams {
   status?: KnowledgeBaseStatus | '';
 }
 
+/**
+ * 创建知识库请求参数
+ */
 export interface KnowledgeBaseCreatePayload {
   name: string;
   description?: string;
+  /** 向量集合名称，需在向量数据库中唯一 */
   collectionName: string;
   embeddingModel: string;
   status?: KnowledgeBaseStatus;
 }
 
+/**
+ * 更新知识库请求参数
+ */
 export interface KnowledgeBaseUpdatePayload {
   name: string;
   description?: string;
@@ -63,39 +107,62 @@ export interface KnowledgeBaseUpdatePayload {
   status: KnowledgeBaseStatus;
 }
 
+/**
+ * 知识文档信息
+ * 表示知识库中的一份文档及其处理状态
+ */
 export interface KnowledgeDocumentItem {
   id: string;
+  /** 所属知识库 ID */
   kbId: string;
   docName: string;
+  /** 是否启用（1=启用，0=禁用） */
   enabled: number;
+  /** 文档分块数量 */
   chunkCount: number;
   fileUrl: string;
   fileType: string;
   fileSize: number;
+  /** 处理模式 */
   processMode: string;
+  /** 文档处理状态 */
   status: string;
+  /** 来源类型：file、feishu、url */
   sourceType: string;
   sourceLocation?: string | null;
+  /** 分块策略 */
   chunkStrategy?: string | null;
+  /** 分块配置 JSON 字符串 */
   chunkConfig?: string | null;
+  /** 处理流水线 ID */
   pipelineId?: string | null;
+  /** 是否启用定时同步（1=启用，0=禁用） */
   scheduleEnabled?: number;
+  /** 定时同步 Cron 表达式 */
   scheduleCron?: string | null;
   lastSyncTime?: string | null;
+  /** 最后同步时的内容哈希，用于变更检测 */
   lastContentHash?: string | null;
   createTime: string;
   updateTime: string;
 }
 
+/**
+ * 知识文档分页查询参数
+ */
 export interface KnowledgeDocumentPageParams {
   pageNo: number;
   pageSize: number;
   kbId?: string;
   keyword?: string;
   status?: string;
+  /** 启用状态筛选，空字符串表示不筛选 */
   enabled?: number | '';
 }
 
+/**
+ * 文档上传请求参数
+ */
 export interface DocumentUploadPayload {
   file: File;
   processMode?: string;
@@ -104,81 +171,138 @@ export interface DocumentUploadPayload {
   pipelineId?: string;
 }
 
+/**
+ * 在线文档导入请求参数
+ * 支持从飞书或 URL 导入文档
+ */
 export interface OnlineDocumentImportPayload {
+  /** 来源类型：飞书文档或 URL */
   sourceType: 'feishu' | 'url';
+  /** 来源地址（飞书文档链接或网页 URL） */
   sourceLocation: string;
   docName?: string;
   processMode?: string;
   chunkStrategy?: string;
   chunkConfig?: string;
   pipelineId?: string;
+  /** 是否启用定时同步 */
   scheduleEnabled?: number;
+  /** 定时同步 Cron 表达式 */
   scheduleCron?: string;
 }
 
+/**
+ * 文档分块信息（通用接口返回）
+ */
 export interface DocumentChunkItem {
   chunkId: string;
+  /** 分块在文档中的序号 */
   index: number;
+  /** 分块文本内容 */
   content: string;
+  /** 字符数 */
   charCount: number;
 }
 
+/**
+ * 知识分块信息（知识库专用接口返回）
+ * 包含更丰富的元数据，如哈希值、Token 数等
+ */
 export interface KnowledgeChunkItem {
   id: string;
   kbId: string;
   docId: string;
   chunkIndex: number;
   content: string;
+  /** 内容哈希，用于去重和变更检测 */
   contentHash?: string | null;
   charCount?: number | null;
+  /** Token 数量，用于 Embedding 模型输入限制 */
   tokenCount?: number | null;
+  /** 是否启用（1=启用，0=禁用） */
   enabled?: number | null;
   createTime?: string | null;
   updateTime?: string | null;
 }
 
+/**
+ * 角色信息
+ * 用于 RBAC 权限模型中的角色定义
+ */
 export interface RoleItem {
   id: string;
+  /** 角色编码，如 'admin'、'user' */
   roleCode: string;
   roleName: string;
   description?: string | null;
+  /** 该角色拥有的权限编码列表 */
   permissionCodes: string[];
 }
 
+/**
+ * 权限信息
+ * 用于 RBAC 权限模型中的权限定义
+ */
 export interface PermissionItem {
   id: string;
+  /** 权限编码，如 'kb:create'、'doc:delete' */
   permissionCode: string;
   permissionName: string;
   description?: string | null;
 }
 
+/**
+ * API 资源信息
+ * 定义 HTTP 接口与权限的映射关系
+ */
 export interface ResourceItem {
   id: string;
   resourceName: string;
+  /** HTTP 方法：GET、POST、PUT、DELETE 等 */
   httpMethod: string;
+  /** URL 路径模式，如 '/api/knowledge-base/**' */
   pathPattern: string;
+  /** 关联的权限编码 */
   permissionCode?: string | null;
+  /** 是否公开访问（1=公开，0=需认证） */
   publicAccess: number;
 }
 
+/**
+ * 定时同步配置请求参数
+ */
 export interface ScheduleConfigPayload {
   sourceType: string;
   sourceLocation: string;
+  /** 是否启用定时同步（1=启用，0=禁用） */
   scheduleEnabled: number;
+  /** Cron 表达式，如 '0 0 2 * * ?' 表示每天凌晨 2 点 */
   scheduleCron?: string;
 }
 
+/**
+ * 同步历史记录
+ * 记录每次同步操作的执行结果
+ */
 export interface SyncHistoryItem {
   id: string;
   docId: string;
+  /** 同步状态：success、failed 等 */
   syncStatus: string;
   contentHash?: string;
+  /** 内容是否发生变化（1=变化，0=未变化） */
   contentChanged: number;
+  /** 失败时的错误信息 */
   errorMessage?: string;
+  /** 同步耗时（毫秒） */
   durationMs?: number;
   createTime: string;
 }
 
+/**
+ * 同步任务概览
+ * 展示文档的同步配置和最后同步状态
+ */
 export interface SyncTaskOverviewItem {
   docId: string;
   docName: string;

@@ -1,3 +1,13 @@
+/**
+ * DevBrain-CQUPT 前端主应用模块
+ * 包含所有页面组件、路由配置和公共 UI 组件
+ *
+ * 架构说明：
+ * - 使用 React Router 进行路由管理
+ * - 使用 Zustand (authStore) 管理全局认证状态
+ * - 前台（front）和管理后台（admin）共用同一套代码，通过 mode 区分
+ * - 所有 API 请求通过 services 模块统一处理
+ */
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
@@ -7,14 +17,23 @@ import * as syncApi from './services/sync';
 import type { DocumentChunkItem, KnowledgeBaseItem, KnowledgeBaseStatus, KnowledgeChunkItem, KnowledgeDocumentItem, PermissionItem, ResourceItem, RoleItem, SyncHistoryItem, SyncTaskOverviewItem, UserItem } from './types';
 import type { AxiosProgressEvent } from 'axios';
 
+/** 认证页面模式：登录、注册、找回密码 */
 type AuthMode = 'login' | 'register' | 'forgot';
+/** 管理后台 Tab 页类型 */
 type AdminTab = 'users' | 'roles' | 'permissions' | 'departments';
+/** 知识库弹窗模式：创建或编辑 */
 type KnowledgeBaseModalMode = 'create' | 'edit';
+/** 应用 Shell 模式：前台或管理后台 */
 type ShellMode = 'front' | 'admin';
+/** 文档来源模式：本地文件、飞书文档、URL */
 type DocumentSourceMode = 'file' | 'feishu' | 'url';
+/** 同步频率选项 */
 type SyncFrequency = 'none' | 'daily' | 'weekly' | 'monthly';
+/** 加入知识库方式 */
 type JoinKnowledgeBaseMode = 'search' | 'invite' | 'organization';
+/** 文档操作模式：空白文档或上传文件 */
 type DocumentActionMode = 'blank' | 'upload';
+/** 分块策略模式 */
 type ChunkStrategyMode = 'fixed_size' | 'recursive_character' | 'structure_aware' | 'qa_pair' | 'table_aware';
 type IconName =
   | 'home'
@@ -42,29 +61,38 @@ type IconName =
   | 'shield'
   | 'chart';
 
+/** 侧边栏菜单项接口 */
 interface ShellMenuItem {
   label: string;
   path: string;
   icon: IconName;
 }
 
+/** 知识库表单状态（创建/编辑弹窗使用） */
 interface KnowledgeBaseFormState {
   name: string;
   description: string;
   collectionName: string;
   embeddingModel: string;
   status: KnowledgeBaseStatus;
+  /** 访问级别：私有、团队、组织 */
   accessLevel: 'private' | 'team' | 'organization';
 }
 
+/** 分块配置表单状态 */
 interface ChunkFormState {
   strategy: ChunkStrategyMode;
+  /** 分块大小（字符数） */
   chunkSize: number;
+  /** 重叠大小（字符数） */
   overlapSize: number;
+  /** 最小字符数 */
   minChars: number;
+  /** 最大字符数 */
   maxChars: number;
 }
 
+/** 本地文档版本记录（存储在 localStorage 中） */
 interface LocalDocumentVersion {
   id: string;
   docId: string;
@@ -74,15 +102,58 @@ interface LocalDocumentVersion {
   createdAt: string;
 }
 
+/** 分页大小选项 */
 const pageSizeOptions = [10, 20, 50];
+interface EmbeddingModelOption {
+  value: string;
+  label: string;
+  hint: string;
+}
+
+interface EmbeddingModelGroup {
+  label: string;
+  options: EmbeddingModelOption[];
+}
+
+const defaultEmbeddingModel = 'text-embedding-3-small';
+const embeddingModelGroups: EmbeddingModelGroup[] = [
+  {
+    label: '云服务模型',
+    options: [
+      {
+        value: 'text-embedding-3-small',
+        label: 'text-embedding-3-small（首选）',
+        hint: '云服务 Embedding 模型，适合优先走稳定托管服务的知识库。',
+      },
+    ],
+  },
+  {
+    label: '本地模型',
+    options: [
+      {
+        value: 'bge-m3',
+        label: 'bge-m3',
+        hint: '本地通用多语种 Embedding 模型，使用前需确认本地服务已加载该模型。',
+      },
+      {
+        value: 'qwen-emb-local',
+        label: 'qwen3-embedding:8b-fp16',
+        hint: '本地 Qwen3 Embedding 模型，适合走 Ollama 本地向量化。',
+      },
+    ],
+  },
+];
+const embeddingModelOptions = embeddingModelGroups.flatMap((group) => group.options);
+/** 知识库表单初始值 */
 const emptyKnowledgeBaseForm: KnowledgeBaseFormState = {
   name: '',
   description: '',
   collectionName: '',
-  embeddingModel: '',
+  embeddingModel: defaultEmbeddingModel,
   status: 'enabled',
   accessLevel: 'team',
 };
+/** 分块配置表单默认值 */
 const defaultChunkForm: ChunkFormState = {
   strategy: 'fixed_size',
   chunkSize: 512,
@@ -90,6 +161,7 @@ const defaultChunkForm: ChunkFormState = {
   minChars: 240,
   maxChars: 900,
 };
+/** 分块策略选项列表，用于下拉选择 */
 const chunkStrategyOptions: Array<{ value: ChunkStrategyMode; label: string; hint: string }> = [
   { value: 'fixed_size', label: '固定长度', hint: '通用文档快速处理' },
   { value: 'recursive_character', label: '递归字符', hint: '优先保留段落边界' },
@@ -97,8 +169,10 @@ const chunkStrategyOptions: Array<{ value: ChunkStrategyMode; label: string; hin
   { value: 'qa_pair', label: '问答对', hint: '适合 FAQ 和问答材料' },
   { value: 'table_aware', label: '表格感知', hint: '尽量保持表格完整' },
 ];
+/** 文档版本记录的 localStorage 存储键 */
 const documentVersionStoreKey = 'devbrain.documentVersions.v1';
 
+/** 前台侧边栏菜单配置 */
 const frontMenuItems: ShellMenuItem[] = [
   { label: '首页', path: '/workspace', icon: 'home' },
   { label: '智能问答', path: '/assistant', icon: 'message' },
@@ -108,6 +182,7 @@ const frontMenuItems: ShellMenuItem[] = [
   { label: '个人中心', path: '/profile', icon: 'user' },
 ];
 
+/** 管理后台侧边栏菜单配置 */
 const adminMenuItems: ShellMenuItem[] = [
   { label: '工作台', path: '/admin', icon: 'home' },
   { label: '知识库管理', path: '/admin/knowledge-bases', icon: 'database' },
@@ -121,6 +196,7 @@ const adminMenuItems: ShellMenuItem[] = [
   { label: '数据统计', path: '/admin/stats', icon: 'chart' },
 ];
 
+/** 工作台快捷提问提示卡片配置 */
 const workspacePrompts: Array<{ title: string; text: string; icon: IconName }> = [
   { title: '接口报错排查', text: '定位接口异常原因', icon: 'code' },
   { title: '部署失败处理', text: '解决部署过程问题', icon: 'cloudUpload' },
@@ -128,6 +204,10 @@ const workspacePrompts: Array<{ title: string; text: string; icon: IconName }> =
   { title: '日志定位指南', text: '快速定位问题日志', icon: 'fileSearch' },
 ];
 
+/**
+ * 应用根组件
+ * 配置全局路由结构，包含前台页面、管理后台页面和公共页面
+ */
 function App() {
   return (
     <BrowserRouter>
@@ -165,11 +245,19 @@ function App() {
   );
 }
 
+/**
+ * 首页重定向组件
+ * 根据登录状态自动跳转到工作台或认证页面
+ */
 function HomeRedirect() {
   const user = useAuthStore((state) => state.user);
   return <Navigate to={user ? '/workspace' : '/auth'} replace />;
 }
 
+/**
+ * 路由守卫组件 - 认证保护
+ * 访问受保护页面前先刷新用户信息，未登录则跳转到认证页面
+ */
 function RequireAuth({ children }: { children: JSX.Element }) {
   const user = useAuthStore((state) => state.user);
   const refresh = useAuthStore((state) => state.refresh);
@@ -184,12 +272,22 @@ function RequireAuth({ children }: { children: JSX.Element }) {
   return children;
 }
 
+/**
+ * 路由守卫组件 - 管理员权限保护
+ * 非管理员用户访问管理页面时跳转到 403 页面
+ */
 function RequireAdmin({ children }: { children: JSX.Element }) {
   const user = useAuthStore((state) => state.user);
   if (!user?.roles.includes('admin')) return <Navigate to="/403" replace />;
   return children;
 }
 
+/**
+ * SVG 图标组件
+ * 根据图标名称渲染对应的 SVG 矢量图标
+ * @param name - 图标名称
+ * @param className - CSS 类名，默认为 'ui-icon'
+ */
 function UiIcon({ name, className = 'ui-icon' }: { name: IconName; className?: string }) {
   const iconProps = {
     className,
@@ -255,6 +353,11 @@ function UiIcon({ name, className = 'ui-icon' }: { name: IconName; className?: s
   }
 }
 
+/**
+ * 认证页面组件
+ * 包含登录、注册、找回密码三种模式的表单
+ * 已登录用户会自动跳转到工作台
+ */
 function AuthPage() {
   const [mode, setMode] = useState<AuthMode>('login');
   const [form, setForm] = useState({ username: '', email: '', password: '', displayName: '' });
@@ -366,6 +469,10 @@ function AuthPage() {
   );
 }
 
+/**
+ * 密码重置页面
+ * 通过邮件中的重置链接访问，用户输入新密码完成重置
+ */
 function ResetPasswordPage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -402,6 +509,12 @@ function ResetPasswordPage() {
   );
 }
 
+/**
+ * 应用外壳布局组件
+ * 提供侧边栏导航、顶部搜索栏、用户信息等公共布局
+ * @param children - 页面内容
+ * @param mode - 布局模式：'front' 前台模式，'admin' 管理后台模式
+ */
 function AppShell({ children, mode = 'front' }: { children: ReactNode; mode?: ShellMode }) {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
@@ -468,6 +581,14 @@ function AppShell({ children, mode = 'front' }: { children: ReactNode; mode?: Sh
   );
 }
 
+/**
+ * 页面容器组件
+ * 提供统一的页面标题、描述和操作按钮布局
+ * @param title - 页面标题
+ * @param description - 页面描述，可选
+ * @param actions - 页面操作按钮区域，可选
+ * @param children - 页面主体内容
+ */
 function PageContainer({
   title,
   description,
@@ -493,6 +614,10 @@ function PageContainer({
   );
 }
 
+/**
+ * 工作台首页组件
+ * 展示用户统计指标、快捷提问入口、问答预览和侧边推荐内容
+ */
 function WorkspacePage() {
   const user = useAuthStore((state) => state.user);
   if (!user) return null;
@@ -599,6 +724,10 @@ function WorkspacePage() {
   );
 }
 
+/**
+ * 前台知识库页面
+ * 展示可用知识库列表和最近文档，供普通用户浏览
+ */
 function FrontKnowledgePage() {
   const knowledgeBases = [
     ['DevBrain 项目知识库', '项目架构、接口规范、部署手册与常见问题', '128 篇文档', '12,842 次引用'],
@@ -662,6 +791,10 @@ function FrontKnowledgePage() {
   );
 }
 
+/**
+ * 管理后台 - 知识库管理页面
+ * 提供知识库的 CRUD 操作、搜索筛选、统计指标和详情查看
+ */
 function KnowledgeBasePage() {
   const navigate = useNavigate();
   const [records, setRecords] = useState<KnowledgeBaseItem[]>([]);
@@ -837,6 +970,9 @@ function KnowledgeBasePage() {
     { label: '分块', value: totalChunks, color: 'teal' },
     { label: '停用', value: records.filter((item) => item.status === 'disabled').length, color: 'red' },
   ];
+  const selectedEmbeddingModel = embeddingModelOptions.find((option) => option.value === form.embeddingModel);
+  const embeddingModelHint = selectedEmbeddingModel?.hint
+    ?? (form.embeddingModel ? '当前知识库使用历史模型配置，保存前建议切换为当前可选模型。' : '请选择 Embedding 模型。');
 
   return (
     <AppShell mode="admin">
@@ -1049,7 +1185,28 @@ function KnowledgeBasePage() {
                   </label>
                 </>
               )}
-              <label>Embedding 模型<input value={form.embeddingModel} onChange={(event) => setForm({ ...form, embeddingModel: event.target.value })} required maxLength={64} placeholder="text-embedding-3-small" /></label>
+              <label>
+                Embedding 模型
+                <select
+                  value={form.embeddingModel}
+                  onChange={(event) => setForm({ ...form, embeddingModel: event.target.value })}
+                  required
+                  aria-describedby="embedding-model-hint"
+                >
+                  <option value="" disabled>请选择 Embedding 模型</option>
+                  {form.embeddingModel && !selectedEmbeddingModel && (
+                    <option value={form.embeddingModel}>当前配置 - {form.embeddingModel}</option>
+                  )}
+                  {embeddingModelGroups.map((group) => (
+                    <optgroup key={group.label} label={group.label}>
+                      {group.options.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+                <small id="embedding-model-hint" className="field-hint">{embeddingModelHint}</small>
+              </label>
               <label>
                 状态
                 <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as KnowledgeBaseStatus })}>
@@ -1096,6 +1253,10 @@ function KnowledgeBasePage() {
   );
 }
 
+/**
+ * 加入知识库弹窗组件
+ * 支持搜索加入、邀请链接、组织列表三种方式
+ */
 function JoinKnowledgeBaseModal({
   records,
   onClose,
@@ -1179,6 +1340,10 @@ function JoinKnowledgeBaseModal({
   );
 }
 
+/**
+ * 管理后台 - 文档管理页面
+ * 跨知识库管理所有文档，支持筛选、启停用、删除和上传
+ */
 function AdminDocumentsPage() {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseItem[]>([]);
   const [records, setRecords] = useState<KnowledgeDocumentItem[]>([]);
@@ -1432,6 +1597,11 @@ function AdminDocumentsPage() {
   );
 }
 
+/**
+ * 知识库文档列表页面
+ * 展示指定知识库下的所有文档，支持搜索、筛选、上传、编辑、分块处理等操作
+ * @param mode - 页面模式：'front' 前台，'admin' 管理后台
+ */
 function KnowledgeBaseDocumentsPage({ mode = 'front' }: { mode?: ShellMode }) {
   const { id: kbId } = useParams();
   const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeBaseItem | null>(null);
@@ -1743,6 +1913,10 @@ function KnowledgeBaseDocumentsPage({ mode = 'front' }: { mode?: ShellMode }) {
   );
 }
 
+/**
+ * 新建空白文档弹窗
+ * 用户输入标题和正文内容，创建 Markdown 文件并上传到知识库
+ */
 function BlankDocumentModal({
   kbId,
   onClose,
@@ -1824,6 +1998,10 @@ function BlankDocumentModal({
   );
 }
 
+/**
+ * 文档编辑弹窗
+ * 基于现有文档内容创建新版本，支持版本历史查看
+ */
 function DocumentEditModal({
   kbId,
   doc,
@@ -1944,6 +2122,10 @@ function DocumentEditModal({
   );
 }
 
+/**
+ * 文档分块处理弹窗
+ * 配置分块策略参数并触发文档分块解析
+ */
 function DocumentChunkModal({
   doc,
   onClose,
@@ -2014,6 +2196,10 @@ function DocumentChunkModal({
   );
 }
 
+/**
+ * 分块结果查看弹窗
+ * 分页展示文档的分块列表，包含分块内容预览和统计信息
+ */
 function ChunkResultModal({
   doc,
   onClose,
@@ -2129,6 +2315,14 @@ function ChunkResultModal({
   );
 }
 
+/**
+ * 分块配置面板组件
+ * 提供分块策略选择、分块大小、重叠度等参数的可视化配置
+ * @param value - 当前配置值
+ * @param onChange - 配置变更回调
+ * @param disabled - 是否禁用
+ * @param compact - 是否使用紧凑模式（隐藏滑块）
+ */
 function ChunkConfigPanel({
   value,
   onChange,
@@ -2255,6 +2449,10 @@ function ChunkConfigPanel({
   );
 }
 
+/**
+ * 定时同步配置弹窗
+ * 配置在线文档（飞书/URL）的定时同步计划
+ */
 function ScheduleConfigModal({
   kbId,
   doc,
@@ -2376,6 +2574,11 @@ function ScheduleConfigModal({
   );
 }
 
+/**
+ * 文档上传弹窗组件
+ * 支持本地文件上传、飞书文档导入、URL 导入三种模式
+ * 包含分块配置、定时同步、流水线配置等高级选项
+ */
 function DocumentUploadModal({
   kbId,
   knowledgeBases = [],
@@ -2662,6 +2865,11 @@ function DocumentUploadModal({
   );
 }
 
+/**
+ * 格式化文件大小
+ * @param bytes - 字节数
+ * @returns 格式化后的字符串（B/KB/MB）
+ */
 function formatFileSize(bytes?: number | null) {
   if (!bytes && bytes !== 0) return '--';
   if (bytes < 1024) return `${bytes} B`;
@@ -2669,6 +2877,12 @@ function formatFileSize(bytes?: number | null) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/**
+ * 构建分块配置 JSON 字符串
+ * 根据表单状态生成后端所需的分块配置参数
+ * @param form - 分块配置表单状态
+ * @returns JSON 格式的配置字符串
+ */
 function buildChunkConfig(form: ChunkFormState) {
   const chunkSize = Math.max(128, Math.round(form.chunkSize || defaultChunkForm.chunkSize));
   const overlapSize = Math.min(Math.max(0, Math.round(form.overlapSize || 0)), Math.max(0, chunkSize - 1));
@@ -2685,6 +2899,13 @@ function buildChunkConfig(form: ChunkFormState) {
   return JSON.stringify({ chunkSize, overlapSize });
 }
 
+/**
+ * 解析分块配置
+ * 从后端返回的策略和配置字符串解析为表单状态
+ * @param strategy - 分块策略名称
+ * @param config - JSON 格式的配置字符串
+ * @returns 分块配置表单状态
+ */
 function parseChunkForm(strategy?: string | null, config?: string | null): ChunkFormState {
   const normalizedStrategy = normalizeChunkStrategy(strategy);
   const next = { ...defaultChunkForm, strategy: normalizedStrategy };
@@ -2705,6 +2926,12 @@ function parseChunkForm(strategy?: string | null, config?: string | null): Chunk
   }
 }
 
+/**
+ * 标准化分块策略名称
+ * 处理不同的命名格式（如 recursive -> recursive_character）
+ * @param value - 原始策略名称
+ * @returns 标准化后的策略枚举值
+ */
 function normalizeChunkStrategy(value?: string | null): ChunkStrategyMode {
   const normalized = (value || '').trim().toLowerCase().replace(/-/g, '_');
   if (normalized === 'recursive') return 'recursive_character';
@@ -2764,6 +2991,15 @@ function appendLocalDocumentVersion(version: LocalDocumentVersion) {
   }
 }
 
+/**
+ * 构建定时同步 Cron 表达式
+ * 根据频率、时间、星期几、月几号生成 Quartz 格式的 Cron 表达式
+ * @param frequency - 同步频率
+ * @param time - 同步时间（HH:mm 格式）
+ * @param weekday - 星期几（1-7）
+ * @param monthDay - 每月几号（1-28）
+ * @returns Cron 表达式或 undefined（不启用时）
+ */
 function buildScheduleCron(frequency: SyncFrequency, time: string, weekday: string, monthDay: string) {
   if (frequency === 'none') return undefined;
   const [hour = '2', minute = '0'] = time.split(':');
@@ -2780,6 +3016,11 @@ function buildScheduleCron(frequency: SyncFrequency, time: string, weekday: stri
   return `0 ${safeMinute} ${safeHour} * * ?`;
 }
 
+/**
+ * 解析 Cron 表达式为定时配置
+ * @param value - Cron 表达式
+ * @returns 解析后的频率、时间、星期几、月几号
+ */
 function parseScheduleCron(value?: string | null): { frequency: SyncFrequency; time: string; weekday: string; monthDay: string } {
   if (!value) {
     return { frequency: 'daily', time: '02:00', weekday: '1', monthDay: '1' };
@@ -2800,6 +3041,11 @@ function parseScheduleCron(value?: string | null): { frequency: SyncFrequency; t
   return { frequency: 'daily', time, weekday: '1', monthDay: '1' };
 }
 
+/**
+ * 格式化 Cron 表达式为可读文本
+ * @param value - Cron 表达式
+ * @returns 可读的定时描述文本
+ */
 function formatScheduleCron(value?: string | null) {
   if (!value) return '未启用';
   const parsed = parseScheduleCron(value);
@@ -2821,6 +3067,12 @@ function formatScheduleCron(value?: string | null) {
   return `每天 ${parsed.time}`;
 }
 
+/**
+ * 标准化飞书文档来源地址
+ * 将飞书 URL 转换为标准格式（docx:xxx、wiki:xxx、sheet:xxx）
+ * @param value - 飞书文档 URL 或标识
+ * @returns 标准化的来源地址
+ */
 function normalizeFeishuSourceLocation(value: string) {
   const input = value.trim();
   if (/^(docx|wiki|sheet):/i.test(input)) {
@@ -2847,6 +3099,10 @@ function normalizeFeishuSourceLocation(value: string) {
   return input;
 }
 
+/**
+ * 管理后台 - 文档分块详情页面
+ * 展示文档的所有分块，支持分块内容编辑和保存
+ */
 function AdminDocumentChunksPage() {
   const { id: kbId, documentId } = useParams();
   const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeBaseItem | null>(null);
@@ -3143,6 +3399,10 @@ function AdminDocumentChunksPage() {
   );
 }
 
+/**
+ * 前台文档详情页面
+ * 展示单个文档的详细信息和摘要内容
+ */
 function DocumentDetailPage() {
   const { id, documentId } = useParams();
   return (
@@ -3216,6 +3476,10 @@ function DocumentPage() {
   );
 }
 
+/**
+ * 智能问答页面
+ * 提供基于知识库的 AI 问答交互界面
+ */
 function AssistantPage() {
   return (
     <AppShell>
@@ -3265,6 +3529,10 @@ function AssistantPage() {
   );
 }
 
+/**
+ * 系统设置页面
+ * 管理个人资料（邮箱、显示名称、头像）和安全设置（修改密码）
+ */
 function SettingsPage() {
   const { user, updateProfile, changePassword, message } = useAuthStore();
   const [profile, setProfile] = useState({ email: user?.email || '', displayName: user?.displayName || '', avatar: user?.avatar || '' });
@@ -3326,6 +3594,10 @@ function SettingsPage() {
   );
 }
 
+/**
+ * 管理后台仪表盘页面
+ * 展示系统统计指标、问答趋势、知识库排行、系统健康状态等
+ */
 function AdminDashboardPage() {
   const trend = [
     ['05-06', '42%', '38%'],
@@ -3471,6 +3743,10 @@ function AdminDashboardPage() {
   );
 }
 
+/**
+ * 管理后台 - 入库任务页面
+ * 跟踪文档定时同步任务，支持手动触发同步和查看同步历史
+ */
 function AdminIngestionPage() {
   const [tasks, setTasks] = useState<SyncTaskOverviewItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -3551,6 +3827,10 @@ function AdminIngestionPage() {
   );
 }
 
+/**
+ * 同步历史弹窗
+ * 展示指定文档的同步历史记录，包含状态、内容变更、耗时等信息
+ */
 function SyncHistoryModal({ docId, onClose }: { docId: string; onClose: () => void }) {
   const [history, setHistory] = useState<SyncHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -3625,6 +3905,10 @@ function AdminModulePage({ title, description }: { title: string; description: s
   );
 }
 
+/**
+ * 管理后台 - 用户权限管理页面
+ * 包含用户管理、角色管理、权限管理、部门管理四个 Tab
+ */
 function AdminPage() {
   const [tab, setTab] = useState<AdminTab>('users');
 
@@ -3647,6 +3931,10 @@ function AdminPage() {
   );
 }
 
+/**
+ * 用户管理面板
+ * 提供用户创建表单和用户列表展示
+ */
 function UsersPanel() {
   const [users, setUsers] = useState<UserItem[]>([]);
   const [draft, setDraft] = useState({ username: '', email: '', password: '', displayName: '', roleCodes: 'user' });
@@ -3696,6 +3984,10 @@ function UsersPanel() {
   );
 }
 
+/**
+ * 角色管理面板
+ * 提供角色创建和权限分配功能
+ */
 function RolesPanel() {
   const [roles, setRoles] = useState<RoleItem[]>([]);
   const [permissions, setPermissions] = useState<PermissionItem[]>([]);
@@ -3759,6 +4051,10 @@ function RolesPanel() {
   );
 }
 
+/**
+ * 资源管理面板
+ * 管理 API 接口资源规则，定义 HTTP 方法、路径与权限的映射关系
+ */
 function ResourcesPanel() {
   const [resources, setResources] = useState<ResourceItem[]>([]);
   const [draft, setDraft] = useState({ resourceName: '', httpMethod: 'GET', pathPattern: '', permissionCode: '', publicAccess: 0 });
@@ -3815,6 +4111,14 @@ function DepartmentsPanel() {
   );
 }
 
+/**
+ * 前台统计指标卡片组件
+ * @param label - 指标名称
+ * @param value - 指标值
+ * @param delta - 变化趋势描述
+ * @param tone - 颜色主题
+ * @param icon - 图标名称
+ */
 function FrontMetric({
   label,
   value,
@@ -3840,6 +4144,10 @@ function FrontMetric({
   );
 }
 
+/**
+ * 洞察卡片组件
+ * 用于侧边栏展示引用来源、相关文档、推荐问题等内容
+ */
 function InsightCard({ title, action, children }: { title: string; action?: string; children: ReactNode }) {
   return (
     <article className="insight-card">
@@ -3891,6 +4199,13 @@ function MetricCard({ label, value, helper, tone }: { label: string; value: stri
   );
 }
 
+/**
+ * 通用数据列表组件
+ * 渲染表格形式的数据列表，支持自定义列和操作按钮
+ * @param title - 表格标题
+ * @param columns - 列名数组
+ * @param rows - 数据行数组，每行包含 key 和 cells
+ */
 function DataList({ title, columns, rows }: { title: string; columns: string[]; rows: { key: string; cells: ReactNode[] }[] }) {
   return (
     <article className="card table-card">
@@ -3934,11 +4249,22 @@ function ChipRow({ items }: { items: string[] }) {
   );
 }
 
+/**
+ * 状态徽章组件
+ * 根据状态值（enabled/disabled）渲染不同样式的标签
+ */
 function StatusBadge({ status }: { status: string }) {
   const normalized = status === 'enabled' || status === 'disabled' ? status : 'unknown';
   return <span className={`status-pill ${normalized}`}>{statusLabel(status)}</span>;
 }
 
+/**
+ * 通用弹窗组件
+ * @param title - 弹窗标题
+ * @param children - 弹窗主体内容
+ * @param footer - 弹窗底部操作区域，可选
+ * @param onClose - 关闭回调（点击遮罩或关闭按钮触发）
+ */
 function Modal({ title, children, footer, onClose }: { title: string; children: ReactNode; footer?: ReactNode; onClose: () => void }) {
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -3954,6 +4280,11 @@ function Modal({ title, children, footer, onClose }: { title: string; children: 
   );
 }
 
+/**
+ * 格式化日期时间
+ * @param value - ISO 格式的日期字符串
+ * @returns 本地化的日期时间字符串
+ */
 function formatDate(value?: string | null) {
   if (!value) return '--';
   const date = new Date(value);
@@ -3961,6 +4292,12 @@ function formatDate(value?: string | null) {
   return date.toLocaleString();
 }
 
+/**
+ * 格式化短日期
+ * 今天的时间显示为时分，其他日期显示为月-日
+ * @param value - ISO 格式的日期字符串
+ * @returns 短格式日期字符串
+ */
 function formatShortDate(value?: string | null) {
   if (!value) return '--';
   const date = new Date(value);
@@ -3978,6 +4315,11 @@ function statusLabel(status: string) {
   return status || '--';
 }
 
+/**
+ * 获取文档状态的中文标签
+ * @param status - 原始状态值
+ * @returns 中文状态标签
+ */
 function docStatusLabel(status: string) {
   const normalized = normalizeDocStatus(status);
   if (normalized === 'pending') return '等待处理';
@@ -4001,14 +4343,30 @@ function normalizeDocStatus(status: string) {
   return status;
 }
 
+/**
+ * 提取错误信息
+ * @param error - 错误对象
+ * @returns 错误消息字符串
+ */
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : '请求失败';
 }
 
+/**
+ * 启动加载屏幕
+ * 应用初始化时显示的加载提示
+ */
 function BootScreen() {
   return <main className="boot-screen"><span />正在同步身份信息...</main>;
 }
 
+/**
+ * 状态页面组件
+ * 用于 403、404 等错误状态页面的展示
+ * @param code - 状态码
+ * @param title - 页面标题
+ * @param text - 页面描述文本
+ */
 function StatusPage({ code, title, text }: { code: string; title: string; text: string }) {
   return (
     <main className="auth-stage compact">
