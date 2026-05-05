@@ -49,6 +49,100 @@ export interface PageResult<T> {
   pages: number;
 }
 
+/** 摄入 Pipeline 支持的节点类型 */
+export type IngestionNodeType = 'fetcher' | 'parser' | 'enhancer' | 'chunker' | 'enricher' | 'indexer';
+
+/** 摄入 Pipeline 节点配置 */
+export interface IngestionPipelineNodeItem {
+  /** 流水线内节点 ID */
+  nodeId: string;
+  /** 节点类型 */
+  nodeType: IngestionNodeType | string;
+  /** 节点私有配置 */
+  settings: Record<string, unknown>;
+  /** 条件配置，后端支持 true/false 或 JSON 字符串 */
+  condition?: string | null;
+  /** 默认下一个节点 ID */
+  nextNodeId?: string | null;
+  /** 排序号 */
+  sortOrder?: number | null;
+}
+
+/** 摄入 Pipeline 定义 */
+export interface IngestionPipelineItem {
+  id: string;
+  name: string;
+  description?: string | null;
+  nodeCount?: number;
+  nodes?: IngestionPipelineNodeItem[] | null;
+  createdBy?: string | null;
+  createTime?: string | null;
+  updateTime?: string | null;
+}
+
+/** 创建或更新 Pipeline 的节点配置 */
+export interface IngestionPipelineNodePayload {
+  nodeId: string;
+  nodeType: IngestionNodeType | string;
+  settings?: Record<string, unknown>;
+  condition?: string | null;
+  nextNodeId?: string | null;
+}
+
+/** 创建或更新 Pipeline 请求 */
+export interface IngestionPipelinePayload {
+  name: string;
+  description?: string;
+  nodes: IngestionPipelineNodePayload[];
+}
+
+/** 摄入任务执行结果 */
+export interface IngestionResultItem {
+  taskId: string;
+  pipelineId: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | string;
+  chunkCount: number;
+  message?: string | null;
+}
+
+/** 摄入任务列表项 */
+export interface IngestionTaskItem {
+  id: string;
+  pipelineId: string;
+  sourceType: string;
+  sourceLocation: string;
+  status: string;
+  chunkCount?: number | null;
+  logs?: Array<Record<string, unknown>> | null;
+  metadata?: Record<string, unknown> | null;
+  createdBy?: string | null;
+  createTime?: string | null;
+  updateTime?: string | null;
+}
+
+/** 摄入任务节点日志 */
+export interface IngestionTaskNodeItem {
+  id: string;
+  taskId: string;
+  pipelineId: string;
+  nodeId: string;
+  nodeType: string;
+  nodeOrder?: number | null;
+  status: string;
+  durationMs?: number | null;
+  output?: Record<string, unknown> | null;
+  createTime?: string | null;
+}
+
+/** 执行摄入任务请求 */
+export interface ExecuteIngestionTaskPayload {
+  pipelineId: string;
+  sourceType: 'FILE' | 'URL' | 'FEISHU' | 'S3' | string;
+  sourceLocation: string;
+  fileName?: string;
+  metadata?: Record<string, unknown>;
+}
+
 /** 知识库状态类型 */
 export type KnowledgeBaseStatus = 'enabled' | 'disabled';
 

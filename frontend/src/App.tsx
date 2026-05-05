@@ -14,7 +14,23 @@ import { useAuthStore } from './stores/authStore';
 import * as authApi from './services/auth';
 import * as knowledgeBaseApi from './services/knowledgeBase';
 import * as syncApi from './services/sync';
-import type { DocumentChunkItem, KnowledgeBaseItem, KnowledgeBaseStatus, KnowledgeChunkItem, KnowledgeDocumentItem, PermissionItem, ResourceItem, RoleItem, SyncHistoryItem, SyncTaskOverviewItem, UserItem } from './types';
+import * as ingestionApi from './services/ingestion';
+import type {
+  DocumentChunkItem,
+  IngestionNodeType,
+  IngestionPipelineItem,
+  IngestionTaskItem,
+  IngestionTaskNodeItem,
+  KnowledgeBaseItem,
+  KnowledgeBaseStatus,
+  KnowledgeChunkItem,
+  KnowledgeDocumentItem,
+  PermissionItem,
+  ResourceItem,
+  RoleItem,
+  SyncHistoryItem,
+  UserItem,
+} from './types';
 import type { AxiosProgressEvent } from 'axios';
 
 /** 认证页面模式：登录、注册、找回密码 */
@@ -43,6 +59,8 @@ type ChunkStrategyMode =
   | 'semantic_chunking'
   | 'recursive_semantic'
   | 'recursive_post_process';
+/** 流水线编辑器视图模式 */
+type PipelineEditorTab = 'editor' | 'tasks';
 type IconName =
   | 'home'
   | 'message'
@@ -124,6 +142,39 @@ interface LocalDocumentVersion {
   version: string;
   note: string;
   createdAt: string;
+}
+
+/** 前端画布节点，包含后端节点配置和 UI 坐标。 */
+interface PipelineCanvasNode {
+  id: string;
+  nodeType: IngestionNodeType | 'start' | 'condition' | 'storage' | 'end';
+  title: string;
+  subtitle: string;
+  x: number;
+  y: number;
+  enabled: boolean;
+  settings: Record<string, unknown>;
+  condition?: string;
+  nextNodeId?: string;
+}
+
+/** 前端画布连线定义，用 SVG 物化为折线。 */
+interface PipelineCanvasEdge {
+  id: string;
+  from: string;
+  to: string;
+  label?: string;
+  tone?: 'primary' | 'success' | 'warning' | 'muted';
+  dashed?: boolean;
+}
+
+/** 流水线编辑器表单状态。 */
+interface PipelineDraftState {
+  id?: string;
+  name: string;
+  description: string;
+  nodes: PipelineCanvasNode[];
+  edges: PipelineCanvasEdge[];
 }
 
 /** 分页大小选项 */
@@ -273,7 +324,7 @@ const adminMenuItems: ShellMenuItem[] = [
   { label: '问答管理', path: '/admin/qa', icon: 'message' },
   { label: '用户权限', path: '/admin/users', icon: 'shield' },
   { label: '标签分类', path: '/admin/tags', icon: 'tag' },
-  { label: '入库任务', path: '/admin/ingestion', icon: 'box' },
+  { label: '流水线编辑', path: '/admin/ingestion', icon: 'box' },
   { label: '模型配置', path: '/admin/models', icon: 'target' },
   { label: '系统配置', path: '/admin/system', icon: 'settings' },
   { label: '日志审计', path: '/admin/audit', icon: 'fileSearch' },
@@ -4102,87 +4153,948 @@ function AdminDashboardPage() {
   );
 }
 
+/** 流水线画布节点的元信息，用于统一展示标题、色彩和默认配置。 */
+const pipelineNodeMetas: Record<PipelineCanvasNode['nodeType'], {
+  title: string;
+  subtitle: string;
+  icon: string;
+  tone: string;
+  defaultSettings: () => Record<string, unknown>;
+}> = {
+  start: {
+    title: '开始',
+    subtitle: '入口',
+    icon: 'IN',
+    tone: 'success',
+    defaultSettings: () => ({}),
+  },
+  fetcher: {
+    title: '数据获取',
+    subtitle: '数据源：S3/本地/接口',
+    icon: 'GET',
+    tone: 'primary',
+    defaultSettings: () => ({}),
+  },
+  parser: {
+    title: '文档解析',
+    subtitle: '解析器：通用解析器',
+    icon: 'PAR',
+    tone: 'purple',
+    defaultSettings: () => ({}),
+  },
+  chunker: {
+    title: '文本分块',
+    subtitle: '策略：递归字符切分',
+    icon: 'CHK',
+    tone: 'primary',
+    defaultSettings: () => ({
+      strategy: 'recursive_character',
+      chunkConfig: {
+        chunkSize: 1000,
+        overlapSize: 200,
+        minChunkSize: 120,
+        maxChunkSize: 1200,
+        similarityThreshold: 0.5,
+        batchSize: 10,
+      },
+      embeddingModel: '',
+    }),
+  },
+  condition: {
+    title: '条件判断',
+    subtitle: '文档类型判断',
+    icon: 'IF',
+    tone: 'warning',
+    defaultSettings: () => ({
+      expression: 'metadata.type == "tech_doc"',
+    }),
+  },
+  enhancer: {
+    title: '文档增强',
+    subtitle: '增强：上下文补全',
+    icon: 'LLM',
+    tone: 'orange',
+    defaultSettings: () => ({
+      tasks: ['CONTEXT_ENHANCE', 'KEYWORDS'],
+      timeoutSeconds: 300,
+      retryTimes: 2,
+      continueOnFailure: true,
+    }),
+  },
+  enricher: {
+    title: '内容增强',
+    subtitle: '增强：关键词提取',
+    icon: 'AI',
+    tone: 'orange',
+    defaultSettings: () => ({
+      tasks: ['KEYWORDS', 'SUMMARY'],
+      attachDocumentMetadata: true,
+      timeoutSeconds: 300,
+      retryTimes: 2,
+      continueOnFailure: true,
+    }),
+  },
+  storage: {
+    title: '存储元数据',
+    subtitle: '存储：PostgreSQL',
+    icon: 'SQL',
+    tone: 'purple',
+    defaultSettings: () => ({
+      tableName: 't_ingestion_task_node',
+    }),
+  },
+  indexer: {
+    title: '向量索引',
+    subtitle: '索引：pgvector',
+    icon: 'VEC',
+    tone: 'teal',
+    defaultSettings: () => ({
+      collectionName: 'dev_knowledge',
+      dimension: 1536,
+    }),
+  },
+  end: {
+    title: '结束',
+    subtitle: '成功',
+    icon: 'OK',
+    tone: 'success',
+    defaultSettings: () => ({}),
+  },
+};
+
+/** 后端当前可执行的节点类型，视觉节点不会写入 Pipeline 定义。 */
+const executablePipelineTypes: IngestionNodeType[] = ['fetcher', 'parser', 'enhancer', 'chunker', 'enricher', 'indexer'];
+
+/** 判断节点是否是后端可执行节点。 */
+function isExecutablePipelineNode(node: PipelineCanvasNode): node is PipelineCanvasNode & { nodeType: IngestionNodeType } {
+  return executablePipelineTypes.includes(node.nodeType as IngestionNodeType);
+}
+
+/** 将未知值收敛成普通对象，避免直接操作 JsonNode 结果时报错。 */
+function toPlainObject(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return {};
+}
+
+/** 读取数字配置，兼容后端 JSON 反序列化后的字符串值。 */
+function readNumberSetting(source: Record<string, unknown>, key: string, fallback: number) {
+  const value = source[key];
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+  return fallback;
+}
+
+/** 读取字符串数组配置，过滤后端可能返回的非字符串项。 */
+function readStringArraySetting(value: unknown, fallback: string[]) {
+  if (!Array.isArray(value)) return fallback;
+  const items = value.filter((item): item is string => typeof item === 'string');
+  return items.length > 0 ? items : fallback;
+}
+
+/** 创建一个带默认设置的画布节点。 */
+function createPipelineNode(
+  id: string,
+  nodeType: PipelineCanvasNode['nodeType'],
+  override?: Partial<PipelineCanvasNode>,
+): PipelineCanvasNode {
+  const meta = pipelineNodeMetas[nodeType];
+  return {
+    id,
+    nodeType,
+    title: meta.title,
+    subtitle: meta.subtitle,
+    x: 0,
+    y: 0,
+    enabled: true,
+    settings: meta.defaultSettings(),
+    ...override,
+  };
+}
+
+/** 为节点重新排版，确保画布在常见宽度下稳定展示。 */
+function layoutPipelineNodes(nodes: PipelineCanvasNode[]) {
+  const executableNodes = nodes.filter(isExecutablePipelineNode);
+  const chunkerNode = executableNodes.find(node => node.nodeType === 'chunker');
+  const enricherNode = executableNodes.find(node => node.nodeType === 'enricher');
+  const indexerNode = executableNodes.find(node => node.nodeType === 'indexer');
+  const lastExecutableNode = executableNodes[executableNodes.length - 1];
+
+  return nodes.map((node) => {
+    if (isExecutablePipelineNode(node)) {
+      const index = executableNodes.findIndex(item => item.id === node.id);
+      return { ...node, x: 164 + index * 186, y: 92 };
+    }
+    if (node.nodeType === 'start') return { ...node, x: 26, y: 100 };
+    if (node.nodeType === 'condition') {
+      const anchor = chunkerNode || executableNodes[Math.max(0, Math.floor(executableNodes.length / 2) - 1)];
+      return { ...node, x: (anchor?.x || 536) + 32, y: 216 };
+    }
+    if (node.nodeType === 'storage') {
+      const anchor = enricherNode || indexerNode || lastExecutableNode;
+      return { ...node, x: Math.max(500, anchor?.x || 700), y: 312 };
+    }
+    if (node.nodeType === 'end') {
+      return { ...node, x: (lastExecutableNode?.x || 900) + 186, y: 100 };
+    }
+    return node;
+  });
+}
+
+/** 根据节点位置生成画布连线。 */
+function buildPipelineEdges(nodes: PipelineCanvasNode[]): PipelineCanvasEdge[] {
+  const edges: PipelineCanvasEdge[] = [];
+  const executableNodes = nodes.filter(isExecutablePipelineNode).filter(node => node.enabled);
+  const startNode = nodes.find(node => node.nodeType === 'start');
+  const conditionNode = nodes.find(node => node.nodeType === 'condition');
+  const storageNode = nodes.find(node => node.nodeType === 'storage');
+  const endNode = nodes.find(node => node.nodeType === 'end');
+  const indexerNode = executableNodes.find(node => node.nodeType === 'indexer');
+
+  if (startNode && executableNodes[0]) {
+    edges.push({ id: `${startNode.id}-${executableNodes[0].id}`, from: startNode.id, to: executableNodes[0].id, tone: 'muted' });
+  }
+
+  executableNodes.forEach((node, index) => {
+    const next = executableNodes[index + 1];
+    if (!next) return;
+    if (conditionNode && node.nodeType === 'chunker' && next.nodeType === 'enricher') {
+      edges.push({ id: `${node.id}-${conditionNode.id}`, from: node.id, to: conditionNode.id, tone: 'warning' });
+      edges.push({ id: `${conditionNode.id}-${next.id}`, from: conditionNode.id, to: next.id, label: '条件跳转：技术文档', tone: 'success', dashed: true });
+      return;
+    }
+    edges.push({ id: `${node.id}-${next.id}`, from: node.id, to: next.id, tone: 'muted' });
+  });
+
+  if (conditionNode && storageNode) {
+    edges.push({ id: `${conditionNode.id}-${storageNode.id}`, from: conditionNode.id, to: storageNode.id, label: '其它类型', tone: 'warning', dashed: true });
+  }
+  if (storageNode && indexerNode) {
+    edges.push({ id: `${storageNode.id}-${indexerNode.id}`, from: storageNode.id, to: indexerNode.id, tone: 'muted', dashed: true });
+  }
+
+  const lastExecutableNode = executableNodes[executableNodes.length - 1];
+  if (lastExecutableNode && endNode) {
+    edges.push({ id: `${lastExecutableNode.id}-${endNode.id}`, from: lastExecutableNode.id, to: endNode.id, tone: 'muted' });
+  }
+
+  return edges;
+}
+
+/** 统一刷新画布布局和连线。 */
+function normalizePipelineDraft(draft: PipelineDraftState): PipelineDraftState {
+  const nodes = layoutPipelineNodes(draft.nodes);
+  return { ...draft, nodes, edges: buildPipelineEdges(nodes) };
+}
+
+/** 构造默认文档入库流水线草稿。 */
+function buildDefaultPipelineDraft(): PipelineDraftState {
+  const nodes: PipelineCanvasNode[] = [
+    createPipelineNode('start', 'start', { enabled: false }),
+    createPipelineNode('fetcher', 'fetcher'),
+    createPipelineNode('parser', 'parser'),
+    createPipelineNode('chunker', 'chunker'),
+    createPipelineNode('condition', 'condition', { condition: 'metadata.type == "tech_doc"' }),
+    createPipelineNode('enricher', 'enricher'),
+    createPipelineNode('storage', 'storage'),
+    createPipelineNode('indexer', 'indexer'),
+    createPipelineNode('end', 'end', { enabled: false }),
+  ];
+  return normalizePipelineDraft({
+    name: '文档入库流水线',
+    description: '文档获取、解析、分块、增强和向量索引的标准处理流程。',
+    nodes,
+    edges: [],
+  });
+}
+
+/** 把后端 Pipeline 详情转换成画布草稿。 */
+function pipelineToDraft(pipeline: IngestionPipelineItem): PipelineDraftState {
+  const persistedNodes = pipeline.nodes || [];
+  if (persistedNodes.length === 0) {
+    return { ...buildDefaultPipelineDraft(), id: pipeline.id, name: pipeline.name, description: pipeline.description || '' };
+  }
+
+  const executableNodes = persistedNodes
+    .filter(node => executablePipelineTypes.includes(node.nodeType as IngestionNodeType))
+    .sort((left, right) => (left.sortOrder || 0) - (right.sortOrder || 0))
+    .map(node => {
+      const nodeType = node.nodeType as IngestionNodeType;
+      const meta = pipelineNodeMetas[nodeType];
+      return createPipelineNode(node.nodeId, nodeType, {
+        title: meta.title,
+        subtitle: meta.subtitle,
+        settings: toPlainObject(node.settings),
+        condition: node.condition || undefined,
+        nextNodeId: node.nextNodeId || undefined,
+      });
+    });
+
+  const nodes = [
+    createPipelineNode('start', 'start', { enabled: false }),
+    ...executableNodes,
+    createPipelineNode('condition', 'condition', { condition: 'metadata.type == "tech_doc"' }),
+    createPipelineNode('storage', 'storage'),
+    createPipelineNode('end', 'end', { enabled: false }),
+  ];
+
+  return normalizePipelineDraft({
+    id: pipeline.id,
+    name: pipeline.name,
+    description: pipeline.description || '',
+    nodes,
+    edges: [],
+  });
+}
+
+/** 把画布草稿转换成后端可持久化的单链 Pipeline 定义。 */
+function draftToPipelinePayload(draft: PipelineDraftState) {
+  const executableNodes = draft.nodes.filter(isExecutablePipelineNode).filter(node => node.enabled);
+  return {
+    name: draft.name.trim() || '文档入库流水线',
+    description: draft.description,
+    nodes: executableNodes.map((node, index) => ({
+      nodeId: node.id,
+      nodeType: node.nodeType,
+      settings: node.settings,
+      condition: null,
+      nextNodeId: executableNodes[index + 1]?.id || null,
+    })),
+  };
+}
+
+/** 任务状态中文展示。 */
+function formatPipelineTaskStatus(status?: string | null) {
+  const normalized = (status || '').toUpperCase();
+  if (normalized === 'COMPLETED') return '成功';
+  if (normalized === 'RUNNING') return '运行中';
+  if (normalized === 'FAILED') return '失败';
+  if (normalized === 'PENDING') return '等待中';
+  return status || '--';
+}
+
+/** 任务状态样式后缀。 */
+function pipelineTaskStatusClass(status?: string | null) {
+  const normalized = (status || '').toUpperCase();
+  if (normalized === 'COMPLETED') return 'success';
+  if (normalized === 'RUNNING') return 'running';
+  if (normalized === 'FAILED') return 'error';
+  return 'pending';
+}
+
+/** 将节点输出压缩成适合表格展示的短文本。 */
+function summarizeNodeOutput(output?: Record<string, unknown> | null) {
+  if (!output || Object.keys(output).length === 0) return '-';
+  return Object.entries(output)
+    .slice(0, 3)
+    .map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`)
+    .join('，');
+}
+
 /**
- * 管理后台 - 入库任务页面
- * 跟踪文档定时同步任务，支持手动触发同步和查看同步历史
+ * 管理后台 - 文档入库流水线编辑页面
+ * 提供节点编排画布、节点配置、运行测试和任务日志查看。
  */
 function AdminIngestionPage() {
-  const [tasks, setTasks] = useState<SyncTaskOverviewItem[]>([]);
+  const [draft, setDraft] = useState<PipelineDraftState>(() => buildDefaultPipelineDraft());
+  const [pipelines, setPipelines] = useState<IngestionPipelineItem[]>([]);
+  const [selectedNodeId, setSelectedNodeId] = useState('chunker');
+  const [activeTab, setActiveTab] = useState<PipelineEditorTab>('editor');
+  const [configTab, setConfigTab] = useState<'config' | 'io' | 'runtime' | 'advanced'>('config');
+  const [taskHistory, setTaskHistory] = useState<IngestionTaskItem[]>([]);
+  const [nodeLogs, setNodeLogs] = useState<IngestionTaskNodeItem[]>([]);
+  const [testSource, setTestSource] = useState('https://example.com');
+  const [scale, setScale] = useState(100);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [historyDocId, setHistoryDocId] = useState<string | null>(null);
-  const [triggering, setTriggering] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      setTasks(await syncApi.getSyncTaskOverview());
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : '加载失败');
-    } finally {
-      setLoading(false);
+  const selectedNode = draft.nodes.find(node => node.id === selectedNodeId) || draft.nodes.find(node => node.nodeType === 'chunker') || draft.nodes[0];
+  const executableCount = draft.nodes.filter(isExecutablePipelineNode).length;
+  const completedRuns = taskHistory.filter(task => (task.status || '').toUpperCase() === 'COMPLETED').length;
+  const successRate = taskHistory.length ? `${Math.round((completedRuns / taskHistory.length) * 100)}%` : '--';
+
+  const loadHistory = useCallback(async (pipelineId?: string) => {
+    if (!pipelineId) {
+      setTaskHistory([]);
+      setNodeLogs([]);
+      return;
+    }
+    const taskPage = await ingestionApi.getTasks({ pageNo: 1, pageSize: 5, pipelineId });
+    const records = taskPage.records || [];
+    setTaskHistory(records);
+    if (records[0]?.id) {
+      setNodeLogs(await ingestionApi.getTaskNodes(records[0].id));
+    } else {
+      setNodeLogs([]);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
-
-  const handleTrigger = async (docId: string) => {
-    setTriggering(docId);
+  const loadPipelines = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const result = await syncApi.triggerSync(docId);
-      alert(result.message);
-      load();
+      const page = await ingestionApi.getPipelines({ pageNo: 1, pageSize: 20 });
+      const records = page.records || [];
+      setPipelines(records);
+      if (records[0]?.id) {
+        const detail = await ingestionApi.getPipeline(records[0].id);
+        setDraft(pipelineToDraft(detail));
+        setSelectedNodeId('chunker');
+        await loadHistory(detail.id);
+      } else {
+        const nextDraft = buildDefaultPipelineDraft();
+        setDraft(nextDraft);
+        setSelectedNodeId('chunker');
+        await loadHistory(undefined);
+      }
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : '触发同步失败');
+      setError(err instanceof Error ? err.message : '加载流水线失败');
     } finally {
-      setTriggering(null);
+      setLoading(false);
     }
+  }, [loadHistory]);
+
+  useEffect(() => { loadPipelines(); }, [loadPipelines]);
+
+  const handleSelectPipeline = async (pipelineId: string) => {
+    if (!pipelineId) {
+      const nextDraft = buildDefaultPipelineDraft();
+      setDraft(nextDraft);
+      setSelectedNodeId('chunker');
+      setMessage('已切换到本地草稿');
+      await loadHistory(undefined);
+      return;
+    }
+    setLoading(true);
+    try {
+      const detail = await ingestionApi.getPipeline(pipelineId);
+      const nextDraft = pipelineToDraft(detail);
+      setDraft(nextDraft);
+      setSelectedNodeId(nextDraft.nodes.find(node => node.nodeType === 'chunker')?.id || nextDraft.nodes[1]?.id || 'start');
+      await loadHistory(detail.id);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '加载流水线详情失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const savePipeline = async (toast = '已保存流水线定义') => {
+    setSaving(true);
+    setError(null);
+    try {
+      const payload = draftToPipelinePayload(draft);
+      const saved = draft.id
+        ? await ingestionApi.updatePipeline(draft.id, payload)
+        : await ingestionApi.createPipeline(payload);
+      const savedId = saved.id || draft.id;
+      if (!savedId) throw new Error('后端未返回流水线 ID');
+      const detail = await ingestionApi.getPipeline(savedId);
+      const nextDraft = pipelineToDraft(detail);
+      setDraft(nextDraft);
+      setSelectedNodeId(nextDraft.nodes.find(node => node.id === selectedNodeId)?.id || nextDraft.nodes.find(node => node.nodeType === 'chunker')?.id || nextDraft.nodes[0].id);
+      const page = await ingestionApi.getPipelines({ pageNo: 1, pageSize: 20 });
+      setPipelines(page.records || []);
+      setMessage(toast);
+      await loadHistory(nextDraft.id);
+      return nextDraft.id;
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '保存流水线失败');
+      return undefined;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRunTest = async () => {
+    setRunning(true);
+    setError(null);
+    try {
+      const pipelineId = draft.id || await savePipeline('已保存草稿并开始运行测试');
+      if (!pipelineId) throw new Error('流水线保存失败，无法运行测试');
+      const result = await ingestionApi.executeTask({
+        pipelineId,
+        sourceType: 'URL',
+        sourceLocation: testSource.trim() || 'https://example.com',
+        fileName: 'pipeline-test.html',
+        metadata: {
+          trigger: 'pipeline_editor',
+          pipelineName: draft.name,
+        },
+      });
+      setMessage(result.message || `运行完成，生成 ${result.chunkCount || 0} 个分块`);
+      await loadHistory(pipelineId);
+      if (result.taskId) {
+        setNodeLogs(await ingestionApi.getTaskNodes(result.taskId));
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '运行测试失败');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const handleDeletePipeline = async () => {
+    if (!draft.id) return;
+    if (!window.confirm('确认删除当前流水线？')) return;
+    setSaving(true);
+    try {
+      await ingestionApi.deletePipeline(draft.id);
+      setMessage('流水线已删除');
+      await loadPipelines();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '删除流水线失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateDraftNode = (nodeId: string, patch: Partial<PipelineCanvasNode>) => {
+    setDraft(current => normalizePipelineDraft({
+      ...current,
+      nodes: current.nodes.map(item => (item.id === nodeId ? { ...item, ...patch } : item)),
+    }));
+  };
+
+  const updateSelectedSettings = (patch: Record<string, unknown>) => {
+    if (!selectedNode) return;
+    updateDraftNode(selectedNode.id, { settings: { ...selectedNode.settings, ...patch } });
+  };
+
+  const addEnricherNode = () => {
+    const id = `enricher-${Date.now().toString().slice(-5)}`;
+    const node = createPipelineNode(id, 'enricher', {
+      title: '内容增强',
+      subtitle: '增强：块级摘要',
+      settings: {
+        tasks: ['SUMMARY'],
+        attachDocumentMetadata: true,
+        timeoutSeconds: 300,
+        retryTimes: 2,
+        continueOnFailure: true,
+      },
+    });
+    setDraft(current => {
+      const indexerIndex = current.nodes.findIndex(item => item.nodeType === 'indexer');
+      const insertAt = indexerIndex >= 0 ? indexerIndex : Math.max(0, current.nodes.length - 1);
+      return normalizePipelineDraft({
+        ...current,
+        nodes: [...current.nodes.slice(0, insertAt), node, ...current.nodes.slice(insertAt)],
+      });
+    });
+    setSelectedNodeId(id);
+  };
+
+  const autoLayout = () => {
+    setDraft(current => normalizePipelineDraft(current));
+    setMessage('已完成自动布局');
+  };
+
+  const renderEdge = (edge: PipelineCanvasEdge) => {
+    const from = draft.nodes.find(node => node.id === edge.from);
+    const to = draft.nodes.find(node => node.id === edge.to);
+    if (!from || !to) return null;
+    const ratio = scale / 100;
+    const fromWidth = (from.nodeType === 'start' || from.nodeType === 'end') ? 78 : 144;
+    const fromX = (from.x + fromWidth) * ratio;
+    const fromY = (from.y + 38) * ratio;
+    const toX = (to.x + 4) * ratio;
+    const toY = (to.y + 38) * ratio;
+    const middle = Math.max(44, Math.abs(toX - fromX) / 2);
+    const path = `M ${fromX} ${fromY} C ${fromX + middle} ${fromY}, ${toX - middle} ${toY}, ${toX} ${toY}`;
+    return (
+      <g key={edge.id} className={`pipeline-edge pipeline-edge-${edge.tone || 'muted'} ${edge.dashed ? 'is-dashed' : ''}`}>
+        <path d={path} markerEnd="url(#pipeline-arrow)" />
+        {edge.label && (
+          <text x={(fromX + toX) / 2} y={(fromY + toY) / 2 - 8}>{edge.label}</text>
+        )}
+      </g>
+    );
   };
 
   return (
     <AppShell mode="admin">
-      <PageContainer title="入库任务" description="跟踪文档定时同步、解析和向量化任务。">
-        {error && <div className="error-banner" style={{ marginBottom: 12 }}>{error}</div>}
-        <div className="card" style={{ overflow: 'auto' }}>
-          <table className="document-table">
-            <thead>
-              <tr>
-                <th>文档名称</th>
-                <th>来源类型</th>
-                <th>来源地址</th>
-                <th>同步计划</th>
-                <th>最近同步</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 24 }}>加载中...</td></tr>
-              ) : tasks.length === 0 ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 24 }}>暂无定时同步任务</td></tr>
-              ) : tasks.map(t => (
-                <tr key={t.docId}>
-                  <td>{t.docName}</td>
-                  <td><span className={`doc-status-${t.sourceType === 'feishu' ? 'running' : 'success'}`}>{t.sourceType}</span></td>
-                  <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.sourceLocation}</td>
-                  <td>{formatScheduleCron(t.scheduleCron)}</td>
-                  <td>{t.lastSyncTime ? new Date(t.lastSyncTime).toLocaleString() : '从未同步'}</td>
-                  <td>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button className="btn-light" disabled={triggering === t.docId} onClick={() => handleTrigger(t.docId)}>
-                        {triggering === t.docId ? '同步中...' : '立即同步'}
-                      </button>
-                      <button className="btn-light" onClick={() => setHistoryDocId(t.docId)}>历史</button>
-                    </div>
-                  </td>
-                </tr>
+      <PageContainer
+        title="文档入库流水线编辑"
+        description="通过节点编排配置文档入库流程，支持节点执行日志、条件跳转和运行检测。"
+        actions={
+          <div className="pipeline-page-actions">
+            <span className="pipeline-health">已启用环检测</span>
+            <button className="btn btn-light" type="button" onClick={() => savePipeline()} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
+            <button className="btn btn-light" type="button" onClick={handleRunTest} disabled={running}>{running ? '运行中...' : '运行测试'}</button>
+            <button className="btn btn-primary" type="button" onClick={() => savePipeline('流水线已发布')} disabled={saving}>发布</button>
+            <button className="btn btn-light pipeline-more-btn" type="button" onClick={handleDeletePipeline} disabled={!draft.id || saving}>...</button>
+          </div>
+        }
+      >
+        {error && <div className="error-banner pipeline-feedback">{error}</div>}
+        {message && <div className="notice pipeline-feedback">{message}</div>}
+
+        <section className={`pipeline-editor-shell ${activeTab === 'tasks' ? 'is-mobile-hidden' : ''}`}>
+          <div className="pipeline-editor-main">
+            <div className="pipeline-toolbar">
+              <div className="pipeline-toolbar-group">
+                <select value={draft.id || ''} onChange={(event) => handleSelectPipeline(event.target.value)} disabled={loading}>
+                  <option value="">本地草稿</option>
+                  {pipelines.map(pipeline => (
+                    <option key={pipeline.id} value={pipeline.id}>{pipeline.name}</option>
+                  ))}
+                </select>
+                <button className="btn btn-light" type="button" onClick={() => { const next = buildDefaultPipelineDraft(); setDraft(next); setSelectedNodeId('chunker'); }}>新建</button>
+                <button className="btn btn-light" type="button" onClick={addEnricherNode}>添加节点</button>
+                <button className="btn btn-light" type="button" onClick={autoLayout}>自动布局</button>
+              </div>
+              <div className="pipeline-toolbar-group pipeline-toolbar-right">
+                <label>
+                  缩放
+                  <select value={scale} onChange={(event) => setScale(Number(event.target.value))}>
+                    <option value={80}>80%</option>
+                    <option value={100}>100%</option>
+                    <option value={120}>120%</option>
+                  </select>
+                </label>
+                <input value={testSource} onChange={(event) => setTestSource(event.target.value)} placeholder="测试 URL" />
+              </div>
+            </div>
+
+            <div className="pipeline-canvas-frame">
+              <div className="pipeline-canvas" style={{ minWidth: `${1180 * (scale / 100)}px`, minHeight: `${480 * (scale / 100)}px` }}>
+                <svg className="pipeline-edge-layer" width={1180 * (scale / 100)} height={480 * (scale / 100)}>
+                  <defs>
+                    <marker id="pipeline-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                      <path d="M 0 0 L 10 5 L 0 10 z" />
+                    </marker>
+                  </defs>
+                  {draft.edges.map(edge => renderEdge(edge))}
+                </svg>
+                {draft.nodes.map(node => (
+                  <button
+                    key={node.id}
+                    type="button"
+                    className={`pipeline-node pipeline-node-${pipelineNodeMetas[node.nodeType].tone} ${selectedNodeId === node.id ? 'is-selected' : ''} ${!node.enabled ? 'is-static' : ''}`}
+                    style={{ left: node.x * (scale / 100), top: node.y * (scale / 100), transform: `scale(${scale / 100})`, transformOrigin: 'top left' }}
+                    onClick={() => { setSelectedNodeId(node.id); setConfigTab('config'); }}
+                  >
+                    <span className="pipeline-node-icon">{pipelineNodeMetas[node.nodeType].icon}</span>
+                    <span className="pipeline-node-text">
+                      <strong>{node.title}</strong>
+                      <small>{node.subtitle}</small>
+                    </span>
+                    {node.enabled && <span className="pipeline-node-check">✓</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="pipeline-metric-grid">
+              <article className="pipeline-metric-card">
+                <span>节点数</span>
+                <strong>{executableCount}</strong>
+                <small>处理节点 {executableCount} 个</small>
+              </article>
+              <article className="pipeline-metric-card">
+                <span>连接数</span>
+                <strong>{draft.edges.length}</strong>
+                <small>主流程与分支</small>
+              </article>
+              <article className="pipeline-metric-card">
+                <span>最近运行</span>
+                <strong>{taskHistory[0]?.createTime ? formatShortDate(taskHistory[0].createTime) : '--'}</strong>
+                <small>{taskHistory[0]?.createdBy || '暂无触发人'}</small>
+              </article>
+              <article className="pipeline-metric-card">
+                <span>成功率</span>
+                <strong>{successRate}</strong>
+                <small>近 {taskHistory.length} 次运行</small>
+              </article>
+            </div>
+          </div>
+
+          <aside className="pipeline-config-panel">
+            <div className="pipeline-config-header">
+              <div>
+                <span className={`pipeline-node-icon compact pipeline-node-${pipelineNodeMetas[selectedNode.nodeType].tone}`}>{pipelineNodeMetas[selectedNode.nodeType].icon}</span>
+                <h3>{selectedNode.title}</h3>
+              </div>
+              <label className="pipeline-switch">
+                <input
+                  type="checkbox"
+                  checked={selectedNode.enabled}
+                  disabled={!isExecutablePipelineNode(selectedNode)}
+                  onChange={(event) => updateDraftNode(selectedNode.id, { enabled: event.target.checked })}
+                />
+                <span />
+              </label>
+            </div>
+
+            <div className="pipeline-config-tabs">
+              {[
+                ['config', '配置'],
+                ['io', '输入输出'],
+                ['runtime', '运行设置'],
+                ['advanced', '高级设置'],
+              ].map(([value, label]) => (
+                <button key={value} className={configTab === value ? 'active' : ''} type="button" onClick={() => setConfigTab(value as typeof configTab)}>{label}</button>
               ))}
-            </tbody>
-          </table>
+            </div>
+
+            {configTab === 'config' && (
+              <PipelineNodeConfigForm
+                node={selectedNode}
+                onNodeChange={(patch) => updateDraftNode(selectedNode.id, patch)}
+                onSettingsChange={updateSelectedSettings}
+              />
+            )}
+            {configTab === 'io' && (
+              <div className="pipeline-config-form">
+                <label>
+                  输出变量
+                  <input value={selectedNode.nodeType === 'chunker' ? 'chunks' : selectedNode.nodeType === 'parser' ? 'rawText, document' : selectedNode.nodeType === 'indexer' ? 'indexedCount' : 'context'} readOnly />
+                </label>
+                <label>
+                  条件表达式
+                  <input value={selectedNode.condition || ''} onChange={(event) => updateDraftNode(selectedNode.id, { condition: event.target.value })} placeholder="true / false / Json 条件" />
+                </label>
+              </div>
+            )}
+            {configTab === 'runtime' && (
+              <PipelineRuntimeForm node={selectedNode} onSettingsChange={updateSelectedSettings} />
+            )}
+            {configTab === 'advanced' && (
+              <div className="pipeline-config-form">
+                <label>
+                  节点 ID
+                  <input value={selectedNode.id} readOnly />
+                </label>
+                <label>
+                  节点类型
+                  <input value={selectedNode.nodeType} readOnly />
+                </label>
+                <label>
+                  节点说明
+                  <input value={selectedNode.subtitle} onChange={(event) => updateDraftNode(selectedNode.id, { subtitle: event.target.value })} />
+                </label>
+              </div>
+            )}
+          </aside>
+        </section>
+
+        <section className={`pipeline-bottom-grid ${activeTab === 'editor' ? 'is-mobile-hidden' : ''}`}>
+          <article className="card pipeline-log-card">
+            <div className="card-title">
+              <div>
+                <h3>节点执行日志</h3>
+                <p>每个节点独立记录执行状态和耗时。</p>
+              </div>
+            </div>
+            <div className="pipeline-table-wrap">
+              <table className="document-table pipeline-table">
+                <thead>
+                  <tr><th>时间</th><th>节点</th><th>状态</th><th>执行信息</th><th>耗时</th></tr>
+                </thead>
+                <tbody>
+                  {nodeLogs.length === 0 ? (
+                    <tr><td colSpan={5} style={{ textAlign: 'center' }}>暂无节点日志</td></tr>
+                  ) : nodeLogs.map(log => (
+                    <tr key={log.id}>
+                      <td>{formatShortDate(log.createTime)}</td>
+                      <td>{pipelineNodeMetas[(log.nodeType as PipelineCanvasNode['nodeType'])]?.title || log.nodeType}</td>
+                      <td><span className={`status-pill doc-status-${pipelineTaskStatusClass(log.status)}`}>{formatPipelineTaskStatus(log.status)}</span></td>
+                      <td>{summarizeNodeOutput(log.output)}</td>
+                      <td>{log.durationMs != null ? `${log.durationMs}ms` : '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article className="card pipeline-history-card">
+            <div className="card-title">
+              <div>
+                <h3>运行历史</h3>
+                <p>展示最近 5 次流水线任务。</p>
+              </div>
+              <button className="btn btn-light" type="button" onClick={() => loadHistory(draft.id)}>刷新</button>
+            </div>
+            <div className="pipeline-task-list">
+              {taskHistory.length === 0 ? (
+                <div className="empty-state compact">暂无运行历史</div>
+              ) : taskHistory.map(task => (
+                <button
+                  key={task.id}
+                  className="pipeline-task-row"
+                  type="button"
+                  onClick={async () => setNodeLogs(await ingestionApi.getTaskNodes(task.id))}
+                >
+                  <span>{formatDate(task.createTime)}</span>
+                  <strong>{task.createdBy || '系统'}</strong>
+                  <em className={`status-pill doc-status-${pipelineTaskStatusClass(task.status)}`}>{formatPipelineTaskStatus(task.status)}</em>
+                  <small>{task.chunkCount || 0} 块</small>
+                </button>
+              ))}
+            </div>
+          </article>
+        </section>
+
+        <div className="pipeline-mobile-tabs">
+          <button className={activeTab === 'editor' ? 'active' : ''} type="button" onClick={() => setActiveTab('editor')}>编排</button>
+          <button className={activeTab === 'tasks' ? 'active' : ''} type="button" onClick={() => setActiveTab('tasks')}>任务</button>
         </div>
-        {historyDocId && <SyncHistoryModal docId={historyDocId} onClose={() => setHistoryDocId(null)} />}
       </PageContainer>
     </AppShell>
+  );
+}
+
+/** 节点配置表单，按节点类型展示对应参数。 */
+function PipelineNodeConfigForm({
+  node,
+  onNodeChange,
+  onSettingsChange,
+}: {
+  node: PipelineCanvasNode;
+  onNodeChange: (patch: Partial<PipelineCanvasNode>) => void;
+  onSettingsChange: (patch: Record<string, unknown>) => void;
+}) {
+  const chunkConfig = toPlainObject(node.settings.chunkConfig);
+  const tasks = readStringArraySetting(node.settings.tasks, ['KEYWORDS', 'SUMMARY']);
+  const attachDocumentMetadata = node.settings.attachDocumentMetadata !== false;
+
+  const updateChunkConfig = (patch: Record<string, unknown>) => {
+    onSettingsChange({ chunkConfig: { ...chunkConfig, ...patch } });
+  };
+
+  const toggleTask = (task: string) => {
+    const nextTasks = tasks.includes(task) ? tasks.filter(item => item !== task) : [...tasks, task];
+    onSettingsChange({ tasks: nextTasks });
+  };
+
+  return (
+    <div className="pipeline-config-form">
+      <label>
+        节点名称
+        <input value={node.title} onChange={(event) => onNodeChange({ title: event.target.value })} />
+      </label>
+
+      {node.nodeType === 'chunker' && (
+        <>
+          <label>
+            分块策略
+            <select value={String(node.settings.strategy || 'recursive_character')} onChange={(event) => onSettingsChange({ strategy: event.target.value })}>
+              <option value="recursive_character">递归字符切分</option>
+              <option value="structure_aware">结构感知</option>
+              <option value="semantic_chunking">语义分块</option>
+              <option value="recursive_semantic">递归 + 语义</option>
+              <option value="recursive_post_process">递归 + 后处理</option>
+              <option value="fixed_size">固定长度</option>
+            </select>
+          </label>
+          <div className="pipeline-form-grid">
+            <label>
+              Chunk Size
+              <input type="number" min={60} value={readNumberSetting(chunkConfig, 'chunkSize', 1000)} onChange={(event) => updateChunkConfig({ chunkSize: Number(event.target.value) })} />
+            </label>
+            <label>
+              Overlap
+              <input type="number" min={0} value={readNumberSetting(chunkConfig, 'overlapSize', 200)} onChange={(event) => updateChunkConfig({ overlapSize: Number(event.target.value) })} />
+            </label>
+            <label>
+              最小块
+              <input type="number" min={0} value={readNumberSetting(chunkConfig, 'minChunkSize', 120)} onChange={(event) => updateChunkConfig({ minChunkSize: Number(event.target.value) })} />
+            </label>
+            <label>
+              最大块
+              <input type="number" min={120} value={readNumberSetting(chunkConfig, 'maxChunkSize', 1200)} onChange={(event) => updateChunkConfig({ maxChunkSize: Number(event.target.value) })} />
+            </label>
+            <label>
+              相似度阈值
+              <input type="number" min={0} max={1} step={0.05} value={readNumberSetting(chunkConfig, 'similarityThreshold', 0.5)} onChange={(event) => updateChunkConfig({ similarityThreshold: Number(event.target.value) })} />
+            </label>
+            <label>
+              批处理
+              <input type="number" min={1} value={readNumberSetting(chunkConfig, 'batchSize', 10)} onChange={(event) => updateChunkConfig({ batchSize: Number(event.target.value) })} />
+            </label>
+          </div>
+        </>
+      )}
+
+      {node.nodeType === 'enricher' && (
+        <>
+          <div className="pipeline-checkbox-list">
+            {['KEYWORDS', 'SUMMARY', 'METADATA'].map(task => (
+              <label key={task}>
+                <input type="checkbox" checked={tasks.includes(task)} onChange={() => toggleTask(task)} />
+                {task === 'KEYWORDS' ? '关键词' : task === 'SUMMARY' ? '摘要' : '元数据'}
+              </label>
+            ))}
+          </div>
+          <label className="pipeline-inline-check">
+            <input type="checkbox" checked={attachDocumentMetadata} onChange={(event) => onSettingsChange({ attachDocumentMetadata: event.target.checked })} />
+            附加文档元数据
+          </label>
+        </>
+      )}
+
+      {node.nodeType === 'indexer' && (
+        <>
+          <label>
+            集合名
+            <input value={String(node.settings.collectionName || 'dev_knowledge')} onChange={(event) => onSettingsChange({ collectionName: event.target.value })} />
+          </label>
+          <label>
+            向量维度
+            <input type="number" min={32} value={readNumberSetting(node.settings, 'dimension', 1536)} onChange={(event) => onSettingsChange({ dimension: Number(event.target.value) })} />
+          </label>
+        </>
+      )}
+
+      {node.nodeType === 'condition' && (
+        <label>
+          判断表达式
+          <input value={node.condition || String(node.settings.expression || '')} onChange={(event) => onNodeChange({ condition: event.target.value, settings: { ...node.settings, expression: event.target.value } })} />
+        </label>
+      )}
+
+      {node.nodeType === 'storage' && (
+        <label>
+          存储表
+          <input value={String(node.settings.tableName || 't_ingestion_task_node')} onChange={(event) => onSettingsChange({ tableName: event.target.value })} />
+        </label>
+      )}
+    </div>
+  );
+}
+
+/** 节点运行参数表单，保存到节点 settings 里供后端扩展使用。 */
+function PipelineRuntimeForm({
+  node,
+  onSettingsChange,
+}: {
+  node: PipelineCanvasNode;
+  onSettingsChange: (patch: Record<string, unknown>) => void;
+}) {
+  return (
+    <div className="pipeline-config-form">
+      <label>
+        执行超时
+        <input type="number" min={1} value={readNumberSetting(node.settings, 'timeoutSeconds', 300)} onChange={(event) => onSettingsChange({ timeoutSeconds: Number(event.target.value) })} />
+      </label>
+      <label>
+        重试次数
+        <input type="number" min={0} value={readNumberSetting(node.settings, 'retryTimes', 2)} onChange={(event) => onSettingsChange({ retryTimes: Number(event.target.value) })} />
+      </label>
+      <label className="pipeline-inline-check">
+        <input type="checkbox" checked={node.settings.continueOnFailure === true} onChange={(event) => onSettingsChange({ continueOnFailure: event.target.checked })} />
+        失败后继续执行
+      </label>
+    </div>
   );
 }
 
