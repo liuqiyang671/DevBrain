@@ -13,7 +13,15 @@ import java.io.IOException;
 import java.util.UUID;
 
 /**
- * 为每个 HTTP 请求建立 requestId，并写回响应头。
+ * 请求 ID 过滤器。
+ * <p>为每个 HTTP 请求生成或提取唯一标识 {@code X-Request-Id}，并执行以下操作：</p>
+ * <ul>
+ *   <li>将 requestId 写入 SLF4J MDC，使日志自动携带请求 ID，便于链路追踪</li>
+ *   <li>将 requestId 写回响应头，方便前端或网关层关联日志</li>
+ * </ul>
+ * <p>若客户端请求头中已携带 {@code X-Request-Id}，则复用该值；否则自动生成 UUID。</p>
+ *
+ * @see RequestIdContext
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -29,6 +37,9 @@ public class RequestIdFilter extends OncePerRequestFilter {
         }
     }
 
+    /**
+     * 规范化请求 ID：若为空则生成新的 UUID（去除短横线），否则去除首尾空白。
+     */
     private String normalize(String requestId) {
         if (requestId == null || requestId.isBlank()) {
             return UUID.randomUUID().toString().replace("-", "");

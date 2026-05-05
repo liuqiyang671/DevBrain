@@ -6,12 +6,15 @@ import org.springframework.util.StringUtils;
 import java.util.Optional;
 
 /**
- * 抽象项目中三类异常体系，客户端异常、服务端异常以及远程服务调用异常
+ * 业务异常体系的抽象基类。
+ * <p>项目中三类异常（{@link ClientException}、{@link ServiceException}、{@link RemoteException}）
+ * 均继承自本类。统一持有错误码和错误信息，通过 {@link IErrorCode} 接口实现错误码的标准化管理，
+ * 确保异常体系结构清晰、易于统一拦截和处理。</p>
  *
- * <p>
- * 所有业务异常的基类，统一定义错误码和错误信息。
- * 通过 {@link IErrorCode} 接口实现错误码的标准化管理。
- * </p>
+ * @see IErrorCode
+ * @see ClientException
+ * @see ServiceException
+ * @see RemoteException
  */
 public abstract class AbstractException extends RuntimeException {
 

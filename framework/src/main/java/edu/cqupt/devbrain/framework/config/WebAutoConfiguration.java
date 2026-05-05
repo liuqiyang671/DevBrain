@@ -5,13 +5,15 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Web 组件自动装配
+ * Web 层自动装配配置类。
+ * <p>
+ * 职责：自动注册 Web 层公共组件，包括全局异常处理器等，无需业务模块手动声明。
  */
 @Configuration
 public class WebAutoConfiguration {
 
     /**
-     * 构建全局异常拦截器组件 Bean
+     * 注册全局异常处理器，统一拦截并处理 Controller 层抛出的异常。
      */
     @Bean
     public GlobalExceptionHandler globalExceptionHandler() {

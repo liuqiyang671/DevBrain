@@ -19,6 +19,9 @@ import org.springframework.context.annotation.Configuration;
 @ConditionalOnClass(Redisson.class)
 public class RedissonAutoConfiguration {
 
+    /**
+     * 创建 RedissonClient 实例，复用 Spring Redis 连接配置，容器关闭时自动释放连接。
+     */
     @Bean(destroyMethod = "shutdown")
     @ConditionalOnMissingBean(RedissonClient.class)
     public RedissonClient redissonClient(RedisProperties redisProperties) {

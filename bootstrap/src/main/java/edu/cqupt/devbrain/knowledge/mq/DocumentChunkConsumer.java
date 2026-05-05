@@ -2,7 +2,7 @@ package edu.cqupt.devbrain.knowledge.mq;
 
 import edu.cqupt.devbrain.framework.mq.MessageWrapper;
 import edu.cqupt.devbrain.knowledge.mq.event.DocumentChunkEvent;
-import edu.cqupt.devbrain.knowledge.service.DocumentParseService;
+import edu.cqupt.devbrain.knowledge.service.KnowledgeDocumentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
@@ -21,7 +21,7 @@ import org.springframework.stereotype.Component;
 )
 public class DocumentChunkConsumer implements RocketMQListener<MessageWrapper<DocumentChunkEvent>> {
 
-    private final DocumentParseService documentParseService;
+    private final KnowledgeDocumentService knowledgeDocumentService;
 
     /**
      * 消费文档分块事件，异常会继续抛出以触发 RocketMQ 重试。
@@ -38,7 +38,7 @@ public class DocumentChunkConsumer implements RocketMQListener<MessageWrapper<Do
         log.info("开始消费文档解析消息，docId={}, kbId={}, userId={}, msgKey={}",
                 event.getDocId(), event.getKbId(), event.getUserId(), message.getKeys());
         try {
-            documentParseService.parseAndChunk(event.getDocId());
+            knowledgeDocumentService.executeChunk(event.getDocId());
             log.info("文档解析消息消费成功，docId={}", event.getDocId());
         } catch (Exception e) {
             log.error("文档解析消息消费失败，docId={}", event.getDocId(), e);

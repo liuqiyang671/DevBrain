@@ -17,7 +17,15 @@ import java.util.UUID;
 import java.util.function.Consumer;
 
 /**
- * 基于 RocketMQ 的消息生产者
+ * 基于 RocketMQ 的消息生产者适配器，实现 {@link MessageQueueProducer} 接口。
+ * <p>
+ * 职责：
+ * <ul>
+ *     <li>通过 {@link RocketMQTemplate} 发送同步消息和事务消息</li>
+ *     <li>将业务载荷统一封装为 {@link MessageWrapper} 后发送</li>
+ *     <li>配合 {@link DelegatingTransactionListener} 实现事务消息的本地事务执行</li>
+ *     <li>提供统一的日志记录，便于消息发送过程的追踪排查</li>
+ * </ul>
  */
 @RequiredArgsConstructor
 public class RocketMQProducerAdapter implements MessageQueueProducer {
@@ -27,6 +35,10 @@ public class RocketMQProducerAdapter implements MessageQueueProducer {
     private final ObjectProvider<RocketMQTemplate> rocketMQTemplateProvider;
     private final DelegatingTransactionListener transactionListener;
 
+    /**
+     * 发送同步消息到指定 topic。
+     * 若 keys 为空则自动生成 UUID 作为消息唯一标识。
+     */
     @Override
     public SendResult send(String topic, String keys, String bizDesc, Object body) {
         RocketMQTemplate rocketMQTemplate = requireRocketMQTemplate();
@@ -49,6 +61,10 @@ public class RocketMQProducerAdapter implements MessageQueueProducer {
         return sendResult;
     }
 
+    /**
+     * 发送事务消息。
+     * 先注册本地事务回调，发送 half 消息后由 Broker 触发本地事务执行。
+     */
     @Override
     public TransactionSendResult sendInTransaction(String topic, String keys, String bizDesc, Object body,
                                                    Consumer<Object> localTransaction) {
@@ -78,6 +94,9 @@ public class RocketMQProducerAdapter implements MessageQueueProducer {
         return sendResult;
     }
 
+    /**
+     * 获取 RocketMQTemplate 实例，若未初始化则抛出异常。
+     */
     private RocketMQTemplate requireRocketMQTemplate() {
         RocketMQTemplate rocketMQTemplate = rocketMQTemplateProvider.getIfAvailable();
         if (rocketMQTemplate == null) {

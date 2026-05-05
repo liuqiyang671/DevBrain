@@ -34,6 +34,9 @@ public class S3FileStorageService implements FileStorageService {
     private final ObjectStorageProperties properties;
     private S3Client s3Client;
 
+    /**
+     * 初始化 S3 客户端，读取对象存储配置并构建 S3Client 实例。
+     */
     @PostConstruct
     public void init() {
         this.s3Client = S3Client.builder()
@@ -46,6 +49,9 @@ public class S3FileStorageService implements FileStorageService {
         log.info("S3 客户端初始化完成，endpoint={}, bucket={}", properties.getEndpoint(), properties.getBucket());
     }
 
+    /**
+     * 应用关闭时释放 S3 客户端资源。
+     */
     @PreDestroy
     public void destroy() {
         if (s3Client != null) {
@@ -53,6 +59,15 @@ public class S3FileStorageService implements FileStorageService {
         }
     }
 
+    /**
+     * 上传文件到 S3 兼容存储，流式传输不在内存中缓存完整文件。
+     *
+     * @param objectKey   对象 key
+     * @param inputStream 文件输入流
+     * @param contentType MIME 类型，可为空
+     * @param size        文件大小（字节）
+     * @return 上传后的文件访问 URL
+     */
     @Override
     public String upload(String objectKey, InputStream inputStream, String contentType, long size) {
         try {
@@ -79,6 +94,12 @@ public class S3FileStorageService implements FileStorageService {
         }
     }
 
+    /**
+     * 从 S3 兼容存储下载文件，返回输入流由调用方负责关闭。
+     *
+     * @param objectKey 对象 key
+     * @return 文件输入流
+     */
     @Override
     public InputStream download(String objectKey) {
         try {
@@ -93,6 +114,11 @@ public class S3FileStorageService implements FileStorageService {
         }
     }
 
+    /**
+     * 删除 S3 兼容存储中的文件。
+     *
+     * @param objectKey 对象 key
+     */
     @Override
     public void delete(String objectKey) {
         try {

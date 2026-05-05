@@ -16,7 +16,15 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.function.Consumer;
 
 /**
- * 通用的 RocketMQ 事务消息监听器
+ * 通用的 RocketMQ 事务消息监听器，统一处理事务消息的本地事务执行和事务回查。
+ * <p>
+ * 职责：
+ * <ul>
+ *     <li>接收 half 消息后，根据 txId 查找并执行对应的本地事务逻辑（per-message）</li>
+ *     <li>在 Broker 发起事务回查时，根据 topic 查找对应的 {@link TransactionChecker} 判断事务状态</li>
+ *     <li>本地事务在 Spring 事务模板中执行，确保与数据库操作的原子性</li>
+ *     <li>通过 {@link #registerChecker(String, TransactionChecker)} 按 topic 注册回查处理器</li>
+ * </ul>
  */
 @RocketMQTransactionListener
 public class DelegatingTransactionListener implements RocketMQLocalTransactionListener {
@@ -39,14 +47,24 @@ public class DelegatingTransactionListener implements RocketMQLocalTransactionLi
     @Autowired
     private PlatformTransactionManager transactionManager;
 
+    /**
+     * 注册单条消息的本地事务执行逻辑，执行完成后自动移除。
+     */
     public void registerLocalTransaction(String txId, Consumer<Object> localTransaction) {
         localTransactionMap.put(txId, localTransaction);
     }
 
+    /**
+     * 按 topic 注册事务回查处理器，用于 Broker 回查时判断本地事务状态。
+     */
     public void registerChecker(String topic, TransactionChecker checker) {
         checkerMap.put(topic, checker);
     }
 
+    /**
+     * 执行本地事务：从消息头中提取 txId，查找对应的本地事务逻辑并在 Spring 事务中执行。
+     * 执行成功返回 COMMIT，失败返回 ROLLBACK。
+     */
     @Override
     public RocketMQLocalTransactionState executeLocalTransaction(Message message, Object arg) {
         String txId = (String) message.getHeaders().get(HEADER_TX_ID);
@@ -64,6 +82,9 @@ public class DelegatingTransactionListener implements RocketMQLocalTransactionLi
         }
     }
 
+    /**
+     * 事务回查：根据消息头中的 topic 查找对应的 checker，委托其判断本地事务是否已提交。
+     */
     @Override
     public RocketMQLocalTransactionState checkLocalTransaction(Message message) {
         String topic = (String) message.getHeaders().get(HEADER_TOPIC);

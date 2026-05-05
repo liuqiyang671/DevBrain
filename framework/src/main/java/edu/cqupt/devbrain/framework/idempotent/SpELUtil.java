@@ -13,18 +13,41 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * SpEL 表达式解析工具
+ * SpEL（Spring Expression Language）表达式解析工具类
+ * <p>
+ * 提供 SpEL 表达式的解析功能，主要用于幂等注解中自定义 Key 的动态生成。
+ * 支持两种表达式形式：
+ * <ul>
+ *   <li>参数引用表达式 - 如 {@code #paramName}，引用方法参数的值</li>
+ *   <li>类型表达式 - 如 {@code T(java.lang.System)}，引用 Java 类型</li>
+ * </ul>
+ * </p>
+ * <p>
+ * 如果传入的表达式不包含 SpEL 标记（# 或 T(），则直接返回原始字符串。
+ * </p>
  */
 public final class SpELUtil {
 
+    /** 参数名发现器，用于获取方法参数名称 */
     private static final DefaultParameterNameDiscoverer PARAMETER_NAME_DISCOVERER = new DefaultParameterNameDiscoverer();
+
+    /** SpEL 表达式解析器 */
     private static final ExpressionParser EXPRESSION_PARSER = new SpelExpressionParser();
 
     /**
-     * 校验并返回实际使用的 spEL 表达式
+     * 解析 Key 表达式
+     * <p>
+     * 判断传入的字符串是否为 SpEL 表达式（包含 # 或 T( 标记）：
+     * <ul>
+     *   <li>如果是 SpEL 表达式，调用 {@link #parse} 方法解析并返回结果</li>
+     *   <li>如果不是 SpEL 表达式，直接返回原始字符串</li>
+     * </ul>
+     * </p>
      *
-     * @param spEl spEL 表达式
-     * @return 实际使用的 spEL 表达式
+     * @param spEl       待解析的字符串，可能是普通字符串或 SpEL 表达式
+     * @param method     当前执行的方法对象
+     * @param contextObj 方法参数值数组
+     * @return 解析后的结果，可能是 SpEL 表达式的求值结果或原始字符串
      */
     public static Object parseKey(String spEl, Method method, Object[] contextObj) {
         List<String> spELFlag = ListUtil.of("#", "T(");
@@ -36,11 +59,16 @@ public final class SpELUtil {
     }
 
     /**
-     * 转换参数为字符串
+     * 解析 SpEL 表达式并返回求值结果
+     * <p>
+     * 使用 Spring 的 {@link ExpressionParser} 解析 SpEL 表达式，并将方法参数绑定到求值上下文中，
+     * 使表达式可以通过 {@code #paramName} 语法引用方法参数的值。
+     * </p>
      *
-     * @param spEl       spEl 表达式
-     * @param contextObj 上下文对象
-     * @return 解析的字符串值
+     * @param spEl       SpEL 表达式字符串
+     * @param method     当前执行的方法对象，用于获取参数名称
+     * @param contextObj 方法参数值数组
+     * @return SpEL 表达式求值结果
      */
     public static Object parse(String spEl, Method method, Object[] contextObj) {
         Expression exp = EXPRESSION_PARSER.parseExpression(spEl);

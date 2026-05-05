@@ -6,7 +6,14 @@ import org.apache.rocketmq.client.producer.TransactionSendResult;
 import java.util.function.Consumer;
 
 /**
- * 消息队列生产者接口
+ * 消息队列生产者接口，定义消息发送的标准契约。
+ * <p>
+ * 职责：
+ * <ul>
+ *     <li>提供普通消息同步发送能力</li>
+ *     <li>提供事务消息发送能力，支持本地事务与消息发送的原子性保证</li>
+ *     <li>屏蔽底层消息队列实现细节（如 RocketMQ），面向业务层提供统一 API</li>
+ * </ul>
  */
 public interface MessageQueueProducer {
 

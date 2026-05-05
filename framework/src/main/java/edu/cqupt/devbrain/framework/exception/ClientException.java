@@ -4,8 +4,12 @@ import edu.cqupt.devbrain.framework.errorcode.BaseErrorCode;
 import edu.cqupt.devbrain.framework.errorcode.IErrorCode;
 
 /**
- * 客户端异常
- * 用户发起调用请求后因客户端提交参数或其他客户端问题导致的异常
+ * 客户端异常。
+ * <p>用户发起调用请求后，因客户端提交的参数不合法、认证失败、权限不足等客户端侧问题导致的异常。
+ * 默认 HTTP 状态码为 400，根据错误码可自动映射为 401、403、423、429 等。</p>
+ *
+ * @see ServiceException
+ * @see BaseErrorCode#CLIENT_ERROR
  */
 public class ClientException extends ServiceException {
 
@@ -48,6 +52,12 @@ public class ClientException extends ServiceException {
         super(code, message, httpStatus);
     }
 
+    /**
+     * 根据错误码自动解析对应的 HTTP 状态码
+     *
+     * @param errorCode 错误码枚举
+     * @return 对应的 HTTP 状态码，默认返回 400
+     */
     private static int resolveHttpStatus(IErrorCode errorCode) {
         return switch (errorCode.code()) {
             case "A000401" -> 401;

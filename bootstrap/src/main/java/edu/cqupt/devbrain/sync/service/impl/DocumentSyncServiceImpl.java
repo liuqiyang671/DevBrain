@@ -9,7 +9,7 @@ import edu.cqupt.devbrain.framework.errorcode.BaseErrorCode;
 import edu.cqupt.devbrain.knowledge.controller.vo.DocumentVO;
 import edu.cqupt.devbrain.knowledge.dao.entity.KnowledgeDocumentDO;
 import edu.cqupt.devbrain.knowledge.dao.mapper.KnowledgeDocumentMapper;
-import edu.cqupt.devbrain.knowledge.service.DocumentParseService;
+import edu.cqupt.devbrain.knowledge.service.KnowledgeDocumentService;
 import edu.cqupt.devbrain.knowledge.storage.FileStorageService;
 import edu.cqupt.devbrain.sync.adapter.DocumentSourceAdapter;
 import edu.cqupt.devbrain.sync.adapter.DocumentSourceAdapterRegistry;
@@ -50,7 +50,7 @@ public class DocumentSyncServiceImpl implements DocumentSyncService {
     private final DocumentSyncHistoryMapper syncHistoryMapper;
     private final DocumentSourceAdapterRegistry adapterRegistry;
     private final FileStorageService fileStorageService;
-    private final DocumentParseService documentParseService;
+    private final KnowledgeDocumentService knowledgeDocumentService;
     private final RedissonClient redissonClient;
 
     /**
@@ -106,7 +106,7 @@ public class DocumentSyncServiceImpl implements DocumentSyncService {
             document.setLastSyncTime(new Date());
             knowledgeDocumentMapper.updateById(document);
 
-            documentParseService.parseAndChunk(docId);
+            knowledgeDocumentService.executeChunk(docId);
 
             saveSyncHistory(docId, contentHash, 1, "success", null, System.currentTimeMillis() - startTime);
             return new SyncResult(true, "内容已更新并重新解析");

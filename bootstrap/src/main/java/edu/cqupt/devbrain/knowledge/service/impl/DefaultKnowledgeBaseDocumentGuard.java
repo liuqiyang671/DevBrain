@@ -20,6 +20,12 @@ public class DefaultKnowledgeBaseDocumentGuard implements KnowledgeBaseDocumentG
 
     private final KnowledgeDocumentMapper knowledgeDocumentMapper;
 
+    /**
+     * 统计指定知识库下未逻辑删除的文档数量。
+     *
+     * @param knowledgeBaseId 知识库 ID
+     * @return 未删除文档数量
+     */
     @Override
     public long countActiveDocuments(String knowledgeBaseId) {
         if (!StringUtils.hasText(knowledgeBaseId)) {
@@ -28,6 +34,21 @@ public class DefaultKnowledgeBaseDocumentGuard implements KnowledgeBaseDocumentG
         Long count = knowledgeDocumentMapper.selectCount(Wrappers.lambdaQuery(KnowledgeDocumentDO.class)
                 .eq(KnowledgeDocumentDO::getKbId, knowledgeBaseId)
                 .eq(KnowledgeDocumentDO::getDeleted, 0));
+        return count == null ? 0L : count;
+    }
+
+    /**
+     * 汇总指定知识库下未删除文档的分块总数。
+     *
+     * @param knowledgeBaseId 知识库 ID
+     * @return 分块总数
+     */
+    @Override
+    public long sumActiveDocumentChunks(String knowledgeBaseId) {
+        if (!StringUtils.hasText(knowledgeBaseId)) {
+            return 0L;
+        }
+        Long count = knowledgeDocumentMapper.sumChunkCountByKnowledgeBaseId(knowledgeBaseId);
         return count == null ? 0L : count;
     }
 }

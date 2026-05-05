@@ -47,6 +47,9 @@ public class RolePermissionServiceImpl implements RolePermissionService {
     private final UserDirectoryService directoryService;
     private final AccessControlService accessControlService;
 
+    /**
+     * 查询所有角色列表，按角色编码升序排列。
+     */
     @Override
     public List<RoleVO> roles() {
         return roleMapper.selectList(Wrappers.lambdaQuery(RoleDO.class).orderByAsc(RoleDO::getRoleCode))
@@ -55,6 +58,9 @@ public class RolePermissionServiceImpl implements RolePermissionService {
                 .toList();
     }
 
+    /**
+     * 创建新角色。
+     */
     @Override
     public RoleVO createRole(RoleRequest request) {
         log.info("Creating role: roleCode={}", request.roleCode());
@@ -67,6 +73,9 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         return toRoleVO(role);
     }
 
+    /**
+     * 更新角色信息。
+     */
     @Override
     public RoleVO updateRole(String id, RoleRequest request) {
         RoleDO role = loadRole(id);
@@ -96,6 +105,9 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         log.info("Role deleted successfully: id={}, roleCode={}", id, role.getRoleCode());
     }
 
+    /**
+     * 为角色分配权限码（全量替换模式）。
+     */
     @Override
     @Transactional
     public void assignPermissions(String id, PermissionAssignRequest request) {
@@ -103,12 +115,18 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         directoryService.assignPermissions(id, request.permissionCodes());
     }
 
+    /**
+     * 查询所有权限码列表，按权限编码升序排列。
+     */
     @Override
     public List<PermissionVO> permissions() {
         return permissionMapper.selectList(Wrappers.lambdaQuery(PermissionDO.class).orderByAsc(PermissionDO::getPermissionCode))
                 .stream().map(this::toPermissionVO).toList();
     }
 
+    /**
+     * 创建新权限码。
+     */
     @Override
     public PermissionVO createPermission(PermissionRequest request) {
         log.info("Creating permission: permissionCode={}", request.permissionCode());
@@ -121,6 +139,9 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         return toPermissionVO(permission);
     }
 
+    /**
+     * 更新权限码信息。
+     */
     @Override
     public PermissionVO updatePermission(String id, PermissionRequest request) {
         PermissionDO permission = permissionMapper.selectById(id);
@@ -152,6 +173,9 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         log.info("Permission deleted successfully: id={}, permissionCode={}", id, permission.getPermissionCode());
     }
 
+    /**
+     * 查询所有资源访问规则列表，按路径模式升序排列。
+     */
     @Override
     public List<ResourceVO> resources() {
         return resourceMapper.selectList(Wrappers.lambdaQuery(ResourceDO.class).orderByAsc(ResourceDO::getPathPattern))
@@ -235,10 +259,16 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         return new RoleVO(role.getId(), role.getRoleCode(), role.getRoleName(), role.getDescription(), directoryService.permissionCodesByRoles(java.util.Set.of(role.getRoleCode())));
     }
 
+    /**
+     * 将权限码实体转换为视图对象。
+     */
     private PermissionVO toPermissionVO(PermissionDO permission) {
         return new PermissionVO(permission.getId(), permission.getPermissionCode(), permission.getPermissionName(), permission.getDescription());
     }
 
+    /**
+     * 将资源访问规则实体转换为视图对象。
+     */
     private ResourceVO toResourceVO(ResourceDO resource) {
         return new ResourceVO(resource.getId(), resource.getResourceName(), resource.getHttpMethod(), resource.getPathPattern(), resource.getPermissionCode(), resource.getPublicAccess());
     }

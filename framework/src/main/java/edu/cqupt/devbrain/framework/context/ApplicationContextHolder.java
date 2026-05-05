@@ -9,10 +9,12 @@ import java.lang.annotation.Annotation;
 import java.util.Map;
 
 /**
- * Spring 应用上下文持有者
- * 用于在非 Spring 管理的类中获取 Spring 容器中的 Bean 实例
- * 通过实现 ApplicationContextAware 接口，在 Spring 容器启动时自动注入 ApplicationContext
- * 提供了一系列静态方法用于获取 Bean 实例和查询注解信息
+ * Spring 应用上下文持有者。
+ * <p>通过实现 {@link ApplicationContextAware} 接口，在 Spring 容器启动时自动注入
+ * {@link ApplicationContext} 引用，使非 Spring 管理的类也能通过静态方法获取容器中的 Bean 实例。
+ * 同时提供按类型、名称查询 Bean 以及查找注解等便捷方法。</p>
+ *
+ * @see org.springframework.context.ApplicationContext
  */
 @Component
 public class ApplicationContextHolder implements ApplicationContextAware {

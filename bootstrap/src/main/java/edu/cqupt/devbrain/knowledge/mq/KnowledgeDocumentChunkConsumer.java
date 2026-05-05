@@ -27,6 +27,11 @@ public class KnowledgeDocumentChunkConsumer implements RocketMQListener<MessageW
 
     private final KnowledgeDocumentService documentService;
 
+    /**
+     * 消费文档分块事件消息，设置用户上下文后调用文档分块服务执行分块。
+     *
+     * @param message 消息包装体
+     */
     @Override
     public void onMessage(MessageWrapper<KnowledgeDocumentChunkEvent> message) {
         KnowledgeDocumentChunkEvent event = message.getBody();
@@ -49,6 +54,11 @@ public class KnowledgeDocumentChunkConsumer implements RocketMQListener<MessageW
         }
     }
 
+    /**
+     * 将操作人信息注入 UserContext，供下游 Service 获取当前用户。
+     *
+     * @param operator 操作人用户 ID
+     */
     private void setupUserContext(String operator) {
         if (operator == null) {
             return;

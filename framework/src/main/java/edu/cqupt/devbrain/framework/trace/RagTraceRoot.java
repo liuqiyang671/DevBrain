@@ -6,7 +6,12 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * 标记 RAG Trace 根节点（一次完整请求）
+ * RAG 链路追踪根节点注解，标记在方法上表示一次完整的 RAG 请求入口。
+ * <p>
+ * 由 {@link RagTraceAspect} 拦截，在方法执行前初始化 traceId，
+ * 方法执行后清理上下文。支持通过参数名自动提取 conversationId 和 taskId。
+ * <p>
+ * 若当前线程已存在活跃的 trace，则复用已有 traceId，避免重复创建。
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)

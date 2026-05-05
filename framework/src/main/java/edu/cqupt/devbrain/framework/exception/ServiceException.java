@@ -6,8 +6,12 @@ import edu.cqupt.devbrain.framework.errorcode.IErrorCode;
 import java.util.Optional;
 
 /**
- * 服务端运行异常
- * 请求运行过程中出现的不符合业务预期的异常
+ * 服务端运行时异常。
+ * <p>请求处理过程中因业务逻辑不符合预期（如数据状态冲突、业务规则校验失败等）而抛出的异常。
+ * 默认 HTTP 状态码为 500，属于 B 类系统执行错误。</p>
+ *
+ * @see AbstractException
+ * @see BaseErrorCode#SERVICE_ERROR
  */
 public class ServiceException extends AbstractException {
 

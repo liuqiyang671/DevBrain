@@ -6,7 +6,11 @@ import edu.cqupt.devbrain.framework.exception.ClientException;
 
 
 /**
- * 用户上下文容器（基于 TTL 传递当前线程的登录用户）
+ * 线程级用户上下文持有器。
+ * <p>基于 {@link com.alibaba.ttl.TransmittableThreadLocal} 实现，支持跨线程传播当前登录用户信息。
+ * 提供用户信息的存取、清除以及便捷访问方法，在整个请求链路中传递认证上下文。</p>
+ *
+ * @see LoginUser
  */
 public final class UserContext {
 
