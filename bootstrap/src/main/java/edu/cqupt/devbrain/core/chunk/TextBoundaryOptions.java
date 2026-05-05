@@ -52,7 +52,7 @@ public record TextBoundaryOptions(int targetChars, int overlapChars, int maxChar
     }
 
     @Override
-    public Map<String, Integer> toConfigMap() {
+    public Map<String, Object> toConfigMap() {
         return Map.of(
                 "targetChars", targetChars,
                 "overlapChars", overlapChars,

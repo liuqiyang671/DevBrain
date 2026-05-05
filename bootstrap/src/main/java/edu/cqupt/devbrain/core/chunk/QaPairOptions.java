@@ -31,7 +31,7 @@ public record QaPairOptions(int chunkSize, int overlapSize) implements ChunkingO
      * @return 包含 chunkSize 和 overlapSize 的配置 Map
      */
     @Override
-    public Map<String, Integer> toConfigMap() {
+    public Map<String, Object> toConfigMap() {
         return Map.of("chunkSize", chunkSize, "overlapSize", overlapSize);
     }
 }

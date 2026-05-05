@@ -34,7 +34,12 @@ public enum ChunkingMode {
     /**
      * 表格感知分块，识别 Markdown 表格并保持表格完整性。
      */
-    TABLE_AWARE("table_aware", "表格感知");
+    TABLE_AWARE("table_aware", "表格感知"),
+
+    /**
+     * 语义分块，利用 Embedding 相似度在语义变化处切分。
+     */
+    SEMANTIC_CHUNKING("semantic_chunking", "语义分块");
 
     private final String value;
     private final String label;
@@ -116,6 +121,15 @@ public enum ChunkingMode {
                     toInt(config.get("maxChars"), 1800),
                     toInt(config.get("minChars"), 600)
             );
+            case SEMANTIC_CHUNKING -> new SemanticOptions(
+                    toInt(config.get("chunkSize"), 512),
+                    toInt(config.get("overlapSize"), 50),
+                    toDouble(config.get("similarityThreshold"), 0.5),
+                    toInt(config.get("minChunkSize"), 100),
+                    toInt(config.get("maxChunkSize"), 1024),
+                    toInt(config.get("batchSize"), 10),
+                    toString(config.get("embeddingModel"))
+            );
         };
     }
 
@@ -150,6 +164,11 @@ public enum ChunkingMode {
                     overlapSize != null ? overlapSize : 0,
                     1800, 600
             );
+            case SEMANTIC_CHUNKING -> new SemanticOptions(
+                    targetSize != null ? targetSize : 512,
+                    overlapSize != null ? overlapSize : 50,
+                    0.5, 100, 1024, 10, null
+            );
         };
     }
 
@@ -168,5 +187,33 @@ public enum ChunkingMode {
         } catch (NumberFormatException e) {
             return defaultVal;
         }
+    }
+
+    /**
+     * 安全地将 Object 转为 double，转换失败时返回默认值。
+     */
+    private static double toDouble(Object val, double defaultVal) {
+        if (val == null) {
+            return defaultVal;
+        }
+        if (val instanceof Number n) {
+            return n.doubleValue();
+        }
+        try {
+            return Double.parseDouble(val.toString().trim());
+        } catch (NumberFormatException e) {
+            return defaultVal;
+        }
+    }
+
+    /**
+     * 安全地将 Object 转为非空字符串，空白字符串按未配置处理。
+     */
+    private static String toString(Object val) {
+        if (val == null) {
+            return null;
+        }
+        String text = val.toString().trim();
+        return text.isEmpty() ? null : text;
     }
 }

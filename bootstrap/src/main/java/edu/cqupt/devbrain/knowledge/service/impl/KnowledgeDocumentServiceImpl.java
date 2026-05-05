@@ -518,13 +518,7 @@ public class KnowledgeDocumentServiceImpl implements KnowledgeDocumentService {
             try {
                 java.util.Map<String, Object> configMap = objectMapper.readValue(
                         chunkConfigJson, new TypeReference<java.util.Map<String, Object>>() {});
-                java.util.Map<String, Object> intMap = new java.util.HashMap<>();
-                configMap.forEach((k, v) -> {
-                    if (v instanceof Number num) {
-                        intMap.put(k, num.intValue());
-                    }
-                });
-                return mode.createOptions(intMap);
+                return mode.createOptions(configMap);
             } catch (Exception e) {
                 log.warn("解析分块配置失败，使用默认配置: {}", chunkConfigJson, e);
             }

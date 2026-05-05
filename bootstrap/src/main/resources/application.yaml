@@ -45,6 +45,17 @@ rag:
     dimension: ${RAG_DEFAULT_DIMENSION:1536}
     metric-type: COSINE
 
+chunking:
+  semantic:
+    chunk-size: 512
+    overlap-size: 50
+    similarity-threshold: 0.5
+    min-chunk-size: 100
+    max-chunk-size: 1024
+    batch-size: 10
+    # 可选：为语义边界判断单独指定更强的 Embedding 模型；留空时保持原默认 Embedding 计算路径。
+    embedding-model: ${SEMANTIC_CHUNKING_EMBEDDING_MODEL:}
+
 ai:
   providers:
     siliconflow:

@@ -306,6 +306,7 @@ public class DocumentParseServiceImpl implements DocumentParseService {
             case RECURSIVE_CHARACTER -> mode.createOptions(configMap);
             case QA_PAIR -> mode.createOptions(configMap);
             case TABLE_AWARE -> mode.createOptions(configMap);
+            case SEMANTIC_CHUNKING -> mode.createOptions(configMap);
         };
     }
 

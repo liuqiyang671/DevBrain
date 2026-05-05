@@ -33,7 +33,7 @@ public record FixedSizeOptions(int chunkSize, int overlapSize) implements Chunki
     }
 
     @Override
-    public Map<String, Integer> toConfigMap() {
+    public Map<String, Object> toConfigMap() {
         return Map.of("chunkSize", chunkSize, "overlapSize", overlapSize);
     }
 }
