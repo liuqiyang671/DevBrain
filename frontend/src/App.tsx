@@ -15,6 +15,7 @@ import * as authApi from './services/auth';
 import * as knowledgeBaseApi from './services/knowledgeBase';
 import * as syncApi from './services/sync';
 import * as ingestionApi from './services/ingestion';
+import * as ragApi from './services/rag';
 import type {
   DocumentChunkItem,
   IngestionNodeType,
@@ -26,6 +27,14 @@ import type {
   KnowledgeChunkItem,
   KnowledgeDocumentItem,
   PermissionItem,
+  RagChatResponse,
+  RagCitation,
+  RagConversationSummary,
+  RagDebugRunResult,
+  RagMessage,
+  RagPromptPreview,
+  RagRetrievedChunk,
+  RagTraceStep,
   ResourceItem,
   RoleItem,
   SyncHistoryItem,
@@ -365,7 +374,7 @@ function App() {
         <Route path="/admin/knowledge-bases/:id/documents" element={<RequireAuth><RequireAdmin><KnowledgeBaseDocumentsPage mode="admin" /></RequireAdmin></RequireAuth>} />
         <Route path="/admin/knowledge-bases/:id/documents/:documentId/chunks" element={<RequireAuth><RequireAdmin><AdminDocumentChunksPage /></RequireAdmin></RequireAuth>} />
         <Route path="/admin/documents" element={<RequireAuth><RequireAdmin><AdminDocumentsPage /></RequireAdmin></RequireAuth>} />
-        <Route path="/admin/qa" element={<RequireAuth><RequireAdmin><AdminModulePage title="问答管理" description="管理问答记录、反馈记录和 FAQ 内容。" /></RequireAdmin></RequireAuth>} />
+        <Route path="/admin/qa" element={<RequireAuth><RequireAdmin><AdminQaPage /></RequireAdmin></RequireAuth>} />
         <Route path="/admin/users" element={<RequireAuth><RequireAdmin><AdminPage /></RequireAdmin></RequireAuth>} />
         <Route path="/admin/tags" element={<RequireAuth><RequireAdmin><AdminModulePage title="标签分类" description="维护知识库、文档和问答内容的标签体系。" /></RequireAdmin></RequireAuth>} />
         <Route path="/admin/ingestion" element={<RequireAuth><RequireAdmin><AdminIngestionPage /></RequireAdmin></RequireAuth>} />
@@ -3891,51 +3900,345 @@ function DocumentPage() {
  * 提供基于知识库的 AI 问答交互界面
  */
 function AssistantPage() {
+  const user = useAuthStore((state) => state.user);
+  const [conversations, setConversations] = useState<RagConversationSummary[]>([]);
+  const [messages, setMessages] = useState<RagMessage[]>([]);
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseItem[]>([]);
+  const [selectedKbIds, setSelectedKbIds] = useState<string[]>([]);
+  const [topK, setTopK] = useState(5);
+  const [question, setQuestion] = useState('');
+  const [loadingConversations, setLoadingConversations] = useState(false);
+  const [loadingConversation, setLoadingConversation] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [conversationError, setConversationError] = useState<string | null>(null);
+  const [knowledgeError, setKnowledgeError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [lastRun, setLastRun] = useState<RagChatResponse | null>(null);
+  const lastQuestionRef = useRef('');
+
+  const loadConversations = useCallback(async () => {
+    setLoadingConversations(true);
+    setConversationError(null);
+    try {
+      const items = await ragApi.getConversations();
+      setConversations(items);
+    } catch (error) {
+      setConversationError(getErrorMessage(error));
+    } finally {
+      setLoadingConversations(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadConversations();
+    knowledgeBaseApi.getKnowledgeBases({ pageNo: 1, pageSize: 50, status: 'enabled' })
+      .then((page) => {
+        setKnowledgeBases(page.records);
+        setSelectedKbIds(page.records.slice(0, 2).map((item) => item.id));
+      })
+      .catch((error) => setKnowledgeError(getErrorMessage(error)));
+  }, [loadConversations]);
+
+  const openConversation = useCallback(async (conversationId: string) => {
+    setSelectedConversationId(conversationId);
+    setLoadingConversation(true);
+    setSendError(null);
+    try {
+      const detail = await ragApi.getConversation(conversationId);
+      setMessages(detail.messages);
+      setLastRun(null);
+    } catch (error) {
+      setSendError(getErrorMessage(error));
+    } finally {
+      setLoadingConversation(false);
+    }
+  }, []);
+
+  const startNewConversation = useCallback(() => {
+    setSelectedConversationId(null);
+    setMessages([]);
+    setQuestion('');
+    setSendError(null);
+    setLastRun(null);
+  }, []);
+
+  const submitQuestion = useCallback(async (event?: FormEvent) => {
+    event?.preventDefault();
+    const normalized = question.trim();
+    if (!normalized || sending) return;
+    const clientMessageId = `local-user-${Date.now()}`;
+    const pendingConversationId = selectedConversationId;
+    lastQuestionRef.current = normalized;
+    setSending(true);
+    setSendError(null);
+    setQuestion('');
+    setMessages((current) => [
+      ...current,
+      {
+        id: clientMessageId,
+        conversationId: pendingConversationId,
+        role: 'user',
+        content: normalized,
+        createTime: new Date().toISOString(),
+      },
+    ]);
+    try {
+      const response = await ragApi.sendChat({
+        conversationId: pendingConversationId,
+        question: normalized,
+        kbIds: selectedKbIds,
+        topK,
+        returnDebug: true,
+      });
+      setSelectedConversationId(response.conversationId);
+      setLastRun(response);
+      setMessages((current) => [
+        ...current,
+        {
+          id: response.messageId || `local-assistant-${Date.now()}`,
+          conversationId: response.conversationId,
+          role: 'assistant',
+          content: response.answer,
+          citations: response.citations,
+          retrievedChunks: response.retrievedChunks,
+          promptPreview: response.promptPreview,
+          createTime: new Date().toISOString(),
+        },
+      ]);
+      loadConversations();
+    } catch (error) {
+      setQuestion(normalized);
+      setSendError(getErrorMessage(error));
+    } finally {
+      setSending(false);
+    }
+  }, [loadConversations, question, selectedConversationId, selectedKbIds, sending, topK]);
+
+  const retryLastQuestion = useCallback(() => {
+    if (lastQuestionRef.current) setQuestion(lastQuestionRef.current);
+  }, []);
+
+  const promptSuggestions = ['如何排查 Redis 连接失败？', '接口 500 错误如何定位？', '文档分块策略怎么选？'];
+  const activeConversationTitle = conversations.find((item) => item.conversationId === selectedConversationId)?.title || '新会话';
+
   return (
     <AppShell>
-      <section className="qa-workspace">
-        <aside className="qa-sidebar card">
-          <button className="btn btn-primary" type="button">新建会话</button>
-          <h3>历史会话</h3>
-          {['Redis 连接失败排查', '接口 500 错误定位', 'K8s 部署回滚方案', '数据库慢查询分析'].map((item, index) => (
-            <button className={index === 0 ? 'qa-session active' : 'qa-session'} type="button" key={item}>{item}</button>
-          ))}
-        </aside>
-        <article className="assistant-panel qa-panel">
-          <header className="qa-header">
-            <div>
-              <h2>智能问答</h2>
-              <p>已选择：DevBrain 项目知识库、运维故障知识库</p>
-            </div>
-            <button className="btn btn-light" type="button">选择知识库</button>
-          </header>
-          <div className="assistant-thread">
-            <div className="message-row user">
-              <strong>张开发</strong>
-              <p>生产环境 Redis 连接失败如何排查？</p>
-            </div>
-            <div className="message-row assistant">
-              <strong>DevBrain Assistant</strong>
-              <p>建议先确认网络连通性、连接参数、Redis 实例状态和应用日志。下面是可执行的排查顺序。</p>
-              <ol>
-                <li>使用 telnet 或 nc 验证端口连通。</li>
-                <li>核对连接地址、密码、超时时间和连接池配置。</li>
-                <li>查看 Redis 控制台、slowlog 和应用异常栈。</li>
-              </ol>
-              <div className="citation-box">
-                <strong>引用来源</strong>
-                <span>Redis 部署手册.md</span>
-                <span>运维故障 SOP</span>
-              </div>
-            </div>
+      <section className="rag-chat-shell">
+        <aside className="rag-session-sidebar card">
+          <button className="btn btn-primary" type="button" onClick={startNewConversation}>新建会话</button>
+          <div className="rag-sidebar-title">
+            <h3>历史会话</h3>
+            <button className="btn-text" type="button" onClick={loadConversations} disabled={loadingConversations}>刷新</button>
           </div>
-          <form className="assistant-input">
-            <input aria-label="输入问题" placeholder="继续追问，或输入新的研发问题..." />
-            <button className="btn btn-primary" type="button">发送</button>
+          {conversationError && <p className="rag-error-text">{conversationError}</p>}
+          <div className="rag-session-list">
+            {loadingConversations ? (
+              <div className="empty-state compact">正在加载会话...</div>
+            ) : conversations.length === 0 ? (
+              <div className="empty-state compact">暂无会话</div>
+            ) : conversations.map((item) => (
+              <button
+                className={item.conversationId === selectedConversationId ? 'rag-session active' : 'rag-session'}
+                type="button"
+                key={item.conversationId}
+                onClick={() => openConversation(item.conversationId)}
+              >
+                <strong>{item.title || item.lastQuestion || '未命名会话'}</strong>
+                <span>{formatShortDate(item.lastTime)}</span>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <article className="rag-chat-panel">
+          <header className="rag-chat-header">
+            <div>
+              <p className="eyebrow">RAG Chat</p>
+              <h2>{activeConversationTitle}</h2>
+              <p>{selectedKbIds.length ? `已选择 ${selectedKbIds.length} 个知识库` : '未选择知识库，将按后端默认范围检索'}</p>
+            </div>
+            <label className="rag-topk-control">
+              Top-K
+              <input type="number" min={1} max={20} value={topK} onChange={(event) => setTopK(Number(event.target.value) || 5)} />
+            </label>
+          </header>
+
+          <div className="rag-thread">
+            {loadingConversation ? (
+              <div className="empty-state">正在同步会话消息...</div>
+            ) : messages.length === 0 ? (
+              <div className="rag-empty-thread">
+                <div className="empty-icon">问</div>
+                <h3>开始一次知识库问答</h3>
+                <p>选择知识库后输入问题，页面会展示回答、引用来源和本轮检索摘要。</p>
+                <div className="rag-suggestion-row">
+                  {promptSuggestions.map((item) => (
+                    <button type="button" key={item} onClick={() => setQuestion(item)}>{item}</button>
+                  ))}
+                </div>
+              </div>
+            ) : messages.map((message) => (
+              <RagMessageBubble message={message} displayName={user?.displayName || user?.username || '我'} key={message.id} />
+            ))}
+            {sending && <div className="rag-pending-answer">正在检索知识库并生成回答...</div>}
+            {sendError && (
+              <div className="rag-error-card">
+                <strong>请求失败</strong>
+                <p>{sendError}</p>
+                <button className="btn btn-light" type="button" onClick={retryLastQuestion}>恢复问题</button>
+              </div>
+            )}
+          </div>
+
+          <form className="rag-composer" onSubmit={submitQuestion}>
+            <textarea
+              aria-label="输入问题"
+              placeholder="继续追问，或输入新的研发问题..."
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              disabled={sending}
+            />
+            <button className="btn btn-primary" type="submit" disabled={sending || !question.trim()}>{sending ? '发送中...' : '发送'}</button>
           </form>
         </article>
+
+        <aside className="rag-context-sidebar">
+          <RagKnowledgeSelector
+            knowledgeBases={knowledgeBases}
+            selectedKbIds={selectedKbIds}
+            onChange={setSelectedKbIds}
+            error={knowledgeError}
+          />
+          <RagCitationPanel citations={lastRun?.citations || []} />
+          <RagRetrievalPanel chunks={lastRun?.retrievedChunks || []} />
+          <RagPromptPanel prompt={lastRun?.promptPreview || null} compact />
+        </aside>
       </section>
     </AppShell>
+  );
+}
+
+function RagMessageBubble({ message, displayName }: { message: RagMessage; displayName: string }) {
+  const isUser = message.role === 'user';
+  return (
+    <article className={isUser ? 'rag-message user' : 'rag-message assistant'}>
+      <header>
+        <strong>{isUser ? displayName : 'DevBrain Assistant'}</strong>
+        <span>{formatShortDate(message.createTime)}</span>
+      </header>
+      <p>{message.content}</p>
+      {!isUser && message.citations?.length ? (
+        <div className="rag-inline-citations">
+          {message.citations.slice(0, 4).map((item, index) => (
+            <span key={`${item.chunkId || item.docName || index}`}>{item.docName || item.kbName || `引用 ${index + 1}`}</span>
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function RagKnowledgeSelector({
+  knowledgeBases,
+  selectedKbIds,
+  onChange,
+  error,
+  helper,
+}: {
+  knowledgeBases: KnowledgeBaseItem[];
+  selectedKbIds: string[];
+  onChange: (ids: string[]) => void;
+  error?: string | null;
+  helper?: string | null;
+}) {
+  function toggle(id: string) {
+    onChange(selectedKbIds.includes(id) ? selectedKbIds.filter((item) => item !== id) : [...selectedKbIds, id]);
+  }
+
+  return (
+    <article className="rag-side-card">
+      <div className="card-title">
+        <h3>知识库范围</h3>
+      </div>
+      {helper && <p className="muted-empty">{helper}</p>}
+      {error && <p className="rag-error-text">{error}</p>}
+      <div className="rag-kb-list">
+        {knowledgeBases.length === 0 ? (
+          <p className="muted-empty">暂无可选知识库</p>
+        ) : knowledgeBases.map((item) => (
+          <label key={item.id} className="rag-kb-option">
+            <input type="checkbox" checked={selectedKbIds.includes(item.id)} onChange={() => toggle(item.id)} />
+            <span>
+              <strong>{item.name}</strong>
+              <small>{item.documentCount || 0} 篇文档</small>
+            </span>
+          </label>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function RagCitationPanel({ citations }: { citations: RagCitation[] }) {
+  return (
+    <article className="rag-side-card">
+      <div className="card-title"><h3>引用来源</h3></div>
+      <div className="rag-source-list">
+        {citations.length === 0 ? <p className="muted-empty">回答生成后显示引用来源。</p> : citations.map((item, index) => (
+          <div className="rag-source-row" key={`${item.chunkId || item.docId || index}`}>
+            <span>{index + 1}</span>
+            <strong>{item.docName || item.kbName || '未命名来源'}</strong>
+            <small>{formatScore(item.score)}</small>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function formatScore(score?: number | null) {
+  if (score == null || Number.isNaN(score)) return '--';
+  return score <= 1 ? `${Math.round(score * 100)}%` : score.toFixed(2);
+}
+
+function RagRetrievalPanel({ chunks }: { chunks: RagRetrievedChunk[] }) {
+  return (
+    <article className="rag-side-card">
+      <div className="card-title"><h3>检索命中</h3></div>
+      <div className="rag-chunk-list">
+        {chunks.length === 0 ? <p className="muted-empty">暂无检索命中。</p> : chunks.map((chunk, index) => (
+          <article className="rag-chunk-card" key={`${chunk.chunkId || chunk.id || index}`}>
+            <header>
+              <strong>{chunk.docName || chunk.kbName || `Chunk ${index + 1}`}</strong>
+              <span>{formatScore(chunk.score)}</span>
+            </header>
+            <p>{chunk.content || '暂无内容片段'}</p>
+            <small>{chunk.kbName || chunk.collectionName || '--'} · #{chunk.chunkIndex ?? index + 1}</small>
+          </article>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function RagPromptPanel({ prompt, compact = false }: { prompt?: RagPromptPreview | null; compact?: boolean }) {
+  return (
+    <article className={compact ? 'rag-side-card rag-prompt-card compact' : 'card rag-prompt-card'}>
+      <div className="card-title"><h3>Prompt 摘要</h3></div>
+      {!prompt ? (
+        <p className="muted-empty">暂无 Prompt 信息。</p>
+      ) : (
+        <div className="rag-prompt-grid">
+          <div><span>Scene</span><strong>{prompt.scene || '--'}</strong></div>
+          <div><span>Template</span><strong>{prompt.baseTemplate || '--'}</strong></div>
+          <div><span>Question</span><pre>{prompt.question || '--'}</pre></div>
+          <div><span>KB Context</span><pre>{prompt.kbContext || '--'}</pre></div>
+          {!compact && <div><span>MCP Context</span><pre>{prompt.mcpContext || '--'}</pre></div>}
+          {!compact && <div><span>Final Prompt</span><pre>{prompt.finalPrompt || '--'}</pre></div>}
+        </div>
+      )}
+    </article>
   );
 }
 
@@ -5154,6 +5457,163 @@ function SyncHistoryModal({ docId, onClose }: { docId: string; onClose: () => vo
           <button className="btn-light" onClick={onClose}>关闭</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function AdminQaPage() {
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseItem[]>([]);
+  const [selectedKbIds, setSelectedKbIds] = useState<string[]>([]);
+  const [question, setQuestion] = useState('生产环境 Redis 连接失败如何排查？');
+  const [topK, setTopK] = useState(5);
+  const [returnPrompt, setReturnPrompt] = useState(true);
+  const [loadingKb, setLoadingKb] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [kbError, setKbError] = useState<string | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
+  const [result, setResult] = useState<RagDebugRunResult | null>(null);
+
+  useEffect(() => {
+    setLoadingKb(true);
+    knowledgeBaseApi.getKnowledgeBases({ pageNo: 1, pageSize: 100, status: 'enabled' })
+      .then((page) => {
+        setKnowledgeBases(page.records);
+        setSelectedKbIds(page.records.slice(0, 3).map((item) => item.id));
+      })
+      .catch((error) => setKbError(getErrorMessage(error)))
+      .finally(() => setLoadingKb(false));
+  }, []);
+
+  async function run(event: FormEvent) {
+    event.preventDefault();
+    const normalized = question.trim();
+    if (!normalized || running) return;
+    setRunning(true);
+    setRunError(null);
+    try {
+      const next = await ragApi.runDebug({
+        question: normalized,
+        kbIds: selectedKbIds,
+        topK,
+        returnPrompt,
+      });
+      setResult(next);
+    } catch (error) {
+      setRunError(getErrorMessage(error));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <AppShell mode="admin">
+      <PageContainer
+        title="问答管理"
+        description="调试 RAG 问答链路，查看检索命中、Prompt 注入和最终回答。"
+      >
+        <section className="rag-debug-shell">
+          <form className="card rag-debug-form" onSubmit={run}>
+            <label>
+              调试问题
+              <textarea value={question} onChange={(event) => setQuestion(event.target.value)} />
+            </label>
+            <div className="rag-debug-controls">
+              <label>
+                Top-K
+                <input type="number" min={1} max={20} value={topK} onChange={(event) => setTopK(Number(event.target.value) || 5)} />
+              </label>
+              <label className="inline-checkbox">
+                <input type="checkbox" checked={returnPrompt} onChange={(event) => setReturnPrompt(event.target.checked)} />
+                返回 Prompt
+              </label>
+              <button className="btn btn-primary" type="submit" disabled={running || !question.trim()}>{running ? '运行中...' : '运行调试'}</button>
+            </div>
+            {kbError && <p className="rag-error-text">{kbError}</p>}
+            {runError && <div className="rag-error-card"><strong>调试请求失败</strong><p>{runError}</p></div>}
+            <RagKnowledgeSelector
+              knowledgeBases={knowledgeBases}
+              selectedKbIds={selectedKbIds}
+              onChange={setSelectedKbIds}
+              helper={loadingKb ? '正在加载知识库...' : null}
+            />
+          </form>
+
+          <RagTraceOverview steps={result?.traceSteps || []} running={running} />
+
+          <section className="rag-debug-grid">
+            <article className="card rag-debug-main">
+              <div className="card-title"><h3>检索结果</h3></div>
+              <RagDebugRetrievalTable chunks={result?.retrievedChunks || []} />
+            </article>
+            <RagPromptPanel prompt={result?.promptPreview || null} />
+            <article className="card rag-answer-card">
+              <div className="card-title"><h3>最终回答</h3></div>
+              {result?.answer ? <p>{result.answer}</p> : <div className="empty-state compact">运行调试后显示回答。</div>}
+              <RagCitationPanel citations={result?.citations || []} />
+            </article>
+          </section>
+        </section>
+      </PageContainer>
+    </AppShell>
+  );
+}
+
+function RagTraceOverview({ steps, running }: { steps: RagTraceStep[]; running: boolean }) {
+  const names = ['retrieve', 'prompt', 'chat'];
+  const normalized = names.map((name) => steps.find((step) => step.name === name) || {
+    name,
+    status: running ? 'running' : 'idle',
+    durationMs: null,
+    message: running ? '执行中' : '等待执行',
+  });
+
+  return (
+    <section className="rag-trace-overview">
+      {normalized.map((step) => (
+        <article className={`rag-trace-card ${step.status}`} key={step.name}>
+          <span>{step.name}</span>
+          <strong>{traceStatusLabel(step.status)}</strong>
+          <small>{step.durationMs != null ? `${step.durationMs} ms` : step.message || '--'}</small>
+        </article>
+      ))}
+    </section>
+  );
+}
+
+function traceStatusLabel(status: string) {
+  if (status === 'success') return '成功';
+  if (status === 'error') return '失败';
+  if (status === 'running') return '运行中';
+  return '待运行';
+}
+
+function RagDebugRetrievalTable({ chunks }: { chunks: RagRetrievedChunk[] }) {
+  if (chunks.length === 0) return <div className="empty-state compact">暂无检索结果。</div>;
+  return (
+    <div className="rag-debug-table-wrap">
+      <table className="data-table rag-debug-table">
+        <thead>
+          <tr>
+            <th>来源</th>
+            <th>分数</th>
+            <th>Chunk</th>
+            <th>内容片段</th>
+          </tr>
+        </thead>
+        <tbody>
+          {chunks.map((chunk, index) => (
+            <tr key={`${chunk.chunkId || chunk.id || index}`}>
+              <td>
+                <strong>{chunk.docName || '--'}</strong>
+                <small>{chunk.kbName || chunk.collectionName || '--'}</small>
+              </td>
+              <td>{formatScore(chunk.score)}</td>
+              <td>#{chunk.chunkIndex ?? index + 1}</td>
+              <td>{chunk.content || '--'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

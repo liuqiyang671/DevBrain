@@ -3022,6 +3022,425 @@ code {
   font-weight: 800;
 }
 
+.rag-chat-shell {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr) 320px;
+  gap: 18px;
+  align-items: stretch;
+}
+
+.rag-session-sidebar,
+.rag-chat-panel,
+.rag-side-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10px 28px rgba(21, 36, 52, 0.06);
+}
+
+.rag-session-sidebar {
+  display: flex;
+  min-height: calc(100vh - 150px);
+  flex-direction: column;
+  gap: 14px;
+}
+
+.rag-sidebar-title,
+.rag-chat-header,
+.rag-message header,
+.rag-source-row,
+.rag-chunk-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.btn-text {
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font-weight: 900;
+}
+
+.rag-session-list,
+.rag-context-sidebar,
+.rag-source-list,
+.rag-kb-list,
+.rag-chunk-list,
+.rag-prompt-grid,
+.rag-debug-shell {
+  display: grid;
+  gap: 10px;
+}
+
+.rag-session {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 11px 12px;
+  color: var(--text);
+  text-align: left;
+}
+
+.rag-session.active {
+  border-color: #b8d9dd;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+}
+
+.rag-session strong,
+.rag-session span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rag-session span,
+.rag-message header span,
+.rag-source-row small {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.rag-chat-panel {
+  display: grid;
+  min-height: calc(100vh - 150px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.rag-chat-header {
+  border-bottom: 1px solid var(--border);
+  padding: 18px 20px;
+}
+
+.rag-chat-header h2,
+.rag-chat-header p {
+  margin: 0;
+}
+
+.rag-topk-control {
+  display: grid;
+  gap: 6px;
+  width: 92px;
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.rag-thread {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px;
+}
+
+.rag-message {
+  display: grid;
+  gap: 10px;
+  max-width: min(720px, 90%);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+}
+
+.rag-message.user {
+  justify-self: end;
+  border-color: #b8d9dd;
+  background: #e8f3ff;
+}
+
+.rag-message p {
+  margin: 0;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.rag-inline-citations,
+.rag-suggestion-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rag-inline-citations span {
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.rag-empty-thread {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 80px 20px;
+  text-align: center;
+}
+
+.rag-suggestion-row {
+  justify-content: center;
+}
+
+.rag-suggestion-row button {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--primary-strong);
+  padding: 0 12px;
+  font-weight: 900;
+}
+
+.rag-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  background: #fbfdff;
+  padding: 14px;
+}
+
+.rag-composer textarea {
+  min-height: 54px;
+  resize: vertical;
+}
+
+.rag-side-card,
+.rag-prompt-card,
+.rag-answer-card,
+.rag-debug-form {
+  display: grid;
+  gap: 12px;
+}
+
+.rag-side-card {
+  padding: 16px;
+}
+
+.rag-kb-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 10px;
+}
+
+.rag-kb-option span,
+.rag-kb-option strong,
+.rag-kb-option small {
+  display: block;
+  min-width: 0;
+}
+
+.rag-kb-option small,
+.rag-chunk-card small,
+.rag-prompt-grid span {
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.rag-source-row {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+}
+
+.rag-source-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.rag-source-row span {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  font-weight: 900;
+}
+
+.rag-source-row strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rag-error-card {
+  border: 1px solid #f3b4ab;
+  border-radius: 8px;
+  background: var(--danger-soft);
+  padding: 14px;
+}
+
+.rag-error-card p,
+.rag-error-text {
+  color: var(--danger);
+}
+
+.rag-pending-answer {
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 14px;
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.rag-chunk-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 12px;
+}
+
+.rag-chunk-card header span {
+  color: var(--primary-strong);
+  font-weight: 900;
+}
+
+.rag-chunk-card p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.rag-prompt-grid > div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rag-prompt-grid pre {
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 10px;
+  color: var(--text);
+  font-family: "Cascadia Code", "Consolas", "Microsoft YaHei UI", monospace;
+  font-size: 0.84rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.rag-prompt-card.compact .rag-prompt-grid pre {
+  max-height: 120px;
+}
+
+.rag-debug-shell {
+  gap: 18px;
+}
+
+.rag-debug-form textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.rag-debug-controls {
+  display: grid;
+  grid-template-columns: minmax(120px, 160px) minmax(160px, auto) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.rag-trace-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.rag-trace-card {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 16px;
+  box-shadow: 0 8px 26px rgba(21, 36, 52, 0.05);
+}
+
+.rag-trace-card span,
+.rag-trace-card small {
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.rag-trace-card strong {
+  font-size: 1.25rem;
+}
+
+.rag-trace-card.success strong {
+  color: #16a34a;
+}
+
+.rag-trace-card.error strong {
+  color: var(--danger);
+}
+
+.rag-trace-card.running strong {
+  color: var(--warning);
+}
+
+.rag-debug-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.95fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.rag-debug-main {
+  grid-row: span 2;
+}
+
+.rag-debug-table-wrap {
+  overflow-x: auto;
+}
+
+.rag-debug-table {
+  min-width: 820px;
+}
+
+.rag-debug-table td strong,
+.rag-debug-table td small {
+  display: block;
+}
+
+.rag-debug-table td small {
+  color: var(--muted);
+}
+
+.rag-answer-card > p {
+  margin: 0;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
 .kb-front-card {
   display: grid;
   gap: 12px;
@@ -3317,9 +3736,19 @@ code {
   .front-dashboard,
   .admin-dashboard-grid,
   .qa-workspace,
+  .rag-chat-shell,
+  .rag-debug-grid,
   .pipeline-editor-shell,
   .pipeline-bottom-grid {
     grid-template-columns: 1fr;
+  }
+
+  .rag-session-sidebar {
+    min-height: auto;
+  }
+
+  .rag-context-sidebar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .pipeline-editor-main {
@@ -3424,6 +3853,20 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .rag-context-sidebar,
+  .rag-trace-overview,
+  .rag-debug-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .rag-composer {
+    grid-template-columns: 1fr;
+  }
+
+  .rag-composer .btn {
+    width: 100%;
+  }
+
   .pipeline-page-actions,
   .pipeline-toolbar,
   .pipeline-toolbar-group,
@@ -3526,6 +3969,9 @@ code {
 
   .ask-actions,
   .qa-header,
+  .rag-chat-header,
+  .rag-message header,
+  .rag-source-row,
   .user-question {
     align-items: stretch;
     flex-direction: column;
@@ -3537,6 +3983,10 @@ code {
 
   .assistant-answer {
     grid-template-columns: 1fr;
+  }
+
+  .rag-message {
+    max-width: 100%;
   }
 
   .modal-backdrop {

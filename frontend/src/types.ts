@@ -408,3 +408,114 @@ export interface SyncTaskOverviewItem {
   lastSyncTime?: string;
   lastContentHash?: string;
 }
+
+/** RAG 消息角色 */
+export type RagMessageRole = 'user' | 'assistant' | 'system';
+
+/** RAG 会话摘要，用于前台会话列表 */
+export interface RagConversationSummary {
+  conversationId: string;
+  title?: string | null;
+  lastQuestion?: string | null;
+  lastAnswer?: string | null;
+  lastTime?: string | null;
+  messageCount?: number | null;
+}
+
+/** RAG 回答引用来源 */
+export interface RagCitation {
+  id?: string;
+  kbId?: string | null;
+  kbName?: string | null;
+  docId?: string | null;
+  docName?: string | null;
+  chunkId?: string | null;
+  chunkIndex?: number | null;
+  score?: number | null;
+  content?: string | null;
+}
+
+/** RAG 检索命中的 Chunk */
+export interface RagRetrievedChunk extends RagCitation {
+  collectionName?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+/** Prompt 构建预览 */
+export interface RagPromptPreview {
+  scene?: string | null;
+  baseTemplate?: string | null;
+  kbContext?: string | null;
+  mcpContext?: string | null;
+  question?: string | null;
+  finalPrompt?: string | null;
+}
+
+/** RAG 链路步骤状态 */
+export interface RagTraceStep {
+  name: 'retrieve' | 'prompt' | 'chat' | string;
+  status: 'idle' | 'running' | 'success' | 'error' | string;
+  durationMs?: number | null;
+  message?: string | null;
+}
+
+/** RAG 会话消息 */
+export interface RagMessage {
+  id: string;
+  conversationId?: string | null;
+  role: RagMessageRole;
+  content: string;
+  thinkingContent?: string | null;
+  thinkingDuration?: number | null;
+  citations?: RagCitation[];
+  retrievedChunks?: RagRetrievedChunk[];
+  promptPreview?: RagPromptPreview | null;
+  createTime?: string | null;
+}
+
+/** RAG 会话详情 */
+export interface RagConversationDetail {
+  conversationId: string;
+  title?: string | null;
+  messages: RagMessage[];
+}
+
+/** 前台 RAG 问答请求 */
+export interface RagChatRequest {
+  conversationId?: string | null;
+  question: string;
+  kbIds?: string[];
+  topK?: number;
+  returnDebug?: boolean;
+}
+
+/** 前台 RAG 问答响应 */
+export interface RagChatResponse {
+  conversationId: string;
+  messageId?: string | null;
+  answer: string;
+  citations: RagCitation[];
+  retrievedChunks?: RagRetrievedChunk[];
+  promptPreview?: RagPromptPreview | null;
+  traceSteps?: RagTraceStep[];
+}
+
+/** 后台 RAG 调试运行请求 */
+export interface RagDebugRunRequest {
+  question: string;
+  kbIds?: string[];
+  topK: number;
+  returnPrompt: boolean;
+}
+
+/** 后台 RAG 调试运行结果 */
+export interface RagDebugRunResult {
+  runId?: string | null;
+  answer?: string | null;
+  citations: RagCitation[];
+  retrievedChunks: RagRetrievedChunk[];
+  promptPreview?: RagPromptPreview | null;
+  traceSteps: RagTraceStep[];
+  errorMessage?: string | null;
+  createTime?: string | null;
+}
