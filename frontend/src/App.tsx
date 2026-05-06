@@ -27,7 +27,6 @@ import type {
   KnowledgeChunkItem,
   KnowledgeDocumentItem,
   PermissionItem,
-  RagChatResponse,
   RagCitation,
   RagConversationSummary,
   RagDebugRunResult,
@@ -3904,17 +3903,12 @@ function AssistantPage() {
   const [conversations, setConversations] = useState<RagConversationSummary[]>([]);
   const [messages, setMessages] = useState<RagMessage[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
-  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseItem[]>([]);
-  const [selectedKbIds, setSelectedKbIds] = useState<string[]>([]);
-  const [topK, setTopK] = useState(5);
   const [question, setQuestion] = useState('');
   const [loadingConversations, setLoadingConversations] = useState(false);
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [sending, setSending] = useState(false);
   const [conversationError, setConversationError] = useState<string | null>(null);
-  const [knowledgeError, setKnowledgeError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [lastRun, setLastRun] = useState<RagChatResponse | null>(null);
   const lastQuestionRef = useRef('');
 
   const loadConversations = useCallback(async () => {
@@ -3932,12 +3926,6 @@ function AssistantPage() {
 
   useEffect(() => {
     loadConversations();
-    knowledgeBaseApi.getKnowledgeBases({ pageNo: 1, pageSize: 50, status: 'enabled' })
-      .then((page) => {
-        setKnowledgeBases(page.records);
-        setSelectedKbIds(page.records.slice(0, 2).map((item) => item.id));
-      })
-      .catch((error) => setKnowledgeError(getErrorMessage(error)));
   }, [loadConversations]);
 
   const openConversation = useCallback(async (conversationId: string) => {
@@ -3947,7 +3935,6 @@ function AssistantPage() {
     try {
       const detail = await ragApi.getConversation(conversationId);
       setMessages(detail.messages);
-      setLastRun(null);
     } catch (error) {
       setSendError(getErrorMessage(error));
     } finally {
@@ -3960,7 +3947,6 @@ function AssistantPage() {
     setMessages([]);
     setQuestion('');
     setSendError(null);
-    setLastRun(null);
   }, []);
 
   const submitQuestion = useCallback(async (event?: FormEvent) => {
@@ -3987,12 +3973,8 @@ function AssistantPage() {
       const response = await ragApi.sendChat({
         conversationId: pendingConversationId,
         question: normalized,
-        kbIds: selectedKbIds,
-        topK,
-        returnDebug: true,
       });
       setSelectedConversationId(response.conversationId);
-      setLastRun(response);
       setMessages((current) => [
         ...current,
         {
@@ -4013,7 +3995,7 @@ function AssistantPage() {
     } finally {
       setSending(false);
     }
-  }, [loadConversations, question, selectedConversationId, selectedKbIds, sending, topK]);
+  }, [loadConversations, question, selectedConversationId, sending]);
 
   const retryLastQuestion = useCallback(() => {
     if (lastQuestionRef.current) setQuestion(lastQuestionRef.current);
@@ -4056,12 +4038,8 @@ function AssistantPage() {
             <div>
               <p className="eyebrow">RAG Chat</p>
               <h2>{activeConversationTitle}</h2>
-              <p>{selectedKbIds.length ? `已选择 ${selectedKbIds.length} 个知识库` : '未选择知识库，将按后端默认范围检索'}</p>
+              <p>普通用户会话</p>
             </div>
-            <label className="rag-topk-control">
-              Top-K
-              <input type="number" min={1} max={20} value={topK} onChange={(event) => setTopK(Number(event.target.value) || 5)} />
-            </label>
           </header>
 
           <div className="rag-thread">
@@ -4071,7 +4049,7 @@ function AssistantPage() {
               <div className="rag-empty-thread">
                 <div className="empty-icon">问</div>
                 <h3>开始一次知识库问答</h3>
-                <p>选择知识库后输入问题，页面会展示回答、引用来源和本轮检索摘要。</p>
+                <p>输入问题后，回答会在消息中附带引用来源。</p>
                 <div className="rag-suggestion-row">
                   {promptSuggestions.map((item) => (
                     <button type="button" key={item} onClick={() => setQuestion(item)}>{item}</button>
@@ -4102,18 +4080,6 @@ function AssistantPage() {
             <button className="btn btn-primary" type="submit" disabled={sending || !question.trim()}>{sending ? '发送中...' : '发送'}</button>
           </form>
         </article>
-
-        <aside className="rag-context-sidebar">
-          <RagKnowledgeSelector
-            knowledgeBases={knowledgeBases}
-            selectedKbIds={selectedKbIds}
-            onChange={setSelectedKbIds}
-            error={knowledgeError}
-          />
-          <RagCitationPanel citations={lastRun?.citations || []} />
-          <RagRetrievalPanel chunks={lastRun?.retrievedChunks || []} />
-          <RagPromptPanel prompt={lastRun?.promptPreview || null} compact />
-        </aside>
       </section>
     </AppShell>
   );
@@ -4129,9 +4095,13 @@ function RagMessageBubble({ message, displayName }: { message: RagMessage; displ
       </header>
       <p>{message.content}</p>
       {!isUser && message.citations?.length ? (
-        <div className="rag-inline-citations">
+        <div className="rag-answer-citations">
+          <strong>引用来源</strong>
           {message.citations.slice(0, 4).map((item, index) => (
-            <span key={`${item.chunkId || item.docName || index}`}>{item.docName || item.kbName || `引用 ${index + 1}`}</span>
+            <span key={`${item.chunkId || item.docName || index}`}>
+              {index + 1}. {item.docName || item.kbName || `引用 ${index + 1}`}
+              {item.score != null ? ` · ${formatScore(item.score)}` : ''}
+            </span>
           ))}
         </div>
       ) : null}

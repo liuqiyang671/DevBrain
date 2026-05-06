@@ -3024,7 +3024,7 @@ code {
 
 .rag-chat-shell {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr) 320px;
+  grid-template-columns: 260px minmax(0, 1fr);
   gap: 18px;
   align-items: stretch;
 }
@@ -3166,14 +3166,26 @@ code {
   white-space: pre-wrap;
 }
 
-.rag-inline-citations,
+.rag-answer-citations,
 .rag-suggestion-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.rag-inline-citations span {
+.rag-answer-citations {
+  align-items: center;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.rag-answer-citations strong {
+  width: 100%;
+  color: var(--text);
+  font-size: 0.86rem;
+}
+
+.rag-answer-citations span {
   border-radius: 999px;
   background: var(--primary-soft);
   color: var(--primary-strong);
