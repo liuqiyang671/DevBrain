@@ -40,6 +40,44 @@ rocketmq:
 rag:
   vector:
     type: ${RAG_VECTOR_TYPE:pg}
+  memory:
+    history-keep-turns: ${RAG_MEMORY_HISTORY_KEEP_TURNS:20}
+    summary-start-turns: ${RAG_MEMORY_SUMMARY_START_TURNS:10}
+    summary-batch-size: ${RAG_MEMORY_SUMMARY_BATCH_SIZE:100}
+    lock-wait-millis: ${RAG_MEMORY_LOCK_WAIT_MILLIS:500}
+    lock-lease-millis: ${RAG_MEMORY_LOCK_LEASE_MILLIS:300000}
+  rewrite:
+    enabled: ${RAG_REWRITE_ENABLED:true}
+    history-turns: ${RAG_REWRITE_HISTORY_TURNS:2}
+    term-mappings:
+      虚拟专用网络:
+        - VPN
+        - vpn
+      Redis:
+        - redis
+  intent:
+    min-score: ${RAG_INTENT_MIN_SCORE:0.35}
+    max-count: ${RAG_INTENT_MAX_COUNT:3}
+    ambiguity-delta: ${RAG_INTENT_AMBIGUITY_DELTA:0.08}
+    ambiguity-max-score: ${RAG_INTENT_AMBIGUITY_MAX_SCORE:0.45}
+  chat:
+    sse-timeout-millis: ${RAG_CHAT_SSE_TIMEOUT_MILLIS:300000}
+    top-k: ${RAG_CHAT_TOP_K:5}
+    rate-limit-max-requests: ${RAG_CHAT_RATE_LIMIT_MAX_REQUESTS:20}
+    rate-limit-window-seconds: ${RAG_CHAT_RATE_LIMIT_WINDOW_SECONDS:60}
+  retrieval:
+    engine-core-pool-size: ${RAG_RETRIEVAL_ENGINE_CORE_POOL_SIZE:4}
+    engine-max-pool-size: ${RAG_RETRIEVAL_ENGINE_MAX_POOL_SIZE:8}
+    engine-queue-capacity: ${RAG_RETRIEVAL_ENGINE_QUEUE_CAPACITY:500}
+    channel-core-pool-size: ${RAG_RETRIEVAL_CHANNEL_CORE_POOL_SIZE:4}
+    channel-max-pool-size: ${RAG_RETRIEVAL_CHANNEL_MAX_POOL_SIZE:8}
+    channel-queue-capacity: ${RAG_RETRIEVAL_CHANNEL_QUEUE_CAPACITY:500}
+    collection-core-pool-size: ${RAG_RETRIEVAL_COLLECTION_CORE_POOL_SIZE:6}
+    collection-max-pool-size: ${RAG_RETRIEVAL_COLLECTION_MAX_POOL_SIZE:12}
+    collection-queue-capacity: ${RAG_RETRIEVAL_COLLECTION_QUEUE_CAPACITY:1000}
+    mcp-core-pool-size: ${RAG_RETRIEVAL_MCP_CORE_POOL_SIZE:4}
+    mcp-max-pool-size: ${RAG_RETRIEVAL_MCP_MAX_POOL_SIZE:8}
+    mcp-queue-capacity: ${RAG_RETRIEVAL_MCP_QUEUE_CAPACITY:500}
   default:
     collection-name: rag_default_store
     dimension: ${RAG_DEFAULT_DIMENSION:1536}
@@ -74,8 +112,7 @@ rag:
         post-process-min-chars: 240
         post-process-max-chars: 1400
         include-metadata: true
-
-  ai:
+ai:
   providers:
     siliconflow:
       url: https://api.siliconflow.cn
@@ -97,6 +134,27 @@ rag:
         dimension: ${rag.default.dimension}
         priority: 2
         enabled: false
+  chat:
+    message-chunk-size: ${AI_CHAT_MESSAGE_CHUNK_SIZE:256}
+    default-model: ${CHAT_DEFAULT_MODEL:qwen-chat-local-9b}
+    connect-timeout-ms: ${CHAT_CONNECT_TIMEOUT_MS:30000}
+    read-timeout-ms: ${CHAT_READ_TIMEOUT_MS:1800000}
+    candidates:
+      - id: qwen-chat-local-9b
+        provider: ollama
+        model: qwen3.5:9b
+        priority: 1
+        enabled: true
+      - id: qwen-chat-local-35b
+        provider: ollama
+        model: qwen3.6:35b-a3b
+        priority: 2
+        enabled: true
+      - id: qwen-chat-siliconflow
+        provider: siliconflow
+        model: Qwen/Qwen3-32B
+        priority: 3
+        enabled: true
 
 devbrain:
   auth:

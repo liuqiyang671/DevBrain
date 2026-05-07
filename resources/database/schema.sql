@@ -607,3 +607,156 @@ ON CONFLICT (http_method, path_pattern) DO NOTHING;
 INSERT INTO t_devbrain_schema_info (version, description)
 VALUES ('12-ingestion-task', 'Ingestion pipeline task execution and node log tables')
 ON CONFLICT (version) DO NOTHING;
+
+-- ============================================================
+-- 13: 对话记忆
+-- ============================================================
+
+-- 对话会话表：记录多轮对话的会话元信息
+CREATE TABLE IF NOT EXISTS t_conversation (
+    id BIGINT PRIMARY KEY,                                   -- 雪花 ID
+    conversation_id VARCHAR(32) NOT NULL,                    -- 业务会话 ID
+    user_id VARCHAR(64) NOT NULL,                            -- 用户 ID
+    title VARCHAR(200),                                      -- 会话标题，首条问答后由 LLM 自动生成
+    last_time TIMESTAMP,                                     -- 最后活跃时间
+    create_time TIMESTAMP NOT NULL DEFAULT NOW(),            -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT NOW(),            -- 更新时间
+    CONSTRAINT uk_conversation_conversation_id UNIQUE (conversation_id)
+);
+COMMENT ON TABLE t_conversation IS '对话会话表，记录 RAG 多轮对话的会话元信息';
+COMMENT ON COLUMN t_conversation.conversation_id IS '业务会话 ID';
+COMMENT ON COLUMN t_conversation.user_id IS '用户 ID';
+COMMENT ON COLUMN t_conversation.title IS '会话标题，首条问答后由 LLM 自动生成';
+COMMENT ON COLUMN t_conversation.last_time IS '最后活跃时间';
+
+-- 对话消息表：记录用户、助手和系统消息历史
+CREATE TABLE IF NOT EXISTS t_message (
+    id BIGINT PRIMARY KEY,                                   -- 雪花 ID
+    conversation_id VARCHAR(32) NOT NULL,                    -- 业务会话 ID，关联 t_conversation.conversation_id
+    user_id VARCHAR(64) NOT NULL,                            -- 用户 ID
+    role VARCHAR(20) NOT NULL,                               -- 消息角色：user / assistant / system
+    content TEXT NOT NULL,                                   -- 消息正文
+    thinking_content TEXT,                                   -- 深度思考内容
+    thinking_duration INTEGER,                               -- 思考耗时秒数
+    create_time TIMESTAMP NOT NULL DEFAULT NOW(),            -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT NOW(),            -- 更新时间
+    CONSTRAINT ck_message_role CHECK (role IN ('user', 'assistant', 'system')),
+    CONSTRAINT ck_message_thinking_duration CHECK (thinking_duration IS NULL OR thinking_duration >= 0),
+    CONSTRAINT fk_message_conversation_id FOREIGN KEY (conversation_id) REFERENCES t_conversation (conversation_id) ON DELETE CASCADE
+);
+COMMENT ON TABLE t_message IS '对话消息表，记录 RAG 多轮对话的消息历史';
+COMMENT ON COLUMN t_message.conversation_id IS '业务会话 ID，关联 t_conversation.conversation_id';
+COMMENT ON COLUMN t_message.user_id IS '用户 ID';
+COMMENT ON COLUMN t_message.role IS '消息角色：user / assistant / system';
+COMMENT ON COLUMN t_message.content IS '消息正文';
+COMMENT ON COLUMN t_message.thinking_content IS '深度思考内容，可为空';
+COMMENT ON COLUMN t_message.thinking_duration IS '思考耗时秒数';
+
+-- 对话摘要表：保存 LLM 生成的对话摘要及摘要覆盖范围
+CREATE TABLE IF NOT EXISTS t_conversation_summary (
+    id BIGINT PRIMARY KEY,                                   -- 雪花 ID
+    conversation_id VARCHAR(32) NOT NULL,                    -- 业务会话 ID
+    user_id VARCHAR(64) NOT NULL,                            -- 用户 ID
+    summary TEXT NOT NULL,                                   -- LLM 生成的对话摘要
+    message_count INTEGER,                                   -- 摘要覆盖的消息数
+    last_summarized_message_id BIGINT,                       -- 最后一条被摘要覆盖的消息 ID
+    create_time TIMESTAMP NOT NULL DEFAULT NOW(),            -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT NOW(),            -- 更新时间
+    CONSTRAINT uk_conversation_summary_conversation_id UNIQUE (conversation_id),
+    CONSTRAINT ck_conversation_summary_message_count CHECK (message_count IS NULL OR message_count >= 0),
+    CONSTRAINT fk_conversation_summary_conversation_id FOREIGN KEY (conversation_id) REFERENCES t_conversation (conversation_id) ON DELETE CASCADE
+);
+COMMENT ON TABLE t_conversation_summary IS '对话摘要表，保存 LLM 生成的对话摘要及摘要覆盖范围';
+COMMENT ON COLUMN t_conversation_summary.conversation_id IS '业务会话 ID，关联 t_conversation.conversation_id';
+COMMENT ON COLUMN t_conversation_summary.user_id IS '用户 ID';
+COMMENT ON COLUMN t_conversation_summary.summary IS 'LLM 生成的对话摘要';
+COMMENT ON COLUMN t_conversation_summary.message_count IS '摘要覆盖的消息数';
+COMMENT ON COLUMN t_conversation_summary.last_summarized_message_id IS '最后一条被摘要覆盖的消息 ID';
+
+CREATE INDEX IF NOT EXISTS idx_message_conversation ON t_message (conversation_id, create_time);
+CREATE INDEX IF NOT EXISTS idx_message_user ON t_message (user_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_user ON t_conversation (user_id, last_time);
+
+INSERT INTO t_devbrain_schema_info (version, description)
+VALUES ('13-conversation-memory', 'Conversation session, message history, and LLM summary tables')
+ON CONFLICT (version) DO NOTHING;
+
+-- ============================================================
+-- 14: 意图路由
+-- ============================================================
+
+-- 意图节点表：存储 RAG 意图路由树的节点定义
+CREATE TABLE IF NOT EXISTS t_intent_node (
+    id VARCHAR(32) PRIMARY KEY,                               -- 节点唯一标识
+    parent_id VARCHAR(32),                                    -- 父节点 ID，根节点为空
+    name VARCHAR(64) NOT NULL,                                -- 节点名称
+    kind VARCHAR(16) NOT NULL,                                -- 节点类型：KB / MCP / SYSTEM
+    description VARCHAR(256),                                 -- 节点描述
+    collection_name VARCHAR(64),                              -- 向量集合名称，KB 类型节点使用
+    mcp_tool_id VARCHAR(64),                                  -- MCP 工具 ID，MCP 类型节点使用
+    prompt_template TEXT,                                     -- 自定义提示词模板
+    param_prompt_template TEXT,                               -- 参数化提示词模板
+    top_k INTEGER,                                            -- 检索 top-k 数量
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 更新时间
+    deleted SMALLINT NOT NULL DEFAULT 0,                      -- 逻辑删除标记，0 未删除，1 已删除
+    CONSTRAINT fk_intent_node_parent_id FOREIGN KEY (parent_id) REFERENCES t_intent_node (id)
+);
+COMMENT ON TABLE t_intent_node IS '意图节点表，存储 RAG 意图路由树的节点定义';
+COMMENT ON COLUMN t_intent_node.parent_id IS '父节点 ID，根节点为空';
+COMMENT ON COLUMN t_intent_node.name IS '节点名称';
+COMMENT ON COLUMN t_intent_node.kind IS '节点类型：KB / MCP / SYSTEM';
+COMMENT ON COLUMN t_intent_node.description IS '节点描述';
+COMMENT ON COLUMN t_intent_node.collection_name IS '向量集合名称，KB 类型节点使用';
+COMMENT ON COLUMN t_intent_node.mcp_tool_id IS 'MCP 工具 ID，MCP 类型节点使用';
+COMMENT ON COLUMN t_intent_node.prompt_template IS '自定义提示词模板';
+COMMENT ON COLUMN t_intent_node.param_prompt_template IS '参数化提示词模板';
+COMMENT ON COLUMN t_intent_node.top_k IS '检索 top-k 数量';
+CREATE INDEX IF NOT EXISTS idx_intent_node_parent_id ON t_intent_node (parent_id);
+CREATE INDEX IF NOT EXISTS idx_intent_node_kind ON t_intent_node (kind);
+
+INSERT INTO t_devbrain_schema_info (version, description)
+VALUES ('14-intent-routing', 'Intent node table for RAG intent routing tree')
+ON CONFLICT (version) DO NOTHING;
+
+-- ============================================================
+-- 15: 查询术语映射
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS t_query_term_mapping (
+    id VARCHAR(20) PRIMARY KEY,                              -- 雪花 ID
+    domain VARCHAR(64),                                      -- 所属领域，如 HR / IT / finance
+    source_term VARCHAR(128) NOT NULL,                       -- 源词，如 OA / 年假
+    target_term VARCHAR(128) NOT NULL,                       -- 目标词，如 OA系统 / 年休假
+    match_type SMALLINT NOT NULL DEFAULT 1,                  -- 1 精确匹配，2 前缀匹配，3 正则匹配，4 全词匹配
+    priority INTEGER NOT NULL DEFAULT 100,                   -- 优先级，数值越大越先匹配
+    enabled SMALLINT NOT NULL DEFAULT 1,                     -- 是否启用：1 启用，0 禁用
+    remark VARCHAR(255),                                    -- 备注
+    create_by VARCHAR(20),                                  -- 创建人用户 ID
+    update_by VARCHAR(20),                                  -- 最近更新人用户 ID
+    create_time TIMESTAMP NOT NULL DEFAULT NOW(),            -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT NOW(),            -- 更新时间
+    deleted SMALLINT NOT NULL DEFAULT 0,                     -- 逻辑删除标记，0 未删除，1 已删除
+    CONSTRAINT ck_query_term_mapping_match_type CHECK (match_type IN (1, 2, 3, 4)),
+    CONSTRAINT ck_query_term_mapping_enabled CHECK (enabled IN (0, 1)),
+    CONSTRAINT ck_query_term_mapping_deleted CHECK (deleted IN (0, 1))
+);
+
+COMMENT ON TABLE t_query_term_mapping IS '查询术语映射表，用于将用户口语或别名归一化为标准术语';
+COMMENT ON COLUMN t_query_term_mapping.domain IS '所属领域，如 HR、IT、finance';
+COMMENT ON COLUMN t_query_term_mapping.source_term IS '源词，如 OA、年假';
+COMMENT ON COLUMN t_query_term_mapping.target_term IS '目标词，如 OA系统、年休假';
+COMMENT ON COLUMN t_query_term_mapping.match_type IS '匹配方式：1 精确匹配，2 前缀匹配，3 正则匹配，4 全词匹配';
+COMMENT ON COLUMN t_query_term_mapping.priority IS '优先级，数值越大越先匹配';
+COMMENT ON COLUMN t_query_term_mapping.enabled IS '是否启用：1 启用，0 禁用';
+COMMENT ON COLUMN t_query_term_mapping.remark IS '备注';
+COMMENT ON COLUMN t_query_term_mapping.create_by IS '创建人用户 ID';
+COMMENT ON COLUMN t_query_term_mapping.update_by IS '最近更新人用户 ID';
+COMMENT ON COLUMN t_query_term_mapping.deleted IS '逻辑删除标记，0 未删除，1 已删除';
+
+CREATE INDEX IF NOT EXISTS idx_qtm_domain ON t_query_term_mapping (domain);
+CREATE INDEX IF NOT EXISTS idx_qtm_source ON t_query_term_mapping (source_term);
+
+INSERT INTO t_devbrain_schema_info (version, description)
+VALUES ('15-query-term-mapping', 'Query term mapping table for query normalization')
+ON CONFLICT (version) DO NOTHING;

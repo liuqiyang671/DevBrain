@@ -471,6 +471,9 @@ export interface RagMessage {
   retrievedChunks?: RagRetrievedChunk[];
   promptPreview?: RagPromptPreview | null;
   createTime?: string | null;
+  streaming?: boolean;
+  cancelled?: boolean;
+  errorMessage?: string | null;
 }
 
 /** RAG 会话详情 */
@@ -484,38 +487,28 @@ export interface RagConversationDetail {
 export interface RagChatRequest {
   conversationId?: string | null;
   question: string;
-  kbIds?: string[];
-  topK?: number;
-  returnDebug?: boolean;
+  deepThinking?: boolean;
 }
 
-/** 前台 RAG 问答响应 */
-export interface RagChatResponse {
+/** RAG SSE meta 事件 */
+export interface RagSseMetaPayload {
   conversationId: string;
+  taskId: string;
+}
+
+/** RAG SSE message 增量事件 */
+export interface RagSseMessageDelta {
+  type: 'think' | 'response' | string;
+  content: string;
+}
+
+/** RAG SSE finish 事件 */
+export interface RagSseCompletionPayload {
   messageId?: string | null;
-  answer: string;
-  citations: RagCitation[];
-  retrievedChunks?: RagRetrievedChunk[];
-  promptPreview?: RagPromptPreview | null;
-  traceSteps?: RagTraceStep[];
+  title?: string | null;
 }
 
-/** 后台 RAG 调试运行请求 */
-export interface RagDebugRunRequest {
-  question: string;
-  kbIds?: string[];
-  topK: number;
-  returnPrompt: boolean;
-}
-
-/** 后台 RAG 调试运行结果 */
-export interface RagDebugRunResult {
-  runId?: string | null;
-  answer?: string | null;
-  citations: RagCitation[];
-  retrievedChunks: RagRetrievedChunk[];
-  promptPreview?: RagPromptPreview | null;
-  traceSteps: RagTraceStep[];
-  errorMessage?: string | null;
-  createTime?: string | null;
+/** RAG SSE error/cancel 事件 */
+export interface RagSseErrorPayload {
+  message?: string | null;
 }

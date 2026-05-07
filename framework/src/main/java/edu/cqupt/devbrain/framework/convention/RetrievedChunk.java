@@ -30,8 +30,19 @@ public class RetrievedChunk {
     private String text;
 
     /**
+     * 内容哈希，用于跨通道去重。
+     */
+    private String contentHash;
+
+    /**
      * 命中得分
      * 数值越大表示与查询的相关性越高
      */
     private Float score;
+
+    public RetrievedChunk(String id, String text, Float score) {
+        this.id = id;
+        this.text = text;
+        this.score = score;
+    }
 }

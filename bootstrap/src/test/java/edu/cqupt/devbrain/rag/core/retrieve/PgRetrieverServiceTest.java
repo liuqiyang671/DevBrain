@@ -61,7 +61,7 @@ class PgRetrieverServiceTest {
         verify(jdbcTemplate).execute("SET LOCAL hnsw.ef_search = 200");
 
         String sql = sqlCaptor.getValue();
-        assertTrue(sql.contains("SELECT id, content, 1 - (embedding <=> ?::vector) AS score"));
+        assertTrue(sql.contains("SELECT id, content, metadata ->> 'content_hash' AS content_hash"));
         assertTrue(sql.contains("FROM t_knowledge_vector"));
         assertTrue(sql.contains("WHERE collection_name = ?"));
         assertTrue(sql.contains("ORDER BY embedding <=> ?::vector"));
@@ -128,12 +128,14 @@ class PgRetrieverServiceTest {
         ResultSet rs = mock(ResultSet.class);
         when(rs.getString("id")).thenReturn("chunk-1");
         when(rs.getString("content")).thenReturn("命中文本");
+        when(rs.getString("content_hash")).thenReturn("hash-1");
         when(rs.getFloat("score")).thenReturn(0.88f);
 
         RetrievedChunk chunk = mapperCaptor.getValue().mapRow(rs, 0);
 
         assertEquals("chunk-1", chunk.getId());
         assertEquals("命中文本", chunk.getText());
+        assertEquals("hash-1", chunk.getContentHash());
         assertEquals(0.88f, chunk.getScore());
     }
 

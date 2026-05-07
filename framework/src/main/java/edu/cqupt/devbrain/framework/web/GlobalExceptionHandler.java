@@ -6,6 +6,7 @@ import edu.cqupt.devbrain.framework.exception.AbstractException;
 import edu.cqupt.devbrain.framework.exception.ClientException;
 import edu.cqupt.devbrain.framework.exception.ServiceException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,12 +36,17 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private static final String SSE_CONTENT_TYPE = "text/event-stream";
 
     /**
      * 拦截客户端异常（{@link ClientException}），返回 HTTP 400。
      */
     @ExceptionHandler(ClientException.class)
-    public ResponseEntity<Result<Void>> clientException(HttpServletRequest request, ClientException ex) {
+    public ResponseEntity<Result<Void>> clientException(HttpServletRequest request, HttpServletResponse response, ClientException ex) {
+        if (isSseResponse(response)) {
+            log.warn("[{}] {} [client/SSE] {}", request.getMethod(), request.getRequestURI(), ex.errorMessage);
+            return null;
+        }
         log.warn("[{}] {} [client] {}", request.getMethod(), request.getRequestURI(), ex.errorMessage);
         return ResponseEntity.status(ex.getHttpStatus())
                 .body(Results.failure(ex.errorCode, ex.errorMessage));
@@ -50,7 +56,11 @@ public class GlobalExceptionHandler {
      * 拦截服务端异常（{@link ServiceException}），返回 HTTP 500。
      */
     @ExceptionHandler(ServiceException.class)
-    public ResponseEntity<Result<Void>> serviceException(HttpServletRequest request, ServiceException ex) {
+    public ResponseEntity<Result<Void>> serviceException(HttpServletRequest request, HttpServletResponse response, ServiceException ex) {
+        if (isSseResponse(response)) {
+            log.error("[{}] {} [service/SSE] {}", request.getMethod(), request.getRequestURI(), ex.errorMessage);
+            return null;
+        }
         log.error("[{}] {} [service] {}", request.getMethod(), request.getRequestURI(), ex.errorMessage);
         return ResponseEntity.status(ex.getHttpStatus())
                 .body(Results.failure(ex.errorCode, ex.errorMessage));
@@ -60,7 +70,11 @@ public class GlobalExceptionHandler {
      * 拦截抽象异常体系中的所有异常（{@link AbstractException}），返回 HTTP 500。
      */
     @ExceptionHandler(AbstractException.class)
-    public ResponseEntity<Result<Void>> abstractException(HttpServletRequest request, AbstractException ex) {
+    public ResponseEntity<Result<Void>> abstractException(HttpServletRequest request, HttpServletResponse response, AbstractException ex) {
+        if (isSseResponse(response)) {
+            log.error("[{}] {} [ex/SSE] {}", request.getMethod(), request.getRequestURI(), ex.errorMessage);
+            return null;
+        }
         if (ex.getCause() != null) {
             log.error("[{}] {} [ex] {}", request.getMethod(), request.getRequestURI(), ex, ex.getCause());
         } else {
@@ -94,9 +108,30 @@ public class GlobalExceptionHandler {
      * <p>返回通用错误提示"系统异常，请稍后重试"，避免泄露内部实现细节。</p>
      */
     @ExceptionHandler(Throwable.class)
-    public ResponseEntity<Result<Void>> throwable(HttpServletRequest request, Throwable ex) {
+    public ResponseEntity<Result<Void>> throwable(HttpServletRequest request, HttpServletResponse response, Throwable ex) {
+        if (isSseResponse(response)) {
+            log.error("[{}] {} [SSE] failed", request.getMethod(), request.getRequestURI(), ex);
+            return null;
+        }
         log.error("[{}] {} failed", request.getMethod(), request.getRequestURI(), ex);
         return ResponseEntity.internalServerError()
                 .body(Results.failure(BaseErrorCode.SERVICE_ERROR.code(), "系统异常，请稍后重试"));
+    }
+
+    /**
+     * 判断当前响应是否已处于 SSE（text/event-stream）模式。
+     * <p>
+     * SSE 端点返回的 {@link org.springframework.web.servlet.mvc.method.annotation.SseEmitter}
+     * 会在首次写入时将响应 Content-Type 锁定为 {@code text/event-stream}。
+     * 此时若尝试以 JSON 格式写入 {@link Result}，Spring 的消息转换器找不到匹配的
+     * converter，会抛出 {@code HttpMessageNotWritableException}。
+     * 检测到 SSE 响应后应跳过 JSON 格式化，避免二次异常。
+     */
+    private boolean isSseResponse(HttpServletResponse response) {
+        if (response == null) {
+            return false;
+        }
+        String contentType = response.getContentType();
+        return contentType != null && contentType.startsWith(SSE_CONTENT_TYPE);
     }
 }

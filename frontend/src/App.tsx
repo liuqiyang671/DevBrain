@@ -29,7 +29,6 @@ import type {
   PermissionItem,
   RagCitation,
   RagConversationSummary,
-  RagDebugRunResult,
   RagMessage,
   RagPromptPreview,
   RagRetrievedChunk,
@@ -314,6 +313,10 @@ const chunkStrategyOptions: Array<{ value: ChunkStrategyMode; label: string; hin
 ];
 /** 文档版本记录的 localStorage 存储键 */
 const documentVersionStoreKey = 'devbrain.documentVersions.v1';
+/** RAG 本地会话摘要缓存键；后端会话列表接口补齐后可替换为服务端数据。 */
+const ragConversationStoreKey = 'devbrain.rag.conversations.v1';
+/** RAG 本地会话消息缓存键；用于当前浏览器展示历史会话。 */
+const ragMessageStoreKey = 'devbrain.rag.messages.v1';
 
 /** 前台侧边栏菜单配置 */
 const frontMenuItems: ShellMenuItem[] = [
@@ -3409,6 +3412,61 @@ function appendLocalDocumentVersion(version: LocalDocumentVersion) {
   }
 }
 
+function readLocalRagConversations(): RagConversationSummary[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(ragConversationStoreKey);
+    const parsed = raw ? JSON.parse(raw) as RagConversationSummary[] : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed;
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalRagConversations(items: RagConversationSummary[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(ragConversationStoreKey, JSON.stringify(items.slice(0, 50)));
+  } catch {
+    // Local RAG history is a convenience cache; the streaming answer remains the source of truth.
+  }
+}
+
+function readLocalRagMessages(conversationId: string): RagMessage[] {
+  if (typeof window === 'undefined' || !conversationId) return [];
+  try {
+    const raw = window.localStorage.getItem(ragMessageStoreKey);
+    const parsed = raw ? JSON.parse(raw) as Record<string, RagMessage[]> : {};
+    const messages = parsed?.[conversationId];
+    return Array.isArray(messages) ? messages : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalRagMessages(conversationId: string, messages: RagMessage[]) {
+  if (typeof window === 'undefined' || !conversationId) return;
+  try {
+    const raw = window.localStorage.getItem(ragMessageStoreKey);
+    const parsed = raw ? JSON.parse(raw) as Record<string, RagMessage[]> : {};
+    const next = { ...(parsed || {}), [conversationId]: messages.slice(-80) };
+    window.localStorage.setItem(ragMessageStoreKey, JSON.stringify(next));
+  } catch {
+    // Local RAG history is best-effort only.
+  }
+}
+
+function upsertLocalRagConversation(summary: RagConversationSummary) {
+  const current = readLocalRagConversations();
+  const next = [
+    summary,
+    ...current.filter((item) => item.conversationId !== summary.conversationId),
+  ].sort((left, right) => new Date(right.lastTime || 0).getTime() - new Date(left.lastTime || 0).getTime());
+  writeLocalRagConversations(next);
+  return next;
+}
+
 /**
  * 构建定时同步 Cron 表达式
  * 根据频率、时间、星期几、月几号生成 Quartz 格式的 Cron 表达式
@@ -3907,60 +3965,102 @@ function AssistantPage() {
   const [loadingConversations, setLoadingConversations] = useState(false);
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [sending, setSending] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [conversationError, setConversationError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const lastQuestionRef = useRef('');
+  const activeMessagesRef = useRef<RagMessage[]>([]);
+  const streamRef = useRef<EventSource | null>(null);
+  const assistantMessageIdRef = useRef<string | null>(null);
+  const threadRef = useRef<HTMLDivElement | null>(null);
 
-  const loadConversations = useCallback(async () => {
+  const setVisibleMessages = useCallback((next: RagMessage[]) => {
+    activeMessagesRef.current = next;
+    setMessages(next);
+  }, []);
+
+  const persistConversation = useCallback((conversationId: string, nextMessages: RagMessage[], title?: string | null) => {
+    const userMessages = nextMessages.filter((item) => item.role === 'user');
+    const assistantMessages = nextMessages.filter((item) => item.role === 'assistant');
+    const lastMessage = nextMessages[nextMessages.length - 1];
+    const lastQuestion = userMessages[userMessages.length - 1]?.content || null;
+    const summaries = upsertLocalRagConversation({
+      conversationId,
+      title: title || lastQuestion || '未命名会话',
+      lastQuestion,
+      lastAnswer: assistantMessages[assistantMessages.length - 1]?.content || null,
+      lastTime: lastMessage?.createTime || new Date().toISOString(),
+      messageCount: nextMessages.length,
+    });
+    writeLocalRagMessages(conversationId, nextMessages);
+    setConversations(summaries);
+  }, []);
+
+  const finishStream = useCallback(() => {
+    streamRef.current?.close();
+    streamRef.current = null;
+    assistantMessageIdRef.current = null;
+    setSending(false);
+    setStopping(false);
+    setActiveTaskId(null);
+  }, []);
+
+  const loadConversations = useCallback(() => {
     setLoadingConversations(true);
     setConversationError(null);
-    try {
-      const items = await ragApi.getConversations();
-      setConversations(items);
-    } catch (error) {
-      setConversationError(getErrorMessage(error));
-    } finally {
-      setLoadingConversations(false);
-    }
+    setConversations(readLocalRagConversations());
+    setLoadingConversations(false);
   }, []);
 
   useEffect(() => {
     loadConversations();
+    return () => {
+      streamRef.current?.close();
+    };
   }, [loadConversations]);
 
+  useEffect(() => {
+    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' });
+  }, [messages, sending]);
+
   const openConversation = useCallback(async (conversationId: string) => {
+    if (sending) return;
     setSelectedConversationId(conversationId);
     setLoadingConversation(true);
     setSendError(null);
-    try {
-      const detail = await ragApi.getConversation(conversationId);
-      setMessages(detail.messages);
-    } catch (error) {
-      setSendError(getErrorMessage(error));
-    } finally {
-      setLoadingConversation(false);
+    const cached = readLocalRagMessages(conversationId);
+    setVisibleMessages(cached);
+    if (cached.length === 0) {
+      setSendError('当前浏览器没有缓存这次会话的消息。');
     }
-  }, []);
+    setLoadingConversation(false);
+  }, [sending, setVisibleMessages]);
 
   const startNewConversation = useCallback(() => {
+    if (sending) return;
     setSelectedConversationId(null);
-    setMessages([]);
+    setVisibleMessages([]);
     setQuestion('');
     setSendError(null);
-  }, []);
+  }, [sending, setVisibleMessages]);
 
   const submitQuestion = useCallback(async (event?: FormEvent) => {
     event?.preventDefault();
     const normalized = question.trim();
     if (!normalized || sending) return;
     const clientMessageId = `local-user-${Date.now()}`;
+    const assistantMessageId = `local-assistant-${Date.now()}`;
     const pendingConversationId = selectedConversationId;
     lastQuestionRef.current = normalized;
+    assistantMessageIdRef.current = assistantMessageId;
     setSending(true);
+    setStopping(false);
+    setActiveTaskId(null);
     setSendError(null);
     setQuestion('');
-    setMessages((current) => [
-      ...current,
+    const initialMessages = [
+      ...activeMessagesRef.current,
       {
         id: clientMessageId,
         conversationId: pendingConversationId,
@@ -3968,34 +4068,114 @@ function AssistantPage() {
         content: normalized,
         createTime: new Date().toISOString(),
       },
-    ]);
+      {
+        id: assistantMessageId,
+        conversationId: pendingConversationId,
+        role: 'assistant',
+        content: '',
+        thinkingContent: '',
+        streaming: true,
+        createTime: new Date().toISOString(),
+      },
+    ] satisfies RagMessage[];
+    setVisibleMessages(initialMessages);
     try {
-      const response = await ragApi.sendChat({
+      streamRef.current?.close();
+      streamRef.current = ragApi.streamChat({
         conversationId: pendingConversationId,
         question: normalized,
-      });
-      setSelectedConversationId(response.conversationId);
-      setMessages((current) => [
-        ...current,
-        {
-          id: response.messageId || `local-assistant-${Date.now()}`,
-          conversationId: response.conversationId,
-          role: 'assistant',
-          content: response.answer,
-          citations: response.citations,
-          retrievedChunks: response.retrievedChunks,
-          promptPreview: response.promptPreview,
-          createTime: new Date().toISOString(),
+        deepThinking: false,
+      }, {
+        onMeta: (payload) => {
+          setActiveTaskId(payload.taskId);
+          setSelectedConversationId(payload.conversationId);
+          const next = activeMessagesRef.current.map((message) => (
+            message.id === clientMessageId || message.id === assistantMessageId
+              ? { ...message, conversationId: payload.conversationId }
+              : message
+          ));
+          setVisibleMessages(next);
+          persistConversation(payload.conversationId, next, normalized);
         },
-      ]);
-      loadConversations();
+        onMessage: (payload) => {
+          const targetId = assistantMessageIdRef.current;
+          if (!targetId) return;
+          const next = activeMessagesRef.current.map((message) => {
+            if (message.id !== targetId) return message;
+            if (payload.type === 'think') {
+              return { ...message, thinkingContent: `${message.thinkingContent || ''}${payload.content || ''}` };
+            }
+            return { ...message, content: `${message.content || ''}${payload.content || ''}` };
+          });
+          setVisibleMessages(next);
+          const conversationId = next.find((item) => item.id === targetId)?.conversationId;
+          if (conversationId) persistConversation(conversationId, next, normalized);
+        },
+        onFinish: (payload) => {
+          const targetId = assistantMessageIdRef.current;
+          if (!targetId) return;
+          const next = activeMessagesRef.current.map((message) => (
+            message.id === targetId
+              ? { ...message, id: payload.messageId || message.id, streaming: false }
+              : message
+          ));
+          setVisibleMessages(next);
+          const conversationId = next.find((item) => item.id === (payload.messageId || targetId))?.conversationId;
+          if (conversationId) persistConversation(conversationId, next, payload.title || normalized);
+        },
+        onDone: () => {
+          finishStream();
+          loadConversations();
+        },
+        onCancel: () => {
+          const targetId = assistantMessageIdRef.current;
+          if (targetId) {
+            const next = activeMessagesRef.current.map((message) => (
+              message.id === targetId
+                ? { ...message, content: message.content || '已停止生成。', streaming: false, cancelled: true }
+                : message
+            ));
+            setVisibleMessages(next);
+            const conversationId = next.find((item) => item.id === targetId)?.conversationId;
+            if (conversationId) persistConversation(conversationId, next, normalized);
+          }
+          finishStream();
+          loadConversations();
+        },
+        onError: (error) => {
+          const targetId = assistantMessageIdRef.current;
+          if (targetId) {
+            const next = activeMessagesRef.current.map((message) => (
+              message.id === targetId
+                ? { ...message, content: message.content || '生成失败，请稍后重试。', streaming: false, errorMessage: error.message }
+                : message
+            ));
+            setVisibleMessages(next);
+          }
+          setQuestion(normalized);
+          setSendError(error.message);
+          finishStream();
+        },
+      });
     } catch (error) {
       setQuestion(normalized);
       setSendError(getErrorMessage(error));
+      finishStream();
     } finally {
-      setSending(false);
     }
-  }, [loadConversations, question, selectedConversationId, sending]);
+  }, [finishStream, loadConversations, persistConversation, question, selectedConversationId, sending, setVisibleMessages]);
+
+  const stopCurrentGeneration = useCallback(async () => {
+    if (!activeTaskId || stopping) return;
+    setStopping(true);
+    setSendError(null);
+    try {
+      await ragApi.stopChat(activeTaskId);
+    } catch (error) {
+      setStopping(false);
+      setSendError(getErrorMessage(error));
+    }
+  }, [activeTaskId, stopping]);
 
   const retryLastQuestion = useCallback(() => {
     if (lastQuestionRef.current) setQuestion(lastQuestionRef.current);
@@ -4008,7 +4188,7 @@ function AssistantPage() {
     <AppShell>
       <section className="rag-chat-shell">
         <aside className="rag-session-sidebar card">
-          <button className="btn btn-primary" type="button" onClick={startNewConversation}>新建会话</button>
+          <button className="btn btn-primary" type="button" onClick={startNewConversation} disabled={sending}>新建会话</button>
           <div className="rag-sidebar-title">
             <h3>历史会话</h3>
             <button className="btn-text" type="button" onClick={loadConversations} disabled={loadingConversations}>刷新</button>
@@ -4018,12 +4198,13 @@ function AssistantPage() {
             {loadingConversations ? (
               <div className="empty-state compact">正在加载会话...</div>
             ) : conversations.length === 0 ? (
-              <div className="empty-state compact">暂无会话</div>
+              <div className="empty-state compact">暂无本地会话</div>
             ) : conversations.map((item) => (
               <button
                 className={item.conversationId === selectedConversationId ? 'rag-session active' : 'rag-session'}
                 type="button"
                 key={item.conversationId}
+                disabled={sending}
                 onClick={() => openConversation(item.conversationId)}
               >
                 <strong>{item.title || item.lastQuestion || '未命名会话'}</strong>
@@ -4042,14 +4223,14 @@ function AssistantPage() {
             </div>
           </header>
 
-          <div className="rag-thread">
+          <div className="rag-thread" ref={threadRef}>
             {loadingConversation ? (
               <div className="empty-state">正在同步会话消息...</div>
             ) : messages.length === 0 ? (
               <div className="rag-empty-thread">
                 <div className="empty-icon">问</div>
                 <h3>开始一次知识库问答</h3>
-                <p>输入问题后，回答会在消息中附带引用来源。</p>
+                <p>输入问题后，后端会通过流式接口生成回答。</p>
                 <div className="rag-suggestion-row">
                   {promptSuggestions.map((item) => (
                     <button type="button" key={item} onClick={() => setQuestion(item)}>{item}</button>
@@ -4077,7 +4258,13 @@ function AssistantPage() {
               onChange={(event) => setQuestion(event.target.value)}
               disabled={sending}
             />
-            <button className="btn btn-primary" type="submit" disabled={sending || !question.trim()}>{sending ? '发送中...' : '发送'}</button>
+            {sending ? (
+              <button className="btn btn-light" type="button" onClick={stopCurrentGeneration} disabled={!activeTaskId || stopping}>
+                {stopping ? '停止中...' : '停止'}
+              </button>
+            ) : (
+              <button className="btn btn-primary" type="submit" disabled={!question.trim()}>发送</button>
+            )}
           </form>
         </article>
       </section>
@@ -4093,7 +4280,16 @@ function RagMessageBubble({ message, displayName }: { message: RagMessage; displ
         <strong>{isUser ? displayName : 'DevBrain Assistant'}</strong>
         <span>{formatShortDate(message.createTime)}</span>
       </header>
-      <p>{message.content}</p>
+      {!isUser && message.thinkingContent ? (
+        <details className="rag-thinking-block">
+          <summary>思考过程</summary>
+          <p>{message.thinkingContent}</p>
+        </details>
+      ) : null}
+      <p>{message.content || (message.streaming ? '正在生成...' : '')}</p>
+      {!isUser && message.streaming ? <span className="rag-streaming-indicator">流式生成中</span> : null}
+      {!isUser && message.cancelled ? <span className="rag-status-pill">已停止</span> : null}
+      {!isUser && message.errorMessage ? <span className="rag-status-pill danger">{message.errorMessage}</span> : null}
       {!isUser && message.citations?.length ? (
         <div className="rag-answer-citations">
           <strong>引用来源</strong>
@@ -5438,10 +5634,7 @@ function AdminQaPage() {
   const [topK, setTopK] = useState(5);
   const [returnPrompt, setReturnPrompt] = useState(true);
   const [loadingKb, setLoadingKb] = useState(false);
-  const [running, setRunning] = useState(false);
   const [kbError, setKbError] = useState<string | null>(null);
-  const [runError, setRunError] = useState<string | null>(null);
-  const [result, setResult] = useState<RagDebugRunResult | null>(null);
 
   useEffect(() => {
     setLoadingKb(true);
@@ -5454,25 +5647,8 @@ function AdminQaPage() {
       .finally(() => setLoadingKb(false));
   }, []);
 
-  async function run(event: FormEvent) {
+  function run(event: FormEvent) {
     event.preventDefault();
-    const normalized = question.trim();
-    if (!normalized || running) return;
-    setRunning(true);
-    setRunError(null);
-    try {
-      const next = await ragApi.runDebug({
-        question: normalized,
-        kbIds: selectedKbIds,
-        topK,
-        returnPrompt,
-      });
-      setResult(next);
-    } catch (error) {
-      setRunError(getErrorMessage(error));
-    } finally {
-      setRunning(false);
-    }
   }
 
   return (
@@ -5496,10 +5672,9 @@ function AdminQaPage() {
                 <input type="checkbox" checked={returnPrompt} onChange={(event) => setReturnPrompt(event.target.checked)} />
                 返回 Prompt
               </label>
-              <button className="btn btn-primary" type="submit" disabled={running || !question.trim()}>{running ? '运行中...' : '运行调试'}</button>
+              <button className="btn btn-primary" type="submit" disabled>调试接口未开放</button>
             </div>
             {kbError && <p className="rag-error-text">{kbError}</p>}
-            {runError && <div className="rag-error-card"><strong>调试请求失败</strong><p>{runError}</p></div>}
             <RagKnowledgeSelector
               knowledgeBases={knowledgeBases}
               selectedKbIds={selectedKbIds}
@@ -5508,18 +5683,18 @@ function AdminQaPage() {
             />
           </form>
 
-          <RagTraceOverview steps={result?.traceSteps || []} running={running} />
+          <RagTraceOverview steps={[]} running={false} />
 
           <section className="rag-debug-grid">
             <article className="card rag-debug-main">
               <div className="card-title"><h3>检索结果</h3></div>
-              <RagDebugRetrievalTable chunks={result?.retrievedChunks || []} />
+              <RagDebugRetrievalTable chunks={[]} />
             </article>
-            <RagPromptPanel prompt={result?.promptPreview || null} />
+            <RagPromptPanel prompt={null} />
             <article className="card rag-answer-card">
               <div className="card-title"><h3>最终回答</h3></div>
-              {result?.answer ? <p>{result.answer}</p> : <div className="empty-state compact">运行调试后显示回答。</div>}
-              <RagCitationPanel citations={result?.citations || []} />
+              <div className="empty-state compact">当前后端仅开放普通用户流式问答和停止生成接口。</div>
+              <RagCitationPanel citations={[]} />
             </article>
           </section>
         </section>

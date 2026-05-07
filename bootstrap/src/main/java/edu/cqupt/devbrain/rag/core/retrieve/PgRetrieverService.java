@@ -23,7 +23,7 @@ import java.util.List;
 public class PgRetrieverService implements RetrieverService {
 
     private static final String RETRIEVE_SQL = """
-            SELECT id, content, 1 - (embedding <=> ?::vector) AS score
+            SELECT id, content, metadata ->> 'content_hash' AS content_hash, 1 - (embedding <=> ?::vector) AS score
               FROM t_knowledge_vector
              WHERE collection_name = ?
              ORDER BY embedding <=> ?::vector
@@ -60,6 +60,7 @@ public class PgRetrieverService implements RetrieverService {
                 (rs, rowNum) -> RetrievedChunk.builder()
                         .id(rs.getString("id"))
                         .text(rs.getString("content"))
+                        .contentHash(rs.getString("content_hash"))
                         .score(rs.getFloat("score"))
                         .build(),
                 vectorLiteral,

@@ -33,7 +33,9 @@ import org.springframework.context.annotation.Bean;
         "edu.cqupt.devbrain.user.dao.mapper",
         "edu.cqupt.devbrain.knowledge.dao.mapper",
         "edu.cqupt.devbrain.sync.dao.mapper",
-        "edu.cqupt.devbrain.ingestion.dao.mapper"
+        "edu.cqupt.devbrain.ingestion.dao.mapper",
+        "edu.cqupt.devbrain.rag.core.intent.dao.mapper",
+        "edu.cqupt.devbrain.rag.core.rewrite.dao.mapper"
 })
 @EnableConfigurationProperties({
         AuthSecurityProperties.class,

@@ -22,6 +22,9 @@ public class AIModelProperties {
     /** 嵌入模型组配置，包含默认模型和可降级的候选模型。 */
     private ModelGroup embedding = new ModelGroup();
 
+    /** 聊天模型运行配置。 */
+    private ChatProperties chat = new ChatProperties();
+
     /**
      * AI 提供商配置，负责保存连接入口和端点信息。
      */
@@ -77,5 +80,27 @@ public class AIModelProperties {
 
         /** 是否启用该候选项；默认启用，便于 YAML 示例保持简洁。 */
         private boolean enabled = true;
+    }
+
+    /**
+     * 聊天模型配置，包含候选模型池和超时策略。
+     */
+    @Data
+    public static class ChatProperties {
+
+        /** SSE message 事件分片大小，按 Unicode code point 计数。 */
+        private int messageChunkSize = 256;
+
+        /** 默认模型 ID，对应 candidates 中的 id。 */
+        private String defaultModel;
+
+        /** 候选模型列表，按 priority 从小到大尝试。 */
+        private List<ModelCandidate> candidates = List.of();
+
+        /** HTTP 连接超时（毫秒）。 */
+        private int connectTimeoutMs = 30_000;
+
+        /** HTTP 读取超时（毫秒）；SSE 长连接建议设较大值。 */
+        private int readTimeoutMs = 30 * 60_000;
     }
 }

@@ -43,6 +43,8 @@ class AIModelPropertiesTest {
                         dimension: 1536
                         priority: 2
                         enabled: false
+                  chat:
+                    message-chunk-size: 32
                 """);
 
         AIModelProperties properties = Binder.get(environment)
@@ -59,6 +61,7 @@ class AIModelPropertiesTest {
                 .containsExactly("qwen-emb-8b", "qwen-emb-local");
         assertThat(properties.getEmbedding().getCandidates().get(1).getUrl()).isEqualTo("http://localhost:11435");
         assertThat(properties.getEmbedding().getCandidates().get(1).isEnabled()).isFalse();
+        assertThat(properties.getChat().getMessageChunkSize()).isEqualTo(32);
     }
 
     private StandardEnvironment environmentFromYaml(String yaml) throws IOException {

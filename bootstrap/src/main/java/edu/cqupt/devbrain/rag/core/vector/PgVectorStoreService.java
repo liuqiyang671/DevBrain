@@ -198,6 +198,10 @@ public class PgVectorStoreService implements VectorStoreService {
         }
         metadata.put("doc_id", docId);
         metadata.put("chunk_index", chunk.getIndex());
+        Object contentHash = metadata.get("content_hash");
+        if (!(contentHash instanceof String hash) || !StringUtils.hasText(hash)) {
+            metadata.put("content_hash", sha256(chunk.getContent()));
+        }
 
         try {
             return objectMapper.writeValueAsString(metadata);
@@ -223,6 +227,20 @@ public class PgVectorStoreService implements VectorStoreService {
         }
         builder.append(']');
         return builder.toString();
+    }
+
+    private String sha256(String value) {
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder();
+            for (byte item : bytes) {
+                builder.append(String.format("%02x", item));
+            }
+            return builder.toString();
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new ServiceException("内容哈希计算失败", ex, BaseErrorCode.SERVICE_ERROR);
+        }
     }
 
     private void validateCollectionName(String collectionName) {

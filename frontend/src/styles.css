@@ -3166,6 +3166,47 @@ code {
   white-space: pre-wrap;
 }
 
+.rag-thinking-block {
+  border: 1px solid #d8e4f2;
+  border-radius: 8px;
+  background: #f7fbff;
+  padding: 9px 10px;
+}
+
+.rag-thinking-block summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.rag-thinking-block p {
+  margin-top: 8px;
+  color: #52677c;
+  font-size: 0.9rem;
+}
+
+.rag-streaming-indicator,
+.rag-status-pill {
+  width: fit-content;
+  border-radius: 999px;
+  background: #ecf5ff;
+  color: var(--primary-strong);
+  padding: 5px 9px;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.rag-status-pill {
+  background: #f2f6fa;
+  color: var(--muted);
+}
+
+.rag-status-pill.danger {
+  background: #fff1f0;
+  color: #cf1322;
+}
+
 .rag-answer-citations,
 .rag-suggestion-row {
   display: flex;

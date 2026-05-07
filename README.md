@@ -94,7 +94,28 @@ DevBrain-CQUPT 是一套端到端的智能知识库管理系统，旨在将非�
 | 向量空间管理 | ✅ 已完成 | 知识库级别向量空间隔离（collectionName） |
 | 向量同步 | ✅ 已完成 | 分块变更自动同步向量库 |
 | 语义检索 | ✅ 已完成 | Top-K 余弦相似度检索，ef_search=200 优化 |
-| RAG 对话 | 🔲 规划中 | 基于知识库的语义问答（LLM 生成） |
+
+### 摄入 Pipeline
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 流水线 CRUD | ✅ 已完成 | 节点链定义的创建、分页、详情、更新、删除 |
+| 6 种节点类型 | ✅ 已完成 | `fetcher` / `parser` / `enhancer` / `chunker` / `enricher` / `indexer`，按 `IngestionNodeType` 注册 |
+| 任务执行 | ✅ 已完成 | 按流水线定义执行，支持 JSON 来源和文件上传两种入口 |
+| 节点级日志 | ✅ 已完成 | 每个节点的状态、耗时和关键输出独立持久化 |
+| 任务分页查询 | ✅ 已完成 | 支持按流水线和状态筛选 |
+
+### RAG 流式问答
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| SSE 流式问答 | ✅ 已完成 | `GET /rag/v3/chat`，`meta` / `message` / `finish` / `done` / `cancel` 事件序列 |
+| 多轮对话记忆 | ✅ 已完成 | 历史消息持久化 + LLM 自动生成对话摘要 |
+| 查询改写 + 子问题拆分 | ✅ 已完成 | 多轮上下文感知的多问题改写 |
+| 意图识别与路由 | ✅ 已完成 | 节点打分、System-Only 短路、Guidance 引导 |
+| 深度思考 | ✅ 已完成 | `deepThinking=true` 启用模型 thinking 通道 |
+| 限流 / 并发 / 幂等 | ✅ 已完成 | `@ChatRateLimit` 5 次/60 秒、`@ChatQueueLimiter` 并发 10、`@IdempotentSubmit` 10 秒短窗口 |
+| 停止任务 | ✅ 已完成 | `POST /rag/v3/stop?taskId=...` 主动取消流式生成 |
 
 ### 前端界面
 
@@ -107,6 +128,8 @@ DevBrain-CQUPT 是一套端到端的智能知识库管理系统，旨在将非�
 | 文档管理 | ✅ 已完成 | 文档上传、列表、启用/禁用、删除、在线导入 |
 | 文档分块查看 | ✅ 已完成 | 分块内容查看与编辑 |
 | 同步任务管理 | ✅ 已完成 | 同步配置、手动触发、同步历史 |
+| 摄入流水线 | ✅ 已完成 | 流水线节点编排、任务执行、节点日志查看 |
+| RAG 对话 | ✅ 已完成 | SSE 流式问答、多轮上下文、深度思考、停止生成 |
 
 ---
 
@@ -123,16 +146,20 @@ DevBrain-CQUPT 是一套端到端的智能知识库管理系统，旨在将非�
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │  Auth Interceptor → CSRF → JWT → RBAC → UserContext        │ │
 │  └─────────────────────────────────────────────────────────────┘ │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────────────────┐ │
-│  │ Auth/RBAC    │ │ Knowledge    │ │ Document Sync            │ │
-│  │ Controller   │ │ Controller   │ │ Controller               │ │
-│  └──────┬───────┘ └──────┬───────┘ └──────────┬───────────────┘ │
-│         │                │                     │                 │
-│  ┌──────▼───────┐ ┌──────▼───────┐ ┌──────────▼───────────────┐ │
-│  │ Auth Service  │ │ Doc Service  │ │ Sync Service + Scheduler │ │
-│  └──────┬───────┘ └──────┬───────┘ └──────────┬───────────────┘ │
-│         │                │                     │                 │
-│  ┌──────▼────────────────▼─────────────────────▼───────────────┐ │
+│  ┌──────────┐ ┌──────────────┐ ┌──────────────┐ ┌────────────┐ │
+│  │ Auth /   │ │ Knowledge /  │ │ Ingestion    │ │ RAG Chat   │ │
+│  │ RBAC     │ │ Doc / Sync   │ │ Pipeline +   │ │ Controller │ │
+│  │ Ctrl     │ │ Controller   │ │ Task Ctrl    │ │ (SSE v3)   │ │
+│  └─────┬────┘ └──────┬───────┘ └──────┬───────┘ └──────┬─────┘ │
+│        │             │                 │                │       │
+│  ┌─────▼────┐ ┌──────▼───────┐ ┌──────▼───────┐ ┌──────▼─────┐ │
+│  │ Auth     │ │ Doc / Sync   │ │ Ingestion    │ │ Stream     │ │
+│  │ Service  │ │ Service      │ │ Engine       │ │ Pipeline   │ │
+│  └─────┬────┘ └──────┬───────┘ └──────┬───────┘ └──────┬─────┘ │
+│        │             │                 │                │       │
+│  ┌─────▼─────────────▼─────────────────▼────────────────▼─────┐ │
+│  │  infra-ai (Embedding 路由 · LLM 同步/SSE 流式)              │ │
+│  ├─────────────────────────────────────────────────────────────┤ │
 │  │  framework (统一响应 · 异常 · 幂等 · 追踪 · MQ · 分布式ID)  │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 └──────────┬────────────┬────────────┬────────────┬────────────────┘
@@ -174,13 +201,14 @@ devbrain-cqupt/
 │       ├── knowledge/          # 知识库、文档上传/管理、分块 CRUD
 │       ├── sync/               # 在线文档同步（飞书/URL/定时调度）
 │       ├── core/               # 文档解析（Tika/Markdown）与 5 种分块策略
-│       └── rag/                # 向量存储（pgvector）与语义检索
-├── framework/                  # 通用框架层（响应、异常、幂等、追踪、MQ、分布式ID）
-├── infra-ai/                   # AI 基础设施（Embedding 服务路由、多提供商适配）
-├── mcp-server/                 # MCP 工具服务入口（规划中）
+│       ├── ingestion/          # 摄入 Pipeline 引擎、6 种节点、任务执行
+│       └── rag/                # 向量存储（pgvector）、语义检索、SSE 流式问答管线
+├── framework/                  # 通用框架层（响应、异常、幂等、追踪、MQ、分布式ID、ChatMessage 约定）
+├── infra-ai/                   # AI 基础设施（Embedding 路由 + LLM 同步/SSE 流式接口）
+├── mcp-server/                 # MCP 工具服务骨架（端口 9099，尚未实现业务）
 ├── frontend/                   # React + Vite 前端应用
 ├── resources/
-│   ├── database/schema.sql     # 本地开发 Schema（v02-v09）
+│   ├── database/schema.sql     # 本地开发 Schema（v02-v13）
 │   └── docker/                 # Docker Compose 编排文件
 ├── docs/                       # 开发文档与架构说明
 └── pom.xml                     # Maven 父工程
@@ -273,9 +301,11 @@ PostgreSQL 容器首次启动时会自动执行 `resources/database/schema.sql`�
 
 1. 启用 pgvector 扩展
 2. 创建认证/RBAC 表（用户、角色、权限、资源规则）
-3. 创建知识库表和文档表
+3. 创建知识库、文档、文档分块、向量存储表
 4. 创建同步历史表
-5. 插入种子数据（管理员账号、默认角色、权限码、资源规则）
+5. 创建摄入 Pipeline 定义、节点、任务执行和节点日志表
+6. 创建对话会话、消息和摘要表
+7. 插入种子数据（管理员账号、默认角色、权限码、资源规则）
 
 如需手动重新初始化：
 
@@ -462,6 +492,30 @@ git diff --check
 | `POST` | `/sync-tasks/{docId}/trigger` | 手动触发同步 | `knowledge:write` |
 | `GET` | `/sync-tasks/{docId}/history` | 查询同步历史 | `knowledge:read` |
 | `GET` | `/sync-tasks/overview` | 同步任务总览 | `knowledge:read` |
+
+### 摄入 Pipeline 接口
+
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| `POST` | `/ingestion/pipelines` | 创建流水线定义 | `knowledge:write` |
+| `GET` | `/ingestion/pipelines` | 分页查询流水线 | `knowledge:read` |
+| `GET` | `/ingestion/pipelines/{id}` | 查询流水线定义详情 | `knowledge:read` |
+| `PUT` | `/ingestion/pipelines/{id}` | 更新流水线定义 | `knowledge:write` |
+| `DELETE` | `/ingestion/pipelines/{id}` | 删除流水线定义 | `knowledge:write` |
+| `POST` | `/ingestion/tasks` | 按 JSON 来源执行摄入任务 | `knowledge:write` |
+| `POST` | `/ingestion/tasks/upload` | 上传文件并执行摄入任务 | `knowledge:write` |
+| `GET` | `/ingestion/tasks` | 分页查询摄入任务 | `knowledge:read` |
+| `GET` | `/ingestion/tasks/{id}` | 查询任务详情 | `knowledge:read` |
+| `GET` | `/ingestion/tasks/{id}/nodes` | 查询任务节点日志 | `knowledge:read` |
+
+### RAG 流式问答接口
+
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| `GET` | `/rag/v3/chat` | SSE 流式问答（query / conversationId / deepThinking） | 登录 |
+| `POST` | `/rag/v3/stop` | 停止指定 taskId 的流式生成 | 登录 |
+
+> RAG 接口受 `@ChatRateLimit`（5 次/60 秒）+ `@ChatQueueLimiter`（并发 10）+ `@IdempotentSubmit`（10 秒短窗口）三层防护，超时和 topK 等参数通过 `rag.chat.*` 配置项调整。
 
 ---
 
