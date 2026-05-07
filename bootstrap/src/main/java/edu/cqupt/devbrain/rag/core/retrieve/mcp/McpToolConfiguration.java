@@ -10,6 +10,9 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class McpToolConfiguration {
 
+    /**
+     * 未配置真实 MCP 工具时，注册返回空内容的兜底实现。
+     */
     @Bean
     @ConditionalOnMissingBean(McpToolRegistry.class)
     public McpToolRegistry noOpMcpToolRegistry() {

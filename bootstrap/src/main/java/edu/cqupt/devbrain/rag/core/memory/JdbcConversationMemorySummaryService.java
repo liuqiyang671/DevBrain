@@ -94,8 +94,12 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         return loadSummaryRow(conversationId, userId).map(ConversationSummaryDO::getSummary);
     }
 
+    /**
+     * 检查用户消息数是否超过阈值，超过时获取分布式锁执行摘要压缩。
+     */
     @Override
     public void compressIfNeeded(String conversationId, String userId) {
+        // 统计当前会话的用户消息数，判断是否需要触发摘要压缩
         Long userMessageCount = jdbcTemplate.queryForObject(
                 COUNT_USER_MESSAGES_SQL,
                 Long.class,
@@ -103,13 +107,16 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
                 userId
         );
         long count = userMessageCount == null ? 0 : userMessageCount;
+        // 未达到阈值，跳过压缩
         if (count <= properties.getSummaryStartTurns()) {
             return;
         }
 
+        // 获取分布式锁，防止多实例同时压缩同一会话
         RLock lock = redissonClient.getLock(LOCK_PREFIX + conversationId);
         boolean acquired;
         try {
+            // tryLock 是非阻塞的：等待指定时间后立即返回，不会无限阻塞
             acquired = lock.tryLock(
                     properties.getLockWaitMillis(),
                     properties.getLockLeaseMillis(),
@@ -120,6 +127,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
             log.warn("获取对话摘要锁被中断，conversationId={}, userId={}", conversationId, userId);
             return;
         }
+        // 未获取到锁，说明其他实例正在压缩，直接跳过
         if (!acquired) {
             return;
         }
@@ -127,28 +135,38 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         try {
             compressLocked(conversationId, userId);
         } finally {
+            // 只释放当前线程持有的锁，避免误释放其他线程的锁
             if (lock.isHeldByCurrentThread()) {
                 lock.unlock();
             }
         }
     }
 
+    /**
+     * 在分布式锁内执行摘要压缩：加载已有摘要和待压缩消息，调用 LLM 生成新摘要后 upsert。
+     */
     private void compressLocked(String conversationId, String userId) {
+        // 1. 加载已有摘要记录（可能为空）
         Optional<ConversationSummaryDO> existing = loadSummaryRow(conversationId, userId);
+        // 2. 加载待压缩的消息：有摘要时取 lastSummarizedMessageId 之后的消息，无摘要时取前 N 条
         List<ConversationMessageDO> pendingMessages = loadPendingMessages(conversationId, userId, existing.orElse(null));
         if (pendingMessages.isEmpty()) {
             return;
         }
 
+        // 3. 将已有摘要和新消息填充到 Prompt 模板
         String prompt = renderPrompt(existing.map(ConversationSummaryDO::getSummary).orElse(""),
                 formatMessages(pendingMessages));
+        // 4. 调用 LLM 生成新的合并摘要
         String summary = llmService.chat(prompt);
         if (!StringUtils.hasText(summary)) {
             return;
         }
 
+        // 5. 更新计数和游标，upsert 摘要记录
         int previousCount = existing.map(ConversationSummaryDO::getMessageCount).orElse(0);
         Integer messageCount = previousCount + pendingMessages.size();
+        // 记录最后一条被压缩消息的 ID，下次从此之后开始增量压缩
         Long lastMessageId = pendingMessages.get(pendingMessages.size() - 1).getId();
         jdbcTemplate.update(
                 UPSERT_SUMMARY_SQL,
@@ -174,9 +192,13 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         return Optional.of(summaries.get(0));
     }
 
+    /**
+     * 加载待压缩的消息：有摘要时取 lastSummarizedMessageId 之后的消息，无摘要时取前 N 条。
+     */
     private List<ConversationMessageDO> loadPendingMessages(String conversationId, String userId,
                                                             ConversationSummaryDO existingSummary) {
         long limit = Math.max(1, properties.getSummaryBatchSize());
+        // 已有摘要：从上次压缩游标之后开始加载增量消息
         if (existingSummary != null && existingSummary.getLastSummarizedMessageId() != null) {
             return jdbcTemplate.query(
                     LOAD_PENDING_MESSAGES_AFTER_SUMMARY_SQL,
@@ -187,6 +209,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
                     limit
             );
         }
+        // 无摘要：从最早的消息开始加载前 N 条
         return jdbcTemplate.query(
                 LOAD_PENDING_MESSAGES_WITHOUT_SUMMARY_SQL,
                 this::mapMessage,
@@ -196,6 +219,9 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         );
     }
 
+    /**
+     * 将已有摘要和新消息填充到摘要压缩 Prompt 模板中。
+     */
     private String renderPrompt(String summary, String messages) {
         String template = loadTemplate();
         return template
@@ -203,19 +229,25 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
                 .replace("{{messages}}", messages);
     }
 
+    /**
+     * 加载摘要压缩 Prompt 模板，classpath 文件不存在或读取失败时使用默认模板兜底。
+     */
     private String loadTemplate() {
         ClassPathResource resource = new ClassPathResource("rag/prompt/conversation-summary.st");
+        // 文件不存在时使用硬编码的默认模板
         if (!resource.exists()) {
             return DEFAULT_TEMPLATE;
         }
         try {
             return StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
         } catch (IOException ex) {
+            // 读取异常时降级到默认模板，不影响主流程
             log.warn("加载对话摘要模板失败，使用默认模板", ex);
             return DEFAULT_TEMPLATE;
         }
     }
 
+    /** 将消息列表格式化为 [role] content 的文本格式，供 LLM 阅读。 */
     private String formatMessages(List<ConversationMessageDO> messages) {
         StringBuilder builder = new StringBuilder();
         for (ConversationMessageDO message : messages) {
@@ -232,12 +264,16 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         return builder.toString().trim();
     }
 
+    /**
+     * 将 ResultSet 映射为 ConversationSummaryDO，处理 nullable 字段的 wasNull 检测。
+     */
     private ConversationSummaryDO mapSummary(ResultSet rs, int rowNum) throws SQLException {
         ConversationSummaryDO summary = new ConversationSummaryDO();
         summary.setId(rs.getLong("id"));
         summary.setConversationId(rs.getString("conversation_id"));
         summary.setUserId(rs.getString("user_id"));
         summary.setSummary(rs.getString("summary"));
+        // getInt 返回基本类型，需通过 wasNull 判断数据库 NULL
         int messageCount = rs.getInt("message_count");
         summary.setMessageCount(rs.wasNull() ? null : messageCount);
         long lastMessageId = rs.getLong("last_summarized_message_id");
@@ -247,6 +283,9 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         return summary;
     }
 
+    /**
+     * 将 ResultSet 映射为 ConversationMessageDO，处理 nullable 的 thinkingDuration 字段。
+     */
     private ConversationMessageDO mapMessage(ResultSet rs, int rowNum) throws SQLException {
         ConversationMessageDO message = new ConversationMessageDO();
         message.setId(rs.getLong("id"));
@@ -255,6 +294,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         message.setRole(rs.getString("role"));
         message.setContent(rs.getString("content"));
         message.setThinkingContent(rs.getString("thinking_content"));
+        // thinking_duration 可能为 NULL，需通过 wasNull 检测
         int duration = rs.getInt("thinking_duration");
         message.setThinkingDuration(rs.wasNull() ? null : duration);
         message.setCreateTime(toLocalDateTime(rs.getTimestamp("create_time")));
@@ -262,6 +302,7 @@ public class JdbcConversationMemorySummaryService implements ConversationMemoryS
         return message;
     }
 
+    /** JDBC Timestamp 转 LocalDateTime，null 安全。 */
     private LocalDateTime toLocalDateTime(Timestamp timestamp) {
         return timestamp == null ? null : timestamp.toLocalDateTime();
     }

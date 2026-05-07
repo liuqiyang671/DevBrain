@@ -11,6 +11,9 @@ import edu.cqupt.devbrain.framework.exception.ClientException;
  */
 public class RateLimitExceededException extends ClientException {
 
+    /**
+     * 创建登录频率超限异常，使用默认错误消息和错误码。
+     */
     public RateLimitExceededException() {
         super("登录尝试过于频繁，请稍后再试", BaseErrorCode.LOGIN_RATE_LIMIT);
     }

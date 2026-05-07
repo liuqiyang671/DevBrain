@@ -9,5 +9,8 @@ import java.util.List;
  */
 public interface SearchResultPostProcessor {
 
+    /**
+     * 处理检索结果列表，返回处理后的结果。
+     */
     List<RetrievedChunk> process(List<RetrievedChunk> chunks);
 }

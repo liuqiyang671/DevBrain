@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
- * RAG chat streaming endpoints.
+ * RAG 对话流式接口控制器。
  */
 @RestController
 @RequiredArgsConstructor
@@ -25,6 +25,14 @@ public class RAGChatController {
     private final RAGChatService chatService;
     private final RAGChatProperties properties;
 
+    /**
+     * 流式 RAG 问答接口，通过 SSE 推送回答 token。
+     *
+     * @param question       用户问题
+     * @param conversationId 会话 ID，为空时自动生成新会话
+     * @param deepThinking   是否启用深度思考模式
+     * @return SSE 发射器
+     */
     @GetMapping(value = "/rag/v3/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8")
     @ChatRateLimit(limit = 5, windowSeconds = 60)
     @ChatQueueLimiter(maxConcurrent = 10, waitMillis = 0)
@@ -37,6 +45,11 @@ public class RAGChatController {
         return emitter;
     }
 
+    /**
+     * 取消正在执行的流式任务。
+     *
+     * @param taskId 任务 ID
+     */
     @PostMapping("/rag/v3/stop")
     public Result<Void> stop(@RequestParam String taskId) {
         chatService.stopTask(taskId);

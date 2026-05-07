@@ -10,6 +10,9 @@ import edu.cqupt.devbrain.framework.exception.ClientException;
  */
 public class AccountLockedException extends ClientException {
 
+    /**
+     * 创建账号锁定异常，使用默认错误消息和错误码。
+     */
     public AccountLockedException() {
         super("账号暂时锁定，请稍后再试", BaseErrorCode.ACCOUNT_LOCKED);
     }

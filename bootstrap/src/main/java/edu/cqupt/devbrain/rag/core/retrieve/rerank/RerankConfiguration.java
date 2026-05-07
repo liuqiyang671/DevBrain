@@ -10,6 +10,9 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class RerankConfiguration {
 
+    /**
+     * 未配置真实 Rerank 模型时，注册按现有分数排序的兜底实现。
+     */
     @Bean
     @ConditionalOnMissingBean(RerankService.class)
     public RerankService noOpRerankService() {

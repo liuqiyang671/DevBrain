@@ -27,10 +27,16 @@ public class SseEmitterSender {
         this.emitter.onError(ignored -> closed.set(true));
     }
 
+    /**
+     * 发送指定类型的 SSE 事件，data 为非 String 类型时自动 JSON 序列化。
+     */
     public void sendEvent(SSEEventType type, Object data) {
         sendEvent(type.getValue(), data);
     }
 
+    /**
+     * 发送指定名称的 SSE 事件。
+     */
     public void sendEvent(String name, Object data) {
         if (closed.get()) {
             return;
@@ -42,6 +48,7 @@ public class SseEmitterSender {
         }
     }
 
+    /** 正常关闭 SSE 连接。 */
     public void complete() {
         if (closed.compareAndSet(false, true)) {
             emitter.complete();
@@ -68,6 +75,7 @@ public class SseEmitterSender {
         }
     }
 
+    /** 判断 SSE 连接是否已关闭。 */
     public boolean isClosed() {
         return closed.get();
     }

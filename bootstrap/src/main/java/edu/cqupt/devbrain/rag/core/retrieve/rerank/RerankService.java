@@ -9,5 +9,8 @@ import java.util.List;
  */
 public interface RerankService {
 
+    /**
+     * 对检索结果进行重排序，返回按相关性重新排列的结果。
+     */
     List<RetrievedChunk> rerank(List<RetrievedChunk> chunks);
 }

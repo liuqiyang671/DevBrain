@@ -38,6 +38,14 @@ public class RoutingLLMService implements LLMService {
     private final AIModelProperties properties;
     private final Map<String, LLMClient> clients;
 
+    /**
+     * 构造路由型 LLM 服务，注入模型配置和所有可用的 LLM 客户端。
+     * <p>
+     * 客户端按 provider 名称建索引，运行时通过候选模型的 provider 字段进行路由。
+     *
+     * @param properties AI 模型配置属性
+     * @param clients    所有已注册的 LLM 客户端实现
+     */
     public RoutingLLMService(AIModelProperties properties, List<LLMClient> clients) {
         this.properties = properties;
         this.clients = indexClients(clients);
@@ -197,6 +205,12 @@ public class RoutingLLMService implements LLMService {
         }
     }
 
+    /**
+     * 流式路由回调包装器，用于判断候选模型是否在启动阶段就失败。
+     * <p>
+     * 一旦收到任何有效内容（content/thinking/complete），即视为"已启动"，
+     * 后续错误直接透传给调用方，不再尝试降级到下一个候选模型。
+     */
     private static final class StreamRoutingCallback implements StreamCallback {
 
         private final StreamCallback delegate;

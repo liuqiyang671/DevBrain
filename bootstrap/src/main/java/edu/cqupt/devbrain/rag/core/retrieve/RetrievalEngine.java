@@ -43,6 +43,13 @@ public class RetrievalEngine {
         this.mcpToolExecutor = mcpToolExecutor;
     }
 
+    /**
+     * 对所有子问题并行执行检索，合并结果后格式化为统一的检索上下文。
+     *
+     * @param subIntents 子问题意图匹配结果
+     * @param topK       每个意图的检索条数
+     * @return 包含知识库和 MCP 上下文的检索结果
+     */
     public RetrievalContext retrieve(List<SubQuestionIntent> subIntents, int topK) {
         if (subIntents == null || subIntents.isEmpty()) {
             return RetrievalContext.builder()
@@ -51,6 +58,7 @@ public class RetrievalEngine {
                     .intentChunks(Map.of())
                     .build();
         }
+        // 1. 并行执行每个子问题的检索（KB + MCP）
         List<CompletableFuture<SubQuestionContext>> futures = subIntents.stream()
                 .map(subIntent -> CompletableFuture.supplyAsync(
                         () -> retrieveSubQuestion(subIntent, topK),
@@ -60,12 +68,14 @@ public class RetrievalEngine {
                 .map(CompletableFuture::join)
                 .toList();
 
+        // 2. 合并所有子问题的意图分数，同节点取最高分
         List<NodeScore> kbIntents = mergeScores(contexts.stream()
                 .flatMap(context -> context.kbIntents().stream())
                 .toList());
         List<NodeScore> mcpIntents = mergeScores(contexts.stream()
                 .flatMap(context -> context.mcpIntents().stream())
                 .toList());
+        // 3. 合并所有子问题的检索结果，同一意图 ID 的分块列表拼接在一起
         Map<String, List<RetrievedChunk>> intentChunks = new LinkedHashMap<>();
         Map<String, List<McpToolResult>> toolResults = new LinkedHashMap<>();
         for (SubQuestionContext context : contexts) {
@@ -82,6 +92,7 @@ public class RetrievalEngine {
                         return merged;
                     }));
         }
+        // 4. 格式化为结构化上下文文本
         return RetrievalContext.builder()
                 .kbContext(contextFormatter.formatKbContext(kbIntents, intentChunks, topK))
                 .mcpContext(contextFormatter.formatMcpContext(toolResults, mcpIntents))
@@ -89,16 +100,22 @@ public class RetrievalEngine {
                 .build();
     }
 
+    /**
+     * 单个子问题的检索：KB 意图走多通道检索，MCP 意图并行调用工具。
+     */
     private SubQuestionContext retrieveSubQuestion(SubQuestionIntent subIntent, int topK) {
+        // 按意图类型分流：KB 走向量检索，MCP 走工具调用
         List<NodeScore> kbIntents = filterByKind(subIntent.nodeScores(), "KB");
         List<NodeScore> mcpIntents = filterByKind(subIntent.nodeScores(), "MCP");
         Map<String, List<RetrievedChunk>> intentChunks = new LinkedHashMap<>();
+        // KB 意图：通过多通道检索引擎执行向量检索
         if (!kbIntents.isEmpty()) {
             List<RetrievedChunk> chunks = multiChannelRetrievalEngine.retrieveKnowledgeChannels(
                     subIntent.subQuestion(),
                     topK,
                     kbIntents
             );
+            // 将检索结果挂到每个 KB 意图节点下
             for (NodeScore score : kbIntents) {
                 IntentNode node = score.getNode();
                 if (node != null && StringUtils.hasText(node.getId())) {
@@ -106,6 +123,7 @@ public class RetrievalEngine {
                 }
             }
         }
+        // MCP 意图：并行调用各工具
         Map<String, List<McpToolResult>> toolResults = new LinkedHashMap<>();
         List<CompletableFuture<McpToolResult>> toolFutures = mcpIntents.stream()
                 .map(NodeScore::getNode)
@@ -114,6 +132,7 @@ public class RetrievalEngine {
                         () -> mcpToolRegistry.execute(node.getMcpToolId(), subIntent.subQuestion(), node),
                         mcpToolExecutor))
                 .toList();
+        // 等待所有工具调用完成，过滤掉空结果
         toolFutures.stream()
                 .map(CompletableFuture::join)
                 .filter(result -> result != null && StringUtils.hasText(result.content()))
@@ -132,6 +151,7 @@ public class RetrievalEngine {
                 .toList();
     }
 
+    /** 合并多个子问题的同节点分数，保留最高分。 */
     private List<NodeScore> mergeScores(List<NodeScore> scores) {
         Map<String, NodeScore> merged = new LinkedHashMap<>();
         for (NodeScore score : scores) {

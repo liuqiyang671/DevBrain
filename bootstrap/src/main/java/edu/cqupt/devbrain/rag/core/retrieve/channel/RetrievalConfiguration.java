@@ -14,6 +14,7 @@ import java.util.concurrent.Executor;
 @EnableConfigurationProperties(RetrievalProperties.class)
 public class RetrievalConfiguration {
 
+    /** 子问题级别检索线程池。 */
     @Bean("retrievalExecutor")
     public Executor retrievalExecutor(RetrievalProperties properties) {
         return buildExecutor("retrieval-engine-",
@@ -22,6 +23,7 @@ public class RetrievalConfiguration {
                 properties.getEngineQueueCapacity());
     }
 
+    /** 检索通道并行线程池。 */
     @Bean("retrievalChannelExecutor")
     public Executor retrievalChannelExecutor(RetrievalProperties properties) {
         return buildExecutor("retrieval-channel-",
@@ -30,6 +32,7 @@ public class RetrievalConfiguration {
                 properties.getChannelQueueCapacity());
     }
 
+    /** 知识库集合并行检索线程池。 */
     @Bean("retrievalCollectionExecutor")
     public Executor retrievalCollectionExecutor(RetrievalProperties properties) {
         return buildExecutor("retrieval-collection-",
@@ -38,6 +41,7 @@ public class RetrievalConfiguration {
                 properties.getCollectionQueueCapacity());
     }
 
+    /** MCP 工具调用线程池。 */
     @Bean("mcpToolExecutor")
     public Executor mcpToolExecutor(RetrievalProperties properties) {
         return buildExecutor("mcp-tool-",

@@ -27,17 +27,21 @@ public class DeduplicationPostProcessor implements SearchResultPostProcessor {
         if (chunks == null || chunks.isEmpty()) {
             return List.of();
         }
+        // 用 LinkedHashMap 保持插入顺序，以去重 key 为索引
         Map<String, RetrievedChunk> deduplicated = new LinkedHashMap<>();
         for (RetrievedChunk chunk : chunks) {
             if (chunk == null) {
                 continue;
             }
+            // 计算去重 key：优先用 contentHash，其次用文本 SHA-256，最后用 ID
             String key = dedupKey(chunk);
             RetrievedChunk existing = deduplicated.get(key);
+            // 同 key 多个分块时保留分数更高的那个
             if (existing == null || scoreOf(chunk) > scoreOf(existing)) {
                 deduplicated.put(key, chunk);
             }
         }
+        // 去重后按分数降序排列
         return deduplicated.values().stream()
                 .sorted(Comparator.comparing(this::scoreOf).reversed())
                 .toList();

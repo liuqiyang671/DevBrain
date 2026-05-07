@@ -23,12 +23,18 @@ public class StreamCallbackFactory {
         this.streamTaskManager = streamTaskManager;
     }
 
+    /**
+     * 创建默认的流式聊天事件处理器（用户 ID 由处理器内部推断）。
+     */
     public StreamChatEventHandler createChatEventHandler(SseEmitter emitter,
                                                          String conversationId,
                                                          String taskId) {
         return createChatEventHandler(emitter, conversationId, taskId, null);
     }
 
+    /**
+     * 创建指定用户 ID 的流式聊天事件处理器。
+     */
     public StreamChatEventHandler createChatEventHandler(SseEmitter emitter,
                                                          String conversationId,
                                                          String taskId,

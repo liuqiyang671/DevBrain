@@ -13,12 +13,22 @@ import type {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9090/api/devbrain';
 
+/**
+ * RAG 流式问答事件处理器接口
+ * 定义 SSE 连接中各类事件的回调函数
+ */
 export interface RagStreamHandlers {
+  /** 收到元数据事件（包含会话 ID 和任务 ID） */
   onMeta?: (payload: RagSseMetaPayload) => void;
+  /** 收到消息增量事件（思考或回答内容片段） */
   onMessage?: (payload: RagSseMessageDelta) => void;
+  /** 收到完成事件（包含消息 ID 和会话标题） */
   onFinish?: (payload: RagSseCompletionPayload) => void;
+  /** 流式传输结束 */
   onDone?: () => void;
+  /** 任务被取消 */
   onCancel?: (payload: RagSseErrorPayload) => void;
+  /** 发生错误 */
   onError?: (error: Error) => void;
 }
 
@@ -65,6 +75,12 @@ export async function stopChat(taskId: string) {
   return api.post<void, void>('/rag/v3/stop', null, { params: { taskId } });
 }
 
+/**
+ * 解析 SSE 事件数据
+ * 将事件数据从 JSON 字符串转换为指定类型
+ * @param event - SSE 事件对象
+ * @returns 解析后的数据对象，解析失败时返回包含原始消息的对象
+ */
 function parseEventData<T>(event: Event) {
   const data = event instanceof MessageEvent ? event.data : '';
   if (!data || data === '[DONE]') return {} as T;

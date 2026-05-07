@@ -28,10 +28,12 @@ public class PromptContext {
 
     private Map<String, List<RetrievedChunk>> intentChunks;
 
+    /** 是否包含 MCP 工具上下文。 */
     public boolean hasMcp() {
         return StringUtils.hasText(mcpContext);
     }
 
+    /** 是否包含知识库上下文。 */
     public boolean hasKb() {
         return StringUtils.hasText(kbContext);
     }

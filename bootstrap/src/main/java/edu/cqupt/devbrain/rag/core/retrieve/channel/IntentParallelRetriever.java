@@ -30,14 +30,20 @@ public class IntentParallelRetriever {
         this.retrievalExecutor = retrievalExecutor;
     }
 
+    /**
+     * 按意图命中的知识库集合并行检索，合并后按相似度降序排列。
+     */
     public List<RetrievedChunk> retrieve(String query, int topK, List<NodeScore> kbIntents) {
+        // 去重：同一集合只保留分数最高的意图，按分数降序排列
         Map<String, NodeScore> collectionIntents = distinctCollections(kbIntents);
+        // 每个集合提交一个并行检索任务
         List<CompletableFuture<List<RetrievedChunk>>> futures = collectionIntents.keySet()
                 .stream()
                 .map(collectionName -> CompletableFuture.supplyAsync(
                         () -> retrieverService.retrieve(new RetrieveRequest(query, topK, collectionName, null)),
                         retrievalExecutor))
                 .toList();
+        // 合并所有集合的检索结果，按相似度降序排列
         return futures.stream()
                 .flatMap(future -> future.join().stream())
                 .sorted(Comparator.comparing(this::scoreOf).reversed())

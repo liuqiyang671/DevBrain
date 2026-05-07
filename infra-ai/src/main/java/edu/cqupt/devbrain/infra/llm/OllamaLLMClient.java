@@ -12,6 +12,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class OllamaLLMClient extends AbstractOpenAIStyleLLMClient {
 
+    /**
+     * 注入 AI 模型配置，使用聊天模型的超时参数构造 HTTP 客户端。
+     *
+     * @param properties AI 模型配置属性
+     */
     public OllamaLLMClient(AIModelProperties properties) {
         super(properties.getChat());
     }
@@ -26,6 +31,9 @@ public class OllamaLLMClient extends AbstractOpenAIStyleLLMClient {
         return false;
     }
 
+    /**
+     * Ollama 使用 reasoning_effort 替代 OpenAI 的 enable_thinking 参数来控制思维链深度。
+     */
     @Override
     protected void customizeRequestBody(JsonObject body, ChatTarget target) {
         if (body.has("enable_thinking")) {

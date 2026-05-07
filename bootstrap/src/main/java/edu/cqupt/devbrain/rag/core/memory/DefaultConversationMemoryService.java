@@ -41,11 +41,15 @@ public class DefaultConversationMemoryService implements ConversationMemoryServi
         this.memorySummaryExecutor = memorySummaryExecutor;
     }
 
+    /**
+     * 并行加载历史消息和摘要，合并后返回：摘要在前，历史消息在后。
+     */
     @Override
     public List<ChatMessage> load(String conversationId, String userId) {
         validateIdentity(conversationId, userId);
         int limit = Math.max(1, properties.getHistoryKeepTurns());
 
+        // 并行发起两个异步任务：加载历史消息 + 加载摘要
         CompletableFuture<List<ChatMessage>> historyFuture = CompletableFuture.supplyAsync(
                 () -> store.loadRecentHistory(conversationId, userId, limit),
                 memoryLoadExecutor
@@ -56,8 +60,10 @@ public class DefaultConversationMemoryService implements ConversationMemoryServi
         );
 
         try {
+            // 等待两个任务都完成
             List<ChatMessage> history = historyFuture.join();
             String summary = summaryFuture.join();
+            // 组装最终消息列表：摘要作为 system 消息在前，历史消息在后
             List<ChatMessage> messages = new ArrayList<>();
             if (StringUtils.hasText(summary)) {
                 messages.add(ChatMessage.system(summary));
@@ -67,15 +73,20 @@ public class DefaultConversationMemoryService implements ConversationMemoryServi
             }
             return messages;
         } catch (CompletionException ex) {
+            // CompletableFuture.join() 会将底层异常包装为 CompletionException，需要解包
             Throwable cause = ex.getCause() == null ? ex : ex.getCause();
             throw new ServiceException("加载对话记忆失败", cause, BaseErrorCode.SERVICE_ERROR);
         }
     }
 
+    /**
+     * 持久化消息后异步触发摘要压缩。
+     */
     @Override
     public String append(String conversationId, String userId, ChatMessage message) {
         validateIdentity(conversationId, userId);
         validateMessage(message);
+        // 角色名统一转小写存储，与 ChatMessage.Role 枚举保持一致
         String messageId = store.saveMessage(
                 conversationId,
                 userId,
@@ -85,6 +96,8 @@ public class DefaultConversationMemoryService implements ConversationMemoryServi
                 message.getThinkingDuration()
         );
 
+        // 异步触发摘要压缩，不影响主流程响应速度
+        // exceptionally 兜底捕获异常，避免压缩失败影响消息保存
         CompletableFuture.runAsync(() -> summaryService.compressIfNeeded(conversationId, userId), memorySummaryExecutor)
                 .exceptionally(ex -> {
                     log.warn("异步压缩对话摘要失败，conversationId={}, userId={}", conversationId, userId, ex);

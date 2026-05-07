@@ -41,10 +41,15 @@ public class PgRetrieverService implements RetrieverService {
         return retrieve(new RetrieveRequest(query, topK, null, null));
     }
 
+    /**
+     * 主检索入口：将问题转为向量后执行余弦相似度搜索。
+     */
     @Override
     public List<RetrievedChunk> retrieve(RetrieveRequest request) {
         RetrieveRequest effectiveRequest = normalizeRequest(request);
+        // 调用 embedding 服务将问题转为向量
         List<Float> embedding = embeddingService.embed(effectiveRequest.getQuery());
+        // L2 归一化后执行向量检索
         return retrieveByVector(normalize(toFloatArray(embedding)), effectiveRequest);
     }
 
@@ -52,9 +57,12 @@ public class PgRetrieverService implements RetrieverService {
     @Transactional(readOnly = true)
     public List<RetrievedChunk> retrieveByVector(float[] vector, RetrieveRequest request) {
         RetrieveRequest effectiveRequest = normalizeRequest(request);
+        // 将 float[] 转为 pgvector 文本字面量格式：[0.1,0.2,0.3]
         String vectorLiteral = toVectorLiteral(vector);
-        // SET LOCAL 只在当前事务内生效，配合只读事务确保后续 SELECT 使用同一连接配置。
+        // SET LOCAL 只在当前事务内生效，配合只读事务确保后续 SELECT 使用同一连接配置
+        // hnsw.ef_search 控制 HNSW 索引搜索时的候选队列大小，越大召回率越高
         jdbcTemplate.execute(SET_HNSW_EF_SEARCH_SQL);
+        // 执行向量相似度搜索：embedding <=> ?::vector 计算余弦距离，1 - distance 转为相似度分数
         return jdbcTemplate.query(
                 RETRIEVE_SQL,
                 (rs, rowNum) -> RetrievedChunk.builder()

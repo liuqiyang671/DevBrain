@@ -1,4 +1,16 @@
-"""DevBrain front-end UI automation test - verify chunking-related UI rendering."""
+"""
+DevBrain 前端 UI 自动化测试模块
+
+使用 Playwright 进行端到端测试，验证前端页面的基本功能：
+- 认证页面渲染
+- 未登录重定向
+- 登录/注册标签页
+- 工作区访问控制
+- 文档详情页
+- 管理后台页面
+- 知识库页面
+- 控制台错误检测
+"""
 from playwright.sync_api import sync_playwright
 
 BASE_URL = "http://localhost:5174"

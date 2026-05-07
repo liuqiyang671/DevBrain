@@ -16,7 +16,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 
 /**
- * Streaming task manager with local cancellation handles and Redis broadcast support.
+ * 流式任务管理器，维护本地取消句柄并通过 Redis Pub/Sub 广播取消信号。
+ * <p>
+ * 多实例部署时，取消请求会通过 Redis Topic 广播到所有节点，确保任务在任意节点都能被取消。
  */
 @Slf4j
 @Service
@@ -40,6 +42,9 @@ public class StreamTaskManager {
         this.executor = executor == null ? Runnable::run : executor;
     }
 
+    /**
+     * 绑定 LLM 流式取消句柄，同一 taskId 多次绑定会合并为组合句柄。
+     */
     public void bindHandle(String taskId, StreamCancellationHandle handle) {
         if (!StringUtils.hasText(taskId) || handle == null) {
             return;
@@ -47,6 +52,9 @@ public class StreamTaskManager {
         localHandles.merge(taskId, handle, this::combine);
     }
 
+    /**
+     * 注册取消回调，通常在 SSE 事件处理器构造时调用。
+     */
     public void register(String taskId, Runnable cancelAction) {
         if (cancelAction == null) {
             return;
@@ -54,6 +62,11 @@ public class StreamTaskManager {
         bindHandle(taskId, cancelAction::run);
     }
 
+    /**
+     * 取消指定任务，通过 Redis 广播取消信号到所有节点。
+     *
+     * @return 本地是否存在该任务的取消句柄
+     */
     public boolean cancel(String taskId) {
         if (!StringUtils.hasText(taskId)) {
             return false;
@@ -61,18 +74,23 @@ public class StreamTaskManager {
         boolean localPresent = localHandles.containsKey(taskId);
         if (redissonClient != null) {
             try {
+                // 在 Redis 中设置取消标记（1 小时过期），用于跨节点状态同步
                 redissonClient.getBucket(CANCEL_KEY_PREFIX + taskId).set("1", Duration.ofHours(1));
+                // 通过 Redis Topic 广播取消信号，所有订阅节点都会收到
                 redissonClient.getTopic(CANCEL_CHANNEL).publish(taskId);
             } catch (Throwable ex) {
+                // Redis 不可用时降级为本地取消
                 log.warn("Publish stream cancel signal failed, taskId={}", taskId, ex);
                 cancelLocal(taskId);
             }
         } else {
+            // 无 Redis 时直接本地取消
             cancelLocal(taskId);
         }
         return localPresent;
     }
 
+    /** 任务完成时注销取消句柄。 */
     public void unregister(String taskId) {
         if (StringUtils.hasText(taskId)) {
             localHandles.remove(taskId);
@@ -87,6 +105,7 @@ public class StreamTaskManager {
         return Set.copyOf(localHandles.keySet());
     }
 
+    /** 启动时订阅 Redis 取消频道，接收跨节点取消信号。 */
     @PostConstruct
     void subscribeCancelChannel() {
         if (redissonClient == null) {
@@ -99,6 +118,7 @@ public class StreamTaskManager {
         });
     }
 
+    /** 执行本地取消：移除句柄并调用 cancel()。 */
     private void cancelLocal(String taskId) {
         StreamCancellationHandle handle = localHandles.remove(taskId);
         if (handle == null) {
@@ -111,6 +131,7 @@ public class StreamTaskManager {
         }
     }
 
+    /** 合并两个取消句柄为组合句柄，取消时两者都会被调用。 */
     private StreamCancellationHandle combine(StreamCancellationHandle first, StreamCancellationHandle second) {
         return () -> {
             first.cancel();

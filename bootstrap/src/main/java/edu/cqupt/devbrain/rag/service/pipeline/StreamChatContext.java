@@ -11,7 +11,7 @@ import lombok.Setter;
 import java.util.List;
 
 /**
- * Mutable state holder for a single streaming RAG chat pipeline execution.
+ * 流式 RAG 对话流水线的可变上下文，在一次请求的各阶段间传递状态。
  */
 @Getter
 @Builder
@@ -38,6 +38,9 @@ public class StreamChatContext {
     @Setter
     private List<SubQuestionIntent> subIntents;
 
+    /**
+     * 判断当前子问题意图中是否包含 MCP 类型的意图节点。
+     */
     public boolean hasMcp() {
         if (subIntents == null || subIntents.isEmpty()) {
             return false;

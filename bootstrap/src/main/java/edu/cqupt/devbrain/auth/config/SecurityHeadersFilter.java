@@ -25,6 +25,13 @@ import java.io.IOException;
 @Component
 public class SecurityHeadersFilter extends OncePerRequestFilter {
 
+    /**
+     * 为每个 HTTP 响应注入安全头，然后继续执行过滤器链。
+     *
+     * @param request     当前 HTTP 请求
+     * @param response    当前 HTTP 响应
+     * @param filterChain 过滤器链
+     */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
         response.setHeader("X-Content-Type-Options", "nosniff");

@@ -13,7 +13,10 @@ import org.springframework.util.StringUtils;
 import java.time.Duration;
 
 /**
- * Redis SET NX idempotent guard for duplicate chat submissions.
+ * 基于 Redis SET NX 的 Chat 提交幂等保护切面。
+ * <p>
+ * 通过用户 ID + 请求指纹（问题 + 会话 ID 的 MD5）生成幂等 key，
+ * 在过期时间内重复请求会被拒绝。
  */
 @Aspect
 @Component("ragIdempotentSubmitAspect")
@@ -34,6 +37,9 @@ public class IdempotentSubmitAspect {
         return joinPoint.proceed();
     }
 
+    /**
+     * 生成请求指纹：对 question 和 conversationId 拼接后取 MD5。
+     */
     private String requestFingerprint(ProceedingJoinPoint joinPoint) {
         String question = ChatAopSupport.requestParamOrArg(joinPoint, "question", 0);
         String conversationId = ChatAopSupport.requestParamOrArg(joinPoint, "conversationId", 1);

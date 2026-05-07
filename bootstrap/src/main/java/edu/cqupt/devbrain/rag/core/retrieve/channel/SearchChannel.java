@@ -11,11 +11,15 @@ import java.util.List;
  */
 public interface SearchChannel {
 
+    /** 通道名称，用于日志和调试。 */
     String getName();
 
+    /** 通道优先级，数值越小越先执行。 */
     int getPriority();
 
+    /** 判断当前上下文下该通道是否启用。 */
     boolean isEnabled(SearchChannelContext ctx);
 
+    /** 执行检索并返回结果。 */
     List<RetrievedChunk> search(SearchChannelContext ctx);
 }

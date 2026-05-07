@@ -17,7 +17,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Semaphore based concurrency limiter for streaming chat.
+ * 基于 Redis 信号量的 Chat 流式接口并发控制切面。
+ * <p>
+ * 当请求方法返回 SseEmitter 时，信号量会在 SSE 流结束后释放，而非方法返回时释放。
  */
 @Slf4j
 @Aspect
@@ -55,6 +57,9 @@ public class ChatQueueLimiterAspect {
         }
     }
 
+    /**
+     * 尝试获取信号量许可。
+     */
     private boolean acquire(RSemaphore semaphore, long waitMillis) throws InterruptedException {
         if (waitMillis > 0) {
             return semaphore.tryAcquire(waitMillis, TimeUnit.MILLISECONDS);
@@ -62,6 +67,9 @@ public class ChatQueueLimiterAspect {
         return semaphore.tryAcquire();
     }
 
+    /**
+     * SSE 流结束时释放信号量，通过 AtomicBoolean 保证只释放一次。
+     */
     private void releaseWhenSseEnds(SseEmitter emitter, RSemaphore semaphore) {
         AtomicBoolean released = new AtomicBoolean(false);
         Runnable release = () -> {

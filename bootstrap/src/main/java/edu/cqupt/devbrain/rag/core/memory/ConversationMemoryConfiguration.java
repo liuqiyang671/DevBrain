@@ -14,6 +14,9 @@ import java.util.concurrent.Executor;
 @EnableConfigurationProperties(ConversationMemoryProperties.class)
 public class ConversationMemoryConfiguration {
 
+    /**
+     * 对话记忆加载线程池，用于并行加载历史消息和摘要。
+     */
     @Bean("memoryLoadExecutor")
     public Executor memoryLoadExecutor(ConversationMemoryProperties properties) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
@@ -25,6 +28,9 @@ public class ConversationMemoryConfiguration {
         return executor;
     }
 
+    /**
+     * 对话摘要压缩线程池，用于异步触发摘要生成。
+     */
     @Bean("memorySummaryExecutor")
     public Executor memorySummaryExecutor(ConversationMemoryProperties properties) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();

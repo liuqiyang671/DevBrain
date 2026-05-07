@@ -8,12 +8,15 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import java.util.concurrent.Executor;
 
 /**
- * Chat pipeline configuration.
+ * RAG Chat 流水线配置，注册流式任务管理线程池。
  */
 @Configuration
 @EnableConfigurationProperties(RAGChatProperties.class)
 public class RAGChatConfiguration {
 
+    /**
+     * 流式任务管理线程池，用于处理取消信号的广播订阅回调。
+     */
     @Bean("streamTaskExecutor")
     public Executor streamTaskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();

@@ -47,11 +47,15 @@ public class StreamChatEventHandler implements StreamCallback {
         this.memoryService = memoryService;
         this.streamTaskManager = streamTaskManager;
         this.sender = new SseEmitterSender(emitter);
+        // 从配置读取 token 分片大小，控制 SSE 推送粒度
         this.messageChunkSize = normalizeChunkSize(aiModelProperties);
+        // 构造完成后立即发送 meta 事件，前端据此关联会话
         this.sender.sendEvent(SSEEventType.META, new MetaPayload(conversationId, taskId));
+        // 注册取消回调，用户调用 stop 接口时会触发 cancel()
         this.streamTaskManager.register(taskId, this::cancel);
     }
 
+    /** 接收 LLM 回答 token，累积到缓冲区并通过 SSE 推送给前端。 */
     @Override
     public void onContent(String chunk) {
         if (chunk == null || chunk.isEmpty() || sender.isClosed()) {
@@ -61,6 +65,7 @@ public class StreamChatEventHandler implements StreamCallback {
         sendChunks("response", chunk);
     }
 
+    /** 接收 LLM 思考过程 token，累积到思考缓冲区。 */
     @Override
     public void onThinking(String chunk) {
         if (chunk == null || chunk.isEmpty() || sender.isClosed()) {
@@ -73,19 +78,24 @@ public class StreamChatEventHandler implements StreamCallback {
         sendChunks("think", chunk);
     }
 
+    /** LLM 流式回答完成，持久化助手消息并发送 finish/done 事件。 */
     @Override
     public void onComplete() {
         if (sender.isClosed()) {
             return;
         }
         try {
+            // 从缓冲区取出完整的回答和思考内容
             String answer = answerBuffer.toString();
             String thinking = thinkingBuffer.toString();
             Integer thinkingDuration = calculateThinkingDuration();
+            // 将助手消息持久化到数据库
             ChatMessage message = ChatMessage.assistant(answer, thinking, thinkingDuration);
             String messageId = memoryService.append(conversationId, userId, message);
+            // 发送 finish 事件（携带 messageId）和 done 标记
             sender.sendEvent(SSEEventType.FINISH, new CompletionPayload(messageId, null));
             sender.sendEvent(SSEEventType.DONE, "[DONE]");
+            // 注销任务并关闭 SSE 连接
             streamTaskManager.unregister(taskId);
             sender.complete();
         } catch (Throwable ex) {
@@ -93,6 +103,7 @@ public class StreamChatEventHandler implements StreamCallback {
         }
     }
 
+    /** LLM 流式回答异常，发送 error 事件并关闭 SSE 连接。 */
     @Override
     public void onError(Throwable throwable) {
         try {
@@ -103,13 +114,19 @@ public class StreamChatEventHandler implements StreamCallback {
         }
     }
 
+    /**
+     * 取消当前流式任务，持久化已生成的部分回答并发送 cancel 事件。
+     */
     public void cancel() {
         if (sender.isClosed()) {
             return;
         }
         try {
+            // 持久化已生成的部分回答，避免取消后丢失内容
             persistPartialAssistant();
+            // 发送 cancel 事件通知前端
             sender.sendEvent(SSEEventType.CANCEL, new ErrorPayload("cancelled"));
+            // 注销任务并关闭 SSE 连接
             streamTaskManager.unregister(taskId);
             sender.complete();
         } catch (Throwable ex) {
@@ -117,12 +134,16 @@ public class StreamChatEventHandler implements StreamCallback {
         }
     }
 
+    /** 将 token 按 codePoint 粒度拆分后逐个发送 SSE message 事件。 */
     private void sendChunks(String type, String chunk) {
         for (String part : splitByCodePoint(chunk)) {
             sender.sendEvent(SSEEventType.MESSAGE, new MessageDelta(type, part));
         }
     }
 
+    /**
+     * 按 Unicode codePoint 粒度拆分文本，避免在 surrogate pair 中间截断。
+     */
     private java.util.List<String> splitByCodePoint(String value) {
         java.util.List<String> result = new java.util.ArrayList<>();
         int maxCodePoints = Math.max(1, messageChunkSize);
@@ -137,6 +158,7 @@ public class StreamChatEventHandler implements StreamCallback {
         return result;
     }
 
+    /** 计算思考过程耗时（秒），从首个思考 token 到完成的时间差。 */
     private Integer calculateThinkingDuration() {
         if (thinkingStartMs == null || thinkingBuffer.isEmpty()) {
             return null;
@@ -144,6 +166,7 @@ public class StreamChatEventHandler implements StreamCallback {
         return (int) Math.max(0, (System.currentTimeMillis() - thinkingStartMs) / 1000);
     }
 
+    /** 取消时持久化已生成的部分助手消息。 */
     private void persistPartialAssistant() {
         String answer = answerBuffer.toString();
         String thinking = thinkingBuffer.toString();
@@ -154,6 +177,9 @@ public class StreamChatEventHandler implements StreamCallback {
         memoryService.append(conversationId, userId, message);
     }
 
+    /**
+     * 读取配置的 token 分片大小，未配置或无效时默认 256。
+     */
     private int normalizeChunkSize(AIModelProperties properties) {
         if (properties == null || properties.getChat() == null
                 || properties.getChat().getMessageChunkSize() <= 0) {
@@ -162,6 +188,7 @@ public class StreamChatEventHandler implements StreamCallback {
         return properties.getChat().getMessageChunkSize();
     }
 
+    /** 提取异常消息，null 安全。 */
     private String errorMessage(Throwable throwable) {
         if (throwable == null || throwable.getMessage() == null) {
             return "unknown error";

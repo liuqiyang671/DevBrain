@@ -16,22 +16,33 @@ public class IntentGuidanceService {
 
     private final IntentProperties properties;
 
+    /**
+     * 检测意图歧义，当最高分意图分数较低且与次高分接近时触发引导。
+     *
+     * @param question   用户原始问题
+     * @param subIntents 子问题意图匹配结果
+     * @return 引导决策
+     */
     public GuidanceDecision detectAmbiguity(String question, List<SubQuestionIntent> subIntents) {
         if (subIntents == null || subIntents.isEmpty()) {
             return GuidanceDecision.none();
         }
+        // 将所有子问题的意图分数展平、过滤 null、按分数降序排列
         List<NodeScore> candidates = subIntents.stream()
                 .flatMap(subIntent -> subIntent.nodeScores().stream())
                 .filter(score -> score != null && score.getNode() != null)
                 .sorted(Comparator.comparingDouble(NodeScore::getScore).reversed())
                 .toList();
+        // 只有 1 个候选意图时不存在歧义
         if (candidates.size() < 2) {
             return GuidanceDecision.none();
         }
 
         NodeScore first = candidates.get(0);
         NodeScore second = candidates.get(1);
+        // 最高分低于阈值，说明模型对所有意图都不太确定
         boolean low = first.getScore() < properties.getAmbiguityMaxScore();
+        // 最高分与次高分差距小于阈值，说明两个意图都很可能
         boolean close = Math.abs(first.getScore() - second.getScore()) <= properties.getAmbiguityDelta();
         if (!low || !close) {
             return GuidanceDecision.none();

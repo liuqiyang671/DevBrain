@@ -16,10 +16,12 @@ public class GuidanceDecision {
         this.promptText = promptText;
     }
 
+    /** 无需引导的决策实例。 */
     public static GuidanceDecision none() {
         return NONE;
     }
 
+    /** 创建需要引导用户澄清的决策实例。 */
     public static GuidanceDecision prompt(String promptText) {
         return new GuidanceDecision(true, promptText);
     }

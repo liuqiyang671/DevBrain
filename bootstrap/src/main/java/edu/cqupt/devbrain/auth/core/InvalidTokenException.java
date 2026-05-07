@@ -14,6 +14,11 @@ import edu.cqupt.devbrain.framework.exception.ClientException;
  */
 public class InvalidTokenException extends ClientException {
 
+    /**
+     * 创建无效令牌异常。
+     *
+     * @param message 具体的错误描述
+     */
     public InvalidTokenException(String message) {
         super(message, BaseErrorCode.UNAUTHORIZED);
     }

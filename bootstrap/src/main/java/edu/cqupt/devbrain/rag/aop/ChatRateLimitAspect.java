@@ -14,7 +14,9 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 
 /**
- * Redis-backed fixed-window rate limiter for chat endpoints.
+ * 基于 Redis 固定窗口的 Chat 接口限流切面。
+ * <p>
+ * 使用 Redis 原子计数器实现，每个用户每个方法独立计数。
  */
 @Slf4j
 @Aspect

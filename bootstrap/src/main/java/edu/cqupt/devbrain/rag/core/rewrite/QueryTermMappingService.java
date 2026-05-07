@@ -7,6 +7,9 @@ public interface QueryTermMappingService {
 
     /**
      * 将查询中的术语别名替换为标准术语。
+     *
+     * @param query 原始查询文本
+     * @return 术语归一化后的查询文本
      */
     String normalize(String query);
 }

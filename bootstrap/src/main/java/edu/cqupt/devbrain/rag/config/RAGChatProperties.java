@@ -4,29 +4,21 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Runtime options for RAG chat endpoints and pipeline orchestration.
+ * RAG Chat 运行时配置，绑定 {@code rag.chat}。
  */
 @Data
 @ConfigurationProperties(prefix = "rag.chat")
 public class RAGChatProperties {
 
-    /**
-     * SSE connection timeout in milliseconds.
-     */
+    /** SSE 连接超时时间（毫秒）。 */
     private Long sseTimeoutMillis = 300_000L;
 
-    /**
-     * Default retrieval topK per sub-question.
-     */
+    /** 每个子问题的默认检索条数。 */
     private Integer topK = 5;
 
-    /**
-     * Max chat requests per user in one rate-limit window.
-     */
+    /** 单个限流窗口内允许的最大请求数。 */
     private Integer rateLimitMaxRequests = 20;
 
-    /**
-     * Chat rate-limit window in seconds.
-     */
+    /** 限流窗口时长（秒）。 */
     private Long rateLimitWindowSeconds = 60L;
 }
