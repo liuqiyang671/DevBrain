@@ -38,26 +38,26 @@ DevBrain-CQUPT 是一套前后端分离的智能知识库系统，覆盖「文�
 
 <table>
   <tr>
-    <td width="50%"><strong>登录</strong><br><img src="img_1.png" alt="登录界面"></td>
-    <td width="50%"><strong>首页</strong><br><img src="img_2.png" alt="首页"></td>
+    <td width="50%"><strong>登录</strong><br><img src="picture/img_1.png" alt="登录界面"></td>
+    <td width="50%"><strong>首页</strong><br><img src="picture/img_2.png" alt="首页"></td>
   </tr>
   <tr>
-    <td width="50%"><strong>知识问答</strong><br><img src="img_3.png" alt="知识问答"></td>
-    <td width="50%"><strong>后台管理</strong><br><img src="img_8.png" alt="后台管理"></td>
+    <td width="50%"><strong>知识问答</strong><br><img src="picture/img_3.png" alt="知识问答"></td>
+    <td width="50%"><strong>后台管理</strong><br><img src="picture/img_8.png" alt="后台管理"></td>
   </tr>
   <tr>
-    <td width="50%"><strong>知识库管理</strong><br><img src="img_4.png" alt="知识库管理"></td>
-    <td width="50%"><strong>文档管理</strong><br><img src="img_5.png" alt="文档管理"></td>
+    <td width="50%"><strong>知识库管理</strong><br><img src="picture/img_4.png" alt="知识库管理"></td>
+    <td width="50%"><strong>文档管理</strong><br><img src="picture/img_5.png" alt="文档管理"></td>
   </tr>
   <tr>
-    <td width="50%"><strong>分块查看</strong><br><img src="img_6.png" alt="分块查看"></td>
-    <td width="50%"><strong>流水线编辑</strong><br><img src="img_7.png" alt="流水线编辑"></td>
+    <td width="50%"><strong>分块查看</strong><br><img src="picture/img_6.png" alt="分块查看"></td>
+    <td width="50%"><strong>流水线编辑</strong><br><img src="picture/img_7.png" alt="流水线编辑"></td>
   </tr>
 </table>
 
 ## 技术架构
 
-![DevBrain-CQUPT 技术架构](img.png)
+![DevBrain-CQUPT 技术架构](picture/img.png)
 
 ```text
 React + Vite
