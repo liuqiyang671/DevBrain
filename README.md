@@ -1,236 +1,122 @@
 # DevBrain-CQUPT
 
-**面向高校与企业的智能知识库管理平台** — 基于 RAG 架构，支持多格式文档解析、向量化存储与语义检索。
+<div align="center">
 
-> Java 17 + Spring Boot 3.5 / React 18 + Vite + TypeScript / PostgreSQL + pgvector / Redis / MinIO / RocketMQ
+**面向高校与企业知识场景的 RAG 智能知识库平台**
+
+把 PDF、Office、Markdown、网页和飞书文档转成可检索、可追溯、可对话的知识资产。
+
+![Java](https://img.shields.io/badge/Java-17-007396?logo=openjdk&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.x-6DB33F?logo=springboot&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=222)
+![Vite](https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![pgvector](https://img.shields.io/badge/pgvector-HNSW-8A2BE2)
+![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)
+![RocketMQ](https://img.shields.io/badge/RocketMQ-5.x-D77310)
+
+</div>
 
 ---
 
 ## 项目简介
 
-DevBrain-CQUPT 是一套端到端的智能知识库管理系统，旨在将非结构化文档（PDF、Office、Markdown 等）转化为可语义检索的结构化知识，为后续的 RAG（Retrieval-Augmented Generation）问答提供数据基础。
+DevBrain-CQUPT 是一套前后端分离的智能知识库系统，覆盖「文档采集 → 内容解析 → 智能分块 → Embedding 向量化 → 语义检索 → SSE 流式问答」完整链路。
 
-系统采用前后端分离架构，后端基于 Spring Boot 多模块构建，前端使用 React + TypeScript，通过 PostgreSQL + pgvector 实现向量化存储与检索。
+项目后端采用 Java 17 + Spring Boot 3.5 多模块架构，前端采用 React 18 + Vite，向量存储基于 PostgreSQL + pgvector，并集成 Redis、MinIO、RocketMQ 等中间件。
 
-### 核心价值
+## 功能亮点
 
-- **降低知识获取成本**：将散落在各处的文档统一入库，通过语义检索替代关键词匹配，让信息查找更精准。
-- **开箱即用的文档处理管线**：内置 Apache Tika 多格式解析 + 智能分块 + 向量化流水线，无需额外配置。
-- **企业级安全能力**：Cookie JWT 认证、CSRF 双提交防护、RBAC 细粒度权限控制、分布式限流。
-- **灵活的扩展设计**：模块化架构，AI 供应商、存储后端、任务调度均可插拔替换。
+- **知识库闭环：** 知识库、文档、分块、向量、同步历史统一管理。
+- **RAG 流式问答：** 支持 SSE 输出、多轮记忆、查询改写、子问题拆分、深度思考和主动停止。
+- **文档处理管线：** 支持 PDF、Office、Markdown、HTML 等格式，内置 Apache Tika 和 5 种智能分块策略。
+- **可编排摄入 Pipeline：** `fetcher` / `parser` / `enhancer` / `chunker` / `enricher` / `indexer` 六类节点，支持任务日志追踪。
+- **企业级安全：** HttpOnly Cookie JWT、CSRF 双提交、RBAC 权限码、接口资源规则、登录风控、分布式限流。
+- **AI 多 Provider：** Embedding 和 LLM 支持按优先级路由与降级，当前接入 Ollama 与 SiliconFlow。
 
----
+## 界面预览
 
-## 功能模块总览
-
-### 用户与权限管理
-
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| 用户注册 / 登录 / 退出 | ✅ 已完成 | Cookie JWT 认证，HttpOnly Token |
-| 密码重置（邮箱令牌） | ✅ 已完成 | 本地开发日志输出令牌，生产对接 SMTP |
-| 个人资料维护 | ✅ 已完成 | 邮箱、显示名、头像 |
-| 角色管理 | ✅ 已完成 | 内置 admin / user 角色，支持自定义 |
-| 权限码管理 | ✅ 已完成 | 细粒度权限码分配 |
-| 接口资源规则 | ✅ 已完成 | HTTP 方法 + 路径模式绑定权限码 |
-| 登录风控 | ✅ 已完成 | IP 限流（20 次/5 分钟）、账号锁定（5 次失败/15 分钟） |
-| CSRF 防护 | ✅ 已完成 | 双提交 Cookie + Redis 校验 |
-
-### 知识库管理
-
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| 知识库 CRUD | ✅ 已完成 | 创建、分页查询、详情、更新、逻辑删除 |
-| 集合名唯一校验 | ✅ 已完成 | `collection_name` 全局唯一，创建后禁止修改 |
-| RBAC 资源控制 | ✅ 已完成 | `knowledge:read` / `knowledge:write` 权限码 |
-| 删除保护 | ✅ 已完成 | 存在未删除文档时拒绝删除知识库 |
-
-### 文档管理
-
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| 文档上传 | ✅ 已完成 | 多格式支持，流式上传至 MinIO/S3 |
-| 文件安全校验 | ✅ 已完成 | 黑白名单 + MIME 检测 + 文件名消毒 |
-| 分布式限流 | ✅ 已完成 | Redisson 信号量，10 并发限制 |
-| 补偿事务 | ✅ 已完成 | DB 写入失败时自动清理 S3 孤儿文件 |
-| 文档启用/禁用 | ✅ 已完成 | 控制文档是否参与语义检索 |
-| 文档分页查询 | ✅ 已完成 | 全局分页，支持知识库、状态、关键词筛选 |
-| 文档删除 | ✅ 已完成 | 逻辑删除 + 异步清理对象存储文件 |
-
-### 文档解析管线
-
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| 多格式解析 | ✅ 已完成 | Apache Tika（PDF/Office/HTML）+ Markdown 专用解析器 |
-| 5 种智能分块策略 | ✅ 已完成 | 固定大小、结构感知、递归字符、问答对、表格感知 |
-| 文本清理 | ✅ 已完成 | BOM 移除、断行 URL 修复、CJK 软换行处理 |
-| 文档生命周期 | ✅ 已完成 | pending → processing → completed / failed |
-| 异步分块流水线 | ✅ 已完成 | RocketMQ 事务消息驱动，解析→分块→持久化 |
-
-### 分块管理
-
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| 分块 CRUD | ✅ 已完成 | 创建、查询、更新、删除分块 |
-| 分块启用/禁用 | ✅ 已完成 | 控制单个分块是否参与语义检索 |
-| 批量操作 | ✅ 已完成 | 批量启用/禁用、按文档批量删除 |
-| 向量库同步 | ✅ 已完成 | 分块变更自动同步至 pgvector |
-
-### 在线文档同步
-
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| 飞书文档同步 | ✅ 已完成 | 通过飞书开放平台 API 拉取文档内容 |
-| URL 抓取同步 | ✅ 已完成 | 网页内容抓取与解析 |
-| 定时同步调度 | ✅ 已完成 | Cron 表达式配置，支持 XXL-JOB |
-| 同步历史记录 | ✅ 已完成 | 内容哈希比对，记录变更与耗时 |
-
-### Embedding 向量化与语义检索
-
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| Embedding 服务 | ✅ 已完成 | 多提供商路由（Ollama 本地 + SiliconFlow 云端），优先级降级 |
-| 向量存储 | ✅ 已完成 | pgvector HNSW 索引，余弦相似度检索 |
-| 向量空间管理 | ✅ 已完成 | 知识库级别向量空间隔离（collectionName） |
-| 向量同步 | ✅ 已完成 | 分块变更自动同步向量库 |
-| 语义检索 | ✅ 已完成 | Top-K 余弦相似度检索，ef_search=200 优化 |
-
-### 摄入 Pipeline
-
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| 流水线 CRUD | ✅ 已完成 | 节点链定义的创建、分页、详情、更新、删除 |
-| 6 种节点类型 | ✅ 已完成 | `fetcher` / `parser` / `enhancer` / `chunker` / `enricher` / `indexer`，按 `IngestionNodeType` 注册 |
-| 任务执行 | ✅ 已完成 | 按流水线定义执行，支持 JSON 来源和文件上传两种入口 |
-| 节点级日志 | ✅ 已完成 | 每个节点的状态、耗时和关键输出独立持久化 |
-| 任务分页查询 | ✅ 已完成 | 支持按流水线和状态筛选 |
-
-### RAG 流式问答
-
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| SSE 流式问答 | ✅ 已完成 | `GET /rag/v3/chat`，`meta` / `message` / `finish` / `done` / `cancel` 事件序列 |
-| 多轮对话记忆 | ✅ 已完成 | 历史消息持久化 + LLM 自动生成对话摘要 |
-| 查询改写 + 子问题拆分 | ✅ 已完成 | 多轮上下文感知的多问题改写 |
-| 意图识别与路由 | ✅ 已完成 | 节点打分、System-Only 短路、Guidance 引导 |
-| 深度思考 | ✅ 已完成 | `deepThinking=true` 启用模型 thinking 通道 |
-| 限流 / 并发 / 幂等 | ✅ 已完成 | `@ChatRateLimit` 5 次/60 秒、`@ChatQueueLimiter` 并发 10、`@IdempotentSubmit` 10 秒短窗口 |
-| 停止任务 | ✅ 已完成 | `POST /rag/v3/stop?taskId=...` 主动取消流式生成 |
-
-### 前端界面
-
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| 登录 / 注册 / 重置密码 | ✅ 已完成 | 完整认证流程 |
-| 用户工作台 | ✅ 已完成 | 个人仪表盘 |
-| 后台管理 | ✅ 已完成 | 用户、角色、资源规则管理 |
-| 知识库管理 | ✅ 已完成 | 后台知识库 CRUD |
-| 文档管理 | ✅ 已完成 | 文档上传、列表、启用/禁用、删除、在线导入 |
-| 文档分块查看 | ✅ 已完成 | 分块内容查看与编辑 |
-| 同步任务管理 | ✅ 已完成 | 同步配置、手动触发、同步历史 |
-| 摄入流水线 | ✅ 已完成 | 流水线节点编排、任务执行、节点日志查看 |
-| RAG 对话 | ✅ 已完成 | SSE 流式问答、多轮上下文、深度思考、停止生成 |
-
----
+<table>
+  <tr>
+    <td width="50%"><strong>登录</strong><br><img src="img_1.png" alt="登录界面"></td>
+    <td width="50%"><strong>首页</strong><br><img src="img_2.png" alt="首页"></td>
+  </tr>
+  <tr>
+    <td width="50%"><strong>知识问答</strong><br><img src="img_3.png" alt="知识问答"></td>
+    <td width="50%"><strong>后台管理</strong><br><img src="img_8.png" alt="后台管理"></td>
+  </tr>
+  <tr>
+    <td width="50%"><strong>知识库管理</strong><br><img src="img_4.png" alt="知识库管理"></td>
+    <td width="50%"><strong>文档管理</strong><br><img src="img_5.png" alt="文档管理"></td>
+  </tr>
+  <tr>
+    <td width="50%"><strong>分块查看</strong><br><img src="img_6.png" alt="分块查看"></td>
+    <td width="50%"><strong>流水线编辑</strong><br><img src="img_7.png" alt="流水线编辑"></td>
+  </tr>
+</table>
 
 ## 技术架构
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                     Frontend (React 18 + Vite)                    │
-│   Axios + CSRF 自动注入  ·  Zustand 状态管理  ·  React Router     │
-└─────────────────────────────┬────────────────────────────────────┘
-                              │ HTTP (Cookie + X-XSRF-TOKEN)
-┌─────────────────────────────▼────────────────────────────────────┐
-│                    Spring Boot 3.5 (bootstrap)                    │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │  Auth Interceptor → CSRF → JWT → RBAC → UserContext        │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-│  ┌──────────┐ ┌──────────────┐ ┌──────────────┐ ┌────────────┐ │
-│  │ Auth /   │ │ Knowledge /  │ │ Ingestion    │ │ RAG Chat   │ │
-│  │ RBAC     │ │ Doc / Sync   │ │ Pipeline +   │ │ Controller │ │
-│  │ Ctrl     │ │ Controller   │ │ Task Ctrl    │ │ (SSE v3)   │ │
-│  └─────┬────┘ └──────┬───────┘ └──────┬───────┘ └──────┬─────┘ │
-│        │             │                 │                │       │
-│  ┌─────▼────┐ ┌──────▼───────┐ ┌──────▼───────┐ ┌──────▼─────┐ │
-│  │ Auth     │ │ Doc / Sync   │ │ Ingestion    │ │ Stream     │ │
-│  │ Service  │ │ Service      │ │ Engine       │ │ Pipeline   │ │
-│  └─────┬────┘ └──────┬───────┘ └──────┬───────┘ └──────┬─────┘ │
-│        │             │                 │                │       │
-│  ┌─────▼─────────────▼─────────────────▼────────────────▼─────┐ │
-│  │  infra-ai (Embedding 路由 · LLM 同步/SSE 流式)              │ │
-│  ├─────────────────────────────────────────────────────────────┤ │
-│  │  framework (统一响应 · 异常 · 幂等 · 追踪 · MQ · 分布式ID)  │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-└──────────┬────────────┬────────────┬────────────┬────────────────┘
-           │            │            │            │
-     ┌─────▼─────┐ ┌───▼────┐ ┌────▼────┐ ┌────▼────┐
-     │PostgreSQL │ │ Redis  │ │  MinIO  │ │RocketMQ │
-     │ + pgvector│ │        │ │  (S3)   │ │         │
-     └───────────┘ └────────┘ └─────────┘ └─────────┘
+![DevBrain-CQUPT 技术架构](img.png)
+
+```text
+React + Vite
+    |
+    | Cookie + X-XSRF-TOKEN
+    v
+Spring Boot bootstrap
+    |-- Auth / RBAC / CSRF / UserContext
+    |-- Knowledge Base / Document / Chunk / Sync
+    |-- Ingestion Pipeline / Task / Node Log
+    |-- RAG Chat / Retrieval / Conversation Memory
+    |
+    |-- framework: 统一响应、异常、幂等、追踪、MQ、分布式 ID
+    |-- infra-ai: Embedding 路由、LLM 同步与流式调用
+    |
+    +-- PostgreSQL + pgvector
+    +-- Redis
+    +-- MinIO
+    +-- RocketMQ
 ```
 
-### 技术栈
+## 技术栈
 
-| 层级 | 技术 | 版本 |
-|------|------|------|
-| 语言 | Java | 17 |
-| 后端框架 | Spring Boot | 3.5.7 |
-| ORM | MyBatis-Plus | 3.5.14 |
-| 前端框架 | React | 18.3 |
-| 构建工具 | Vite | 6.3 |
-| 类型系统 | TypeScript | 5.6 |
-| 数据库 | PostgreSQL + pgvector | 16 |
-| 缓存 | Redis + Redisson | 7.x / 4.0.0 |
-| 对象存储 | MinIO (AWS S3 SDK) | 2.25.60 |
-| 消息队列 | RocketMQ | 5.2.0 |
-| 文档解析 | Apache Tika | 3.2.3 |
-| 任务调度 | XXL-JOB（可选） | 2.4.0 |
-| 工具库 | Hutool / Guava / OkHttp | 5.8.37 / 33.4.0 / 4.12.0 |
-
----
+| 方向 | 技术 |
+| --- | --- |
+| 后端 | Java 17、Spring Boot 3.5、MyBatis-Plus、Lombok |
+| 前端 | React 18、Vite 6、TypeScript、Zustand、React Router、Axios |
+| AI | Ollama、SiliconFlow、Embedding 多 Provider 路由、LLM 流式输出 |
+| 数据 | PostgreSQL 16、pgvector、HNSW、Redis |
+| 文档 | Apache Tika、Markdown 解析、网页抓取、飞书开放平台 |
+| 存储与消息 | MinIO、AWS S3 SDK、RocketMQ、Redisson |
+| 调度与可观测 | XXL-JOB（可选）、请求 ID、Trace、节点级任务日志 |
 
 ## 项目结构
 
-```
+```text
 devbrain-cqupt/
-├── bootstrap/                  # Spring Boot 主应用入口
-│   └── src/main/java/edu/cqupt/devbrain/
-│       ├── auth/               # 认证、JWT、CSRF、登录风控
-│       ├── user/               # 用户、角色、权限 CRUD
-│       ├── knowledge/          # 知识库、文档上传/管理、分块 CRUD
-│       ├── sync/               # 在线文档同步（飞书/URL/定时调度）
-│       ├── core/               # 文档解析（Tika/Markdown）与 5 种分块策略
-│       ├── ingestion/          # 摄入 Pipeline 引擎、6 种节点、任务执行
-│       └── rag/                # 向量存储（pgvector）、语义检索、SSE 流式问答管线
-├── framework/                  # 通用框架层（响应、异常、幂等、追踪、MQ、分布式ID、ChatMessage 约定）
-├── infra-ai/                   # AI 基础设施（Embedding 路由 + LLM 同步/SSE 流式接口）
-├── mcp-server/                 # MCP 工具服务骨架（端口 9099，尚未实现业务）
-├── frontend/                   # React + Vite 前端应用
+├── bootstrap/          # Spring Boot 主应用，包含认证、知识库、文档、Pipeline、RAG 接口
+├── framework/          # 通用框架能力：响应、异常、上下文、幂等、追踪、MQ、分布式 ID
+├── infra-ai/           # AI 基础设施：EmbeddingService、LLMService、多 Provider 路由
+├── mcp-server/         # MCP Server 骨架，默认端口 9099
+├── frontend/           # React + Vite 前端应用
 ├── resources/
-│   ├── database/schema.sql     # 本地开发 Schema（v02-v13）
-│   └── docker/                 # Docker Compose 编排文件
-├── docs/                       # 开发文档与架构说明
-└── pom.xml                     # Maven 父工程
+│   ├── database/       # schema.sql 与数据库说明
+│   └── docker/         # PostgreSQL、Redis、MinIO、RocketMQ Compose
+├── docs/               # 架构、功能和部署文档
+└── pom.xml             # Maven 父工程
 ```
-
----
 
 ## 快速开始
 
 ### 环境要求
 
-| 工具 | 最低版本 | 说明 |
-|------|----------|------|
-| JDK | 17 | 推荐 Eclipse Temurin |
-| Maven | 3.8+ | 需要能访问 Maven Central |
-| Node.js | 18+ | 推荐 LTS 版本 |
-| Docker | 24+ | 用于启动本地中间件 |
-| Docker Compose | v2 | Docker Desktop 已集成 |
+- JDK 17+
+- Maven 3.8+
+- Node.js 18+
+- Docker 24+ / Docker Compose v2
 
 ### 1. 启动中间件
-
-在项目根目录执行以下命令，依次启动 PostgreSQL、Redis、MinIO 和 RocketMQ：
 
 ```powershell
 docker compose -f resources/docker/postgres-pgvector.compose.yaml up -d
@@ -239,36 +125,17 @@ docker compose -f resources/docker/minio.compose.yaml up -d
 docker compose -f resources/docker/rocketmq.compose.yaml up -d
 ```
 
-验证中间件状态：
-
-```powershell
-# PostgreSQL + pgvector
-docker exec devbrain-postgres psql -U devbrain -d devbrain -c "SELECT '[1,2,3]'::vector;"
-
-# Redis
-docker exec devbrain-redis redis-cli ping
-# 预期输出: PONG
-
-# MinIO
-Invoke-WebRequest -Uri "http://localhost:9000/minio/health/live" -UseBasicParsing
-
-# RocketMQ
-docker exec devbrain-rocketmq-broker sh mqadmin clusterList -n rocketmq-namesrv:9876
-```
-
-> **端口说明**：`application.yaml` 默认 `REDIS_PORT=6380`，而 Redis Compose 默认发布 `6379`。启动后端前请确保端口一致，可通过环境变量 `$env:REDIS_PORT="6379"` 覆盖。
+> Redis Compose 默认发布 `6379`，后端默认读取 `REDIS_PORT=6380`。本地启动后端前建议显式设置：`$env:REDIS_PORT="6379"`。
 
 ### 2. 启动后端
 
 ```powershell
-# 编译
+$env:REDIS_PORT="6379"
 mvn -q -DskipTests compile
-
-# 启动（默认端口 9090）
 mvn -pl bootstrap -am spring-boot:run
 ```
 
-后端启动后监听 `http://localhost:9090`，API 前缀为 `/api/devbrain`。
+后端默认地址：`http://localhost:9090/api/devbrain`
 
 ### 3. 启动前端
 
@@ -278,277 +145,100 @@ npm install
 npm run dev
 ```
 
-前端开发服务器启动后访问 `http://localhost:5173`。
+前端默认地址：`http://localhost:5173`
 
 ### 4. 登录系统
 
-开发种子数据内置管理员账号：
-
-```
-用户名: admin
-密  码: password
+```text
+用户名：admin
+密码：password
 ```
 
-> 首次登录后请立即修改密码。非本地环境必须更换该账号。
+> 该账号仅用于本地开发和演示，非本地环境必须修改默认密码与密钥。
 
----
-
-## 后端部署指南
-
-### 数据库初始化
-
-PostgreSQL 容器首次启动时会自动执行 `resources/database/schema.sql`，完成以下初始化：
-
-1. 启用 pgvector 扩展
-2. 创建认证/RBAC 表（用户、角色、权限、资源规则）
-3. 创建知识库、文档、文档分块、向量存储表
-4. 创建同步历史表
-5. 创建摄入 Pipeline 定义、节点、任务执行和节点日志表
-6. 创建对话会话、消息和摘要表
-7. 插入种子数据（管理员账号、默认角色、权限码、资源规则）
-
-如需手动重新初始化：
+## 常用命令
 
 ```powershell
-docker exec devbrain-postgres psql -U devbrain -d devbrain -f /docker-entrypoint-initdb.d/01-schema.sql
-```
-
-### 环境变量配置
-
-后端通过环境变量覆盖 `application.yaml` 默认值。关键变量：
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `DB_URL` | `jdbc:postgresql://localhost:5432/devbrain` | 数据库连接 |
-| `DB_USERNAME` | `devbrain` | 数据库用户 |
-| `DB_PASSWORD` | `devbrain_dev_password` | 数据库密码 |
-| `REDIS_HOST` | `localhost` | Redis 主机 |
-| `REDIS_PORT` | `6380` | Redis 端口 |
-| `S3_ENDPOINT` | `http://localhost:9000` | MinIO API 地址 |
-| `S3_ACCESS_KEY` | `devbrain` | MinIO Access Key |
-| `S3_SECRET_KEY` | `devbrain_minio_password` | MinIO Secret Key |
-| `ROCKETMQ_NAME_SERVER` | `localhost:9876` | RocketMQ NameServer |
-| `DEVBRAIN_JWT_SECRET` | `devbrain-local-secret-...` | JWT 签名密钥 |
-| `DEVBRAIN_FEISHU_APP_ID` | 空 | 飞书应用 ID（同步功能） |
-| `DEVBRAIN_FEISHU_APP_SECRET` | 空 | 飞书应用密钥（同步功能） |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama 本地 Embedding 服务地址 |
-| `SILICONFLOW_API_KEY` | 空 | SiliconFlow 云端 Embedding API Key |
-| `RAG_DEFAULT_DIMENSION` | `1536` | Embedding 向量维度 |
-
-> 生产环境必须通过环境变量、密钥管理器或部署配置覆盖所有密码和密钥。
-
-### 运行测试
-
-```powershell
-# 全量测试
+# 后端
+mvn -q -DskipTests compile
 mvn -pl bootstrap -am test
+mvn -pl bootstrap -am spring-boot:run
 
-# 指定测试类
-mvn -pl bootstrap -am -Dtest=KnowledgeBaseServiceImplTest "-Dsurefire.failIfNoSpecifiedTests=false" test
+# 前端
+cd frontend
+npm run build
+npm run dev
 
-# 格式检查
+# 提交前检查
 git diff --check
 ```
 
----
-
-## 中间件部署说明
-
-### PostgreSQL + pgvector
-
-| 项目 | 配置 |
-|------|------|
-| 镜像 | `pgvector/pgvector:pg16` |
-| 端口 | `5432` |
-| 数据库 | `devbrain` |
-| 用户 / 密码 | `devbrain` / `devbrain_dev_password` |
-| Compose 文件 | `resources/docker/postgres-pgvector.compose.yaml` |
-
-首次启动自动执行 `resources/database/schema.sql`。数据持久化在 Docker volume `devbrain-pgdata`。
-
-### Redis
-
-| 项目 | 配置 |
-|------|------|
-| 镜像 | `redis:7-alpine` |
-| 默认端口 | `6379`（Compose）/ `6380`（application.yaml 默认） |
-| 密码 | 无（本地开发） |
-| Compose 文件 | `resources/docker/redis.compose.yaml` |
-
-用于 JWT 会话、CSRF token、登录风控计数、分布式信号量限流。
-
-### MinIO
-
-| 项目 | 配置 |
-|------|------|
-| 镜像 | `minio/minio:latest` |
-| API 端口 | `9000` |
-| 控制台端口 | `9001` |
-| 默认 Bucket | `devbrain` |
-| Compose 文件 | `resources/docker/minio.compose.yaml` |
-
-启动后自动创建 `devbrain` bucket 并设置为 private。控制台访问 `http://localhost:9001`。
-
-### RocketMQ
-
-| 项目 | 配置 |
-|------|------|
-| 镜像 | `apache/rocketmq:5.2.0` |
-| NameServer 端口 | `9876` |
-| Broker 端口 | `10911` / `10909` |
-| Compose 文件 | `resources/docker/rocketmq.compose.yaml` |
-
-用于文档上传后的异步解析任务调度。
-
----
-
-## 支持的文档格式
-
-**允许上传（14 种）：** `pdf` `doc` `docx` `xls` `xlsx` `ppt` `pptx` `md` `txt` `csv` `json` `html` `htm` `xml`
-
-**禁止上传（10 种）：** `exe` `sh` `bat` `cmd` `jsp` `php` `jar` `class` `dll` `so`
-
-单文件大小限制：50MB（可通过 `DEVBRAIN_MAX_FILE_SIZE` 环境变量调整）。
-
----
-
 ## API 概览
 
-所有接口前缀：`/api/devbrain`
+所有后端接口统一挂载在：
 
-### 认证接口
+```text
+/api/devbrain
+```
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `GET` | `/auth/csrf` | 获取 CSRF Token |
-| `POST` | `/auth/register` | 用户注册 |
-| `POST` | `/auth/login` | 用户登录 |
-| `POST` | `/auth/logout` | 退出登录 |
-| `POST` | `/auth/password/forgot` | 申请密码重置 |
-| `POST` | `/auth/password/reset` | 执行密码重置 |
+核心接口分组：
 
-### 用户接口
+- `/auth/**`：注册、登录、退出、CSRF、密码重置
+- `/user/**`、`/users/**`、`/roles/**`、`/permissions/**`、`/resources/**`：用户与 RBAC 管理
+- `/knowledge-base/**`、`/knowledge-documents/**`、`/documents/**`、`/chunks/**`：知识库、文档与分块管理
+- `/sync-tasks/**`：在线文档同步与同步历史
+- `/ingestion/**`：摄入流水线与任务执行
+- `/rag/v3/chat`：SSE 流式问答
+- `/rag/v3/stop`：停止指定流式任务
 
-| 方法 | 路径 | 说明 | 权限 |
-|------|------|------|------|
-| `GET` | `/user/me` | 当前用户信息 | 登录 |
-| `PUT` | `/user/me` | 更新个人资料 | 登录 |
-| `PUT` | `/user/password` | 修改密码 | 登录 |
+## 文档入口
 
-### 管理接口
+- [文档索引](docs/README.md)
+- [功能总结](docs/feature-summary.md)
+- [Framework 架构说明](docs/framework-architecture.md)
+- [数据库与中间件搭建](docs/database-and-middleware-setup.md)
+- [用户认证与权限](docs/user-auth-and-permission.md)
+- [文档上传指南](docs/document-upload-guide.md)
+- [文档分块策略](docs/document-chunking-guide.md)
+- [在线文档同步](docs/document-sync-guide.md)
+- [Embedding 配置指南](docs/embedding-configuration-guide.md)
+- [Embedding 安全方案](docs/embedding-security-guide.md)
 
-| 方法 | 路径 | 权限 |
-|------|------|------|
-| `GET/POST/PUT/DELETE` | `/users/**` | `user:read` / `user:write` |
-| `GET/POST/PUT/DELETE` | `/roles/**` | `role:read` / `role:write` |
-| `GET/POST/PUT/DELETE` | `/permissions/**` | `role:read` / `role:write` |
-| `GET/POST/PUT/DELETE` | `/resources/**` | `resource:read` / `resource:write` |
+## 配置提示
 
-### 知识库接口
+- 本地数据库 schema 位于 `resources/database/schema.sql`，PostgreSQL 容器首次启动时会自动初始化。
+- `resources/docker/.env.example` 和 `application.yaml` 中的密钥仅作本地占位，生产环境必须通过环境变量或密钥管理器覆盖。
+- Embedding 模型维度必须与 `t_knowledge_vector.embedding` 列定义一致，切换模型前请确认 `RAG_DEFAULT_DIMENSION`。
+- RAG 流式接口已接入限流、并发控制与幂等防护，相关配置位于 `rag.chat.*`。
 
-| 方法 | 路径 | 说明 | 权限 |
-|------|------|------|------|
-| `POST` | `/knowledge-base` | 创建知识库 | `knowledge:write` |
-| `GET` | `/knowledge-base` | 分页查询 | `knowledge:read` |
-| `GET` | `/knowledge-base/{id}` | 查询详情 | `knowledge:read` |
-| `PUT` | `/knowledge-base/{id}` | 更新知识库 | `knowledge:write` |
-| `DELETE` | `/knowledge-base/{id}` | 删除知识库 | `knowledge:write` |
+## 安全说明
 
-### 文档接口
+- JWT 存放在 HttpOnly `DEV_BRAIN_TOKEN` Cookie 中，不写入前端存储。
+- 写接口使用 `XSRF-TOKEN` + `X-XSRF-TOKEN` 双提交校验。
+- 接口权限由 `t_resource` 资源规则和 RBAC 权限码统一控制。
+- 生产环境请开启 HTTPS，并设置 `DEVBRAIN_COOKIE_SECURE=true`。
 
-| 方法 | 路径 | 说明 | 权限 |
-|------|------|------|------|
-| `POST` | `/knowledge-base/{kbId}/docs/upload` | 上传文档 | `knowledge:write` |
-| `GET` | `/knowledge-base/{kbId}/docs` | 文档列表 | `knowledge:read` |
-| `GET` | `/knowledge-documents` | 全局分页查询 | `knowledge:read` |
-| `PUT` | `/knowledge-base/{kbId}/docs/{docId}/enabled` | 启用/禁用 | `knowledge:write` |
-| `DELETE` | `/knowledge-base/{kbId}/docs/{docId}` | 删除文档 | `knowledge:write` |
+## 已实现功能与模块
 
-### 文档解析接口
-
-| 方法 | 路径 | 说明 | 权限 |
-|------|------|------|------|
-| `POST` | `/documents/{docId}/parse` | 触发文档解析 | `knowledge:write` |
-| `GET` | `/documents/{docId}/parse-status` | 查询解析状态 | `knowledge:read` |
-| `GET` | `/documents/{docId}/chunks` | 查询文档分块 | `knowledge:read` |
-| `POST` | `/documents/{docId}/parse/retry` | 重试解析 | `knowledge:write` |
-
-### 分块管理接口
-
-| 方法 | 路径 | 说明 | 权限 |
-|------|------|------|------|
-| `GET` | `/documents/{docId}/chunk-page` | 分块分页查询 | `knowledge:read` |
-| `POST` | `/documents/{docId}/chunks` | 创建分块 | `knowledge:write` |
-| `PUT` | `/documents/{docId}/chunks/{chunkId}` | 更新分块 | `knowledge:write` |
-| `DELETE` | `/documents/{docId}/chunks/{chunkId}` | 删除分块 | `knowledge:write` |
-| `PUT` | `/chunks/{chunkId}/enable` | 启用/禁用分块 | `knowledge:write` |
-| `PUT` | `/chunks/batch-enable` | 批量启用/禁用 | `knowledge:write` |
-
-### 同步任务接口
-
-| 方法 | 路径 | 说明 | 权限 |
-|------|------|------|------|
-| `PUT` | `/knowledge-base/{kbId}/docs/{docId}/schedule` | 更新定时同步配置 | `knowledge:write` |
-| `POST` | `/sync-tasks/{docId}/trigger` | 手动触发同步 | `knowledge:write` |
-| `GET` | `/sync-tasks/{docId}/history` | 查询同步历史 | `knowledge:read` |
-| `GET` | `/sync-tasks/overview` | 同步任务总览 | `knowledge:read` |
-
-### 摄入 Pipeline 接口
-
-| 方法 | 路径 | 说明 | 权限 |
-|------|------|------|------|
-| `POST` | `/ingestion/pipelines` | 创建流水线定义 | `knowledge:write` |
-| `GET` | `/ingestion/pipelines` | 分页查询流水线 | `knowledge:read` |
-| `GET` | `/ingestion/pipelines/{id}` | 查询流水线定义详情 | `knowledge:read` |
-| `PUT` | `/ingestion/pipelines/{id}` | 更新流水线定义 | `knowledge:write` |
-| `DELETE` | `/ingestion/pipelines/{id}` | 删除流水线定义 | `knowledge:write` |
-| `POST` | `/ingestion/tasks` | 按 JSON 来源执行摄入任务 | `knowledge:write` |
-| `POST` | `/ingestion/tasks/upload` | 上传文件并执行摄入任务 | `knowledge:write` |
-| `GET` | `/ingestion/tasks` | 分页查询摄入任务 | `knowledge:read` |
-| `GET` | `/ingestion/tasks/{id}` | 查询任务详情 | `knowledge:read` |
-| `GET` | `/ingestion/tasks/{id}/nodes` | 查询任务节点日志 | `knowledge:read` |
-
-### RAG 流式问答接口
-
-| 方法 | 路径 | 说明 | 权限 |
-|------|------|------|------|
-| `GET` | `/rag/v3/chat` | SSE 流式问答（query / conversationId / deepThinking） | 登录 |
-| `POST` | `/rag/v3/stop` | 停止指定 taskId 的流式生成 | 登录 |
-
-> RAG 接口受 `@ChatRateLimit`（5 次/60 秒）+ `@ChatQueueLimiter`（并发 10）+ `@IdempotentSubmit`（10 秒短窗口）三层防护，超时和 topK 等参数通过 `rag.chat.*` 配置项调整。
-
----
-
-## 文档
-
-详细的技术文档、架构说明和操作指南请参阅 `docs/` 目录：
-
-| 文档 | 内容 |
-|------|------|
-| [Framework 架构说明](docs/framework-architecture.md) | 框架层模块结构、约定与使用示例 |
-| [数据库与中间件搭建](docs/database-and-middleware-setup.md) | 本地开发环境搭建与验证 |
-| [用户认证与权限](docs/user-auth-and-permission.md) | JWT 认证、CSRF、RBAC 机制详解 |
-| [知识库 CRUD](docs/knowledge-base-crud.md) | 知识库表设计、接口、测试 |
-| [文档上传功能](docs/document-upload-guide.md) | 上传、解析、分块、限流全流程 |
-| [文档分块策略](docs/document-chunking-guide.md) | 5 种分块策略详解、配置参数、选型建议 |
-| [在线文档同步](docs/document-sync-guide.md) | 飞书/URL 同步、定时调度、同步历史 |
-| [Embedding 配置指南](docs/embedding-configuration-guide.md) | Embedding 提供商、模型配置、维度约束、Ollama/SiliconFlow 配置 |
-| [Embedding 安全方案](docs/embedding-security-guide.md) | 数据隐私风险分析、本地化 Embedding、脱敏、加密存储方案 |
-| [面试总结文档](docs/interview-preparation.md) | 功能概述、技术方案、面试问题预测与解答、优化建议 |
-| [面试 Q&A 大全](docs/interview-qa-comprehensive.md) | 57 道面试题，覆盖 16 个技术领域，三层深度解答 |
-
----
-
-## 安全注意事项
-
-- 生产环境必须设置强随机 `DEVBRAIN_JWT_SECRET`，不得使用默认值。
-- 生产环境 HTTPS 下设置 `DEVBRAIN_COOKIE_SECURE=true`。
-- 初始化管理员密码必须在首次登录后修改。
-- 不要在前端 localStorage / sessionStorage 中保存 JWT。
-- 不要提交真实生产密钥到代码仓库。`.env` 和 `application.yaml` 中的值仅作为本地占位。
-
----
+| 模块 | 已实现能力 |
+| --- | --- |
+| 认证与会话 | 用户注册、登录、退出、密码重置、个人资料维护、HttpOnly Cookie JWT、Redis 会话、CSRF 双提交防护。 |
+| RBAC 权限 | 用户管理、角色管理、权限码管理、接口资源规则、角色权限分配、用户角色分配、请求级权限校验。 |
+| 登录风控 | IP 级登录限流、账号失败次数锁定、密码 BCrypt 加密、登录审计。 |
+| 知识库管理 | 知识库创建、分页查询、详情、更新、逻辑删除、`collection_name` 唯一校验、删除保护。 |
+| 文档管理 | 本地文档上传、文档分页查询、启用/禁用、删除、文件扩展名校验、MIME 检测、文件名清理、上传并发限制。 |
+| 文档解析 | Apache Tika 多格式解析、Markdown 专用解析、解析状态流转、失败重试、文本清理、异步解析任务。 |
+| 文档分块 | 固定大小、递归字符、结构感知、问答对、表格感知 5 种分块策略；支持分块查询、编辑、删除和批量启用/禁用。 |
+| 向量与检索 | pgvector 向量存储、HNSW 索引、余弦相似度 Top-K 检索、分块变更后自动同步向量。 |
+| Embedding 服务 | Ollama / SiliconFlow 多 Provider 路由、候选模型优先级降级、向量维度校验、批量 Embedding。 |
+| 在线同步 | 飞书文档同步、URL 抓取同步、内容哈希比对、手动触发、定时调度、同步历史和同步概览。 |
+| 摄入 Pipeline | Pipeline 定义 CRUD、6 类节点注册、JSON 来源任务、文件上传任务、节点级状态与日志记录。 |
+| RAG 问答 | SSE 流式问答、多轮对话记忆、会话摘要、查询改写、子问题拆分、意图识别、深度思考、停止生成。 |
+| 问答防护 | 聊天限流、并发队列控制、短窗口幂等提交、防重复请求、防资源占用。 |
+| 前端应用 | 登录注册、用户工作台、后台管理、知识库管理、文档管理、分块查看、同步任务、Pipeline 编排、RAG 对话页面。 |
+| 基础框架 | 统一响应、全局异常、请求 ID、用户上下文、MyBatis-Plus 自动填充、幂等、追踪、Redis Key 序列化、RocketMQ 适配、分布式 ID。 |
+| MCP Server | 独立 Spring Boot 模块骨架，默认端口 `9099`，预留后续 MCP 工具扩展入口。 |
 
 ## 许可证
 
-本项目仅供学习与研究使用。
+本项目由 liuqiyang 个人开发并开源。
