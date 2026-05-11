@@ -102,4 +102,37 @@ class OllamaLLMClientTest {
                 .contains("\"reasoning_effort\":\"medium\"")
                 .doesNotContain("enable_thinking");
     }
+
+    @Test
+    void nonThinkingRequestDoesNotSendOllamaReasoningField() throws Exception {
+        OllamaLLMClient client = new OllamaLLMClient(new AIModelProperties());
+        server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .addHeader("Content-Type", "application/json")
+                .setBody("""
+                        {
+                          "choices": [{
+                            "message": {"role": "assistant", "content": "direct answer"}
+                          }]
+                        }
+                        """));
+
+        client.chat(
+                ChatRequest.builder()
+                        .messages(List.of(ChatMessage.user("你好")))
+                        .thinking(false)
+                        .build(),
+                new ChatTarget(
+                        "ollama",
+                        "qwen3.6:35b-a3b",
+                        server.url("/v1/chat/completions").toString(),
+                        null
+                )
+        );
+
+        String requestBody = server.takeRequest().getBody().readUtf8();
+        assertThat(requestBody)
+                .doesNotContain("reasoning_effort")
+                .doesNotContain("enable_thinking");
+    }
 }

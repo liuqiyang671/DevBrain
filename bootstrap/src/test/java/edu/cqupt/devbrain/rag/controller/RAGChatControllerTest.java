@@ -23,10 +23,10 @@ class RAGChatControllerTest {
     void chatShouldCreateSseEmitterAndDelegateToService() {
         properties.setSseTimeoutMillis(12_345L);
 
-        SseEmitter emitter = controller.chat("后端咋部署", "conv-1", true);
+        SseEmitter emitter = controller.chat("后端咋部署", "conv-1", true, true);
 
         assertNotNull(emitter);
-        verify(chatService).streamChat(eq("后端咋部署"), eq("conv-1"), eq(true), any(SseEmitter.class));
+        verify(chatService).streamChat(eq("后端咋部署"), eq("conv-1"), eq(true), eq(true), any(SseEmitter.class));
     }
 
     @Test

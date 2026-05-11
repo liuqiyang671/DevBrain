@@ -57,6 +57,23 @@ class RoutingLLMServiceTest {
     }
 
     @Test
+    void chatUsesHighestPriorityCandidateEvenWhenDefaultModelIsDifferent() {
+        RecordingLLMClient localClient = RecordingLLMClient.returning("ollama", "Hello from Ollama");
+        RecordingLLMClient remoteClient = RecordingLLMClient.returning("siliconflow", "Hello from SF");
+        RoutingLLMService service = service("qwen-chat-local-9b", List.of(
+                candidate("qwen-chat-local-9b", "ollama", "qwen3.5:9b", 2, true),
+                candidate("qwen-chat-siliconflow", "siliconflow", "Qwen/Qwen3-32B", 1, true)
+        ), List.of(localClient, remoteClient));
+
+        String answer = service.chat("Hi");
+
+        assertThat(answer).isEqualTo("Hello from SF");
+        assertThat(remoteClient.lastTarget).isNotNull();
+        assertThat(remoteClient.lastTarget.getProvider()).isEqualTo("siliconflow");
+        assertThat(localClient.lastTarget).isNull();
+    }
+
+    @Test
     void chatThrowsWhenAllCandidatesFail() {
         RecordingLLMClient failClient = RecordingLLMClient.failing("siliconflow");
         RoutingLLMService service = service("qwen-chat-default", List.of(
@@ -197,6 +214,45 @@ class RoutingLLMServiceTest {
         assertThat(backupClient.lastTarget).isNotNull();
         assertThat(backupClient.lastTarget.getModel()).isEqualTo("qwen3.5:9b");
         assertThat(contents).containsExactly("streamed-chunk");
+    }
+
+    @Test
+    void streamChatUsesHighestPriorityCandidateEvenWhenDefaultModelIsDifferent() {
+        RecordingLLMClient localClient = RecordingLLMClient.streaming("ollama");
+        RecordingLLMClient remoteClient = RecordingLLMClient.streaming("siliconflow");
+        RoutingLLMService service = service("qwen-chat-local-9b", List.of(
+                candidate("qwen-chat-local-9b", "ollama", "qwen3.5:9b", 2, true),
+                candidate("qwen-chat-siliconflow", "siliconflow", "Qwen/Qwen3-32B", 1, true)
+        ), List.of(localClient, remoteClient));
+
+        ChatRequest request = ChatRequest.builder()
+                .messages(List.of(ChatMessage.user("Hi")))
+                .build();
+        List<String> contents = new ArrayList<>();
+
+        service.streamChat(request, new StreamCallback() {
+            @Override
+            public void onContent(String content) {
+                contents.add(content);
+            }
+
+            @Override
+            public void onThinking(String thinking) {
+            }
+
+            @Override
+            public void onComplete() {
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+            }
+        });
+
+        assertThat(contents).containsExactly("streamed-chunk");
+        assertThat(remoteClient.lastTarget).isNotNull();
+        assertThat(remoteClient.lastTarget.getProvider()).isEqualTo("siliconflow");
+        assertThat(localClient.lastTarget).isNull();
     }
 
     @Test

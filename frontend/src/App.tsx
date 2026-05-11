@@ -10,6 +10,8 @@
  */
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useAuthStore } from './stores/authStore';
 import * as authApi from './services/auth';
 import * as knowledgeBaseApi from './services/knowledgeBase';
@@ -322,9 +324,7 @@ const ragMessageStoreKey = 'devbrain.rag.messages.v1';
 const frontMenuItems: ShellMenuItem[] = [
   { label: '首页', path: '/workspace', icon: 'home' },
   { label: '智能问答', path: '/assistant', icon: 'message' },
-  { label: '知识库', path: '/knowledge-bases', icon: 'book' },
   { label: '历史记录', path: '/history', icon: 'history' },
-  { label: '我的收藏', path: '/favorites', icon: 'star' },
   { label: '个人中心', path: '/profile', icon: 'user' },
 ];
 
@@ -702,7 +702,7 @@ function AppShell({ children, mode = 'front' }: { children: ReactNode; mode?: Sh
         <header className="topbar">
           <label className="global-search">
             <span>⌕</span>
-            <input placeholder={isAdminMode ? '搜索用户、知识库、文档、日志...' : '全局搜索知识库、文档、问题...'} />
+            <input placeholder={isAdminMode ? '搜索用户、知识库、文档、日志...' : '全局搜索问题、历史记录...'} />
             <kbd>⌘ K</kbd>
           </label>
           <div className="topbar-user">
@@ -3966,6 +3966,7 @@ function AssistantPage() {
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [conversationError, setConversationError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -4085,6 +4086,7 @@ function AssistantPage() {
         conversationId: pendingConversationId,
         question: normalized,
         deepThinking: false,
+        webSearch: webSearchEnabled,
       }, {
         onMeta: (payload) => {
           setActiveTaskId(payload.taskId);
@@ -4110,6 +4112,13 @@ function AssistantPage() {
           setVisibleMessages(next);
           const conversationId = next.find((item) => item.id === targetId)?.conversationId;
           if (conversationId) persistConversation(conversationId, next, normalized);
+        },
+        onTrace: (payload) => {
+          const time = payload.timestamp ? new Date(payload.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+          console.info('[DevBrain RAG]', time, payload.stage || 'trace', payload.message || '', {
+            conversationId: payload.conversationId,
+            taskId: payload.taskId,
+          });
         },
         onFinish: (payload) => {
           const targetId = assistantMessageIdRef.current;
@@ -4163,7 +4172,7 @@ function AssistantPage() {
       finishStream();
     } finally {
     }
-  }, [finishStream, loadConversations, persistConversation, question, selectedConversationId, sending, setVisibleMessages]);
+  }, [finishStream, loadConversations, persistConversation, question, selectedConversationId, sending, setVisibleMessages, webSearchEnabled]);
 
   const stopCurrentGeneration = useCallback(async () => {
     if (!activeTaskId || stopping) return;
@@ -4240,7 +4249,6 @@ function AssistantPage() {
             ) : messages.map((message) => (
               <RagMessageBubble message={message} displayName={user?.displayName || user?.username || '我'} key={message.id} />
             ))}
-            {sending && <div className="rag-pending-answer">正在检索知识库并生成回答...</div>}
             {sendError && (
               <div className="rag-error-card">
                 <strong>请求失败</strong>
@@ -4258,6 +4266,16 @@ function AssistantPage() {
               onChange={(event) => setQuestion(event.target.value)}
               disabled={sending}
             />
+            <button
+              className={webSearchEnabled ? 'rag-tool-toggle active' : 'rag-tool-toggle'}
+              type="button"
+              aria-pressed={webSearchEnabled}
+              title="联网搜索"
+              onClick={() => setWebSearchEnabled((value) => !value)}
+              disabled={sending}
+            >
+              联网
+            </button>
             {sending ? (
               <button className="btn btn-light" type="button" onClick={stopCurrentGeneration} disabled={!activeTaskId || stopping}>
                 {stopping ? '停止中...' : '停止'}
@@ -4283,10 +4301,14 @@ function RagMessageBubble({ message, displayName }: { message: RagMessage; displ
       {!isUser && message.thinkingContent ? (
         <details className="rag-thinking-block">
           <summary>思考过程</summary>
-          <p>{message.thinkingContent}</p>
+          <MarkdownMessage content={message.thinkingContent} />
         </details>
       ) : null}
-      <p>{message.content || (message.streaming ? '正在生成...' : '')}</p>
+      {isUser ? (
+        <p>{message.content || (message.streaming ? '正在生成...' : '')}</p>
+      ) : (
+        <MarkdownMessage content={message.content || (message.streaming ? '正在生成...' : '')} />
+      )}
       {!isUser && message.streaming ? <span className="rag-streaming-indicator">流式生成中</span> : null}
       {!isUser && message.cancelled ? <span className="rag-status-pill">已停止</span> : null}
       {!isUser && message.errorMessage ? <span className="rag-status-pill danger">{message.errorMessage}</span> : null}
@@ -4302,6 +4324,25 @@ function RagMessageBubble({ message, displayName }: { message: RagMessage; displ
         </div>
       ) : null}
     </article>
+  );
+}
+
+function MarkdownMessage({ content }: { content: string }) {
+  return (
+    <div className="rag-markdown">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ children, ...props }) => (
+            <a {...props} target="_blank" rel="noreferrer">
+              {children}
+            </a>
+          ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
   );
 }
 

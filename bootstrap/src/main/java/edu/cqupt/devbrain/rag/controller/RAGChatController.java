@@ -39,9 +39,10 @@ public class RAGChatController {
     @IdempotentSubmit(expireSeconds = 10)
     public SseEmitter chat(@RequestParam String question,
                            @RequestParam(required = false) String conversationId,
-                           @RequestParam(defaultValue = "false") Boolean deepThinking) {
+                           @RequestParam(defaultValue = "false") Boolean deepThinking,
+                           @RequestParam(defaultValue = "false") Boolean webSearch) {
         SseEmitter emitter = new SseEmitter(timeoutMillis());
-        chatService.streamChat(question, conversationId, deepThinking, emitter);
+        chatService.streamChat(question, conversationId, deepThinking, webSearch, emitter);
         return emitter;
     }
 

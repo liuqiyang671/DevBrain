@@ -80,7 +80,35 @@ class StreamChatEventHandlerTest {
     }
 
     @Test
-    void onErrorShouldSendErrorAndCloseWithError() throws Exception {
+    void onCompleteWithThinkingOnlyShouldSendFallbackAndPersistAssistant() throws Exception {
+        CapturingSseEmitter emitter = new CapturingSseEmitter();
+        StreamChatEventHandler handler =
+                new StreamChatEventHandler(emitter, "conv-1", "task-1", memoryService, properties, taskManager);
+
+        handler.onThinking("正在分析");
+        handler.onComplete();
+
+        String fallbackResponse = null;
+        for (CapturedEvent event : eventsOf(emitter, SSEEventType.MESSAGE)) {
+            JsonNode payload = OBJECT_MAPPER.readTree(event.data());
+            if ("response".equals(payload.get("type").asText())) {
+                fallbackResponse = payload.get("content").asText();
+            }
+        }
+        assertTrue(fallbackResponse != null && fallbackResponse.contains("没有生成有效回答"));
+
+        assertEquals(1, memoryService.appendedMessages.size());
+        ChatMessage message = memoryService.appendedMessages.get(0);
+        assertEquals(ChatMessage.Role.ASSISTANT, message.getRole());
+        assertEquals(fallbackResponse, message.getContent());
+        assertEquals("正在分析", message.getThinkingContent());
+        assertEquals(0, eventsOf(emitter, SSEEventType.ERROR).size());
+        assertTrue(emitter.completed);
+        assertFalse(taskManager.cancel("task-1"));
+    }
+
+    @Test
+    void onErrorShouldSendErrorAndComplete() throws Exception {
         CapturingSseEmitter emitter = new CapturingSseEmitter();
         StreamChatEventHandler handler =
                 new StreamChatEventHandler(emitter, "conv-1", "task-1", memoryService, properties, taskManager);
@@ -90,7 +118,8 @@ class StreamChatEventHandlerTest {
         List<CapturedEvent> errorEvents = eventsOf(emitter, SSEEventType.ERROR);
         assertEquals(1, errorEvents.size());
         assertTrue(errorEvents.get(0).data().contains("模型失败"));
-        assertTrue(emitter.failed);
+        assertTrue(emitter.completed);
+        assertFalse(emitter.failed);
         assertFalse(taskManager.cancel("task-1"));
     }
 

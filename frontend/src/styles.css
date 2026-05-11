@@ -3166,6 +3166,72 @@ code {
   white-space: pre-wrap;
 }
 
+.rag-markdown {
+  color: var(--text);
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+
+.rag-markdown > :first-child {
+  margin-top: 0;
+}
+
+.rag-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.rag-markdown p {
+  margin: 0 0 10px;
+  white-space: normal;
+}
+
+.rag-markdown ul,
+.rag-markdown ol {
+  margin: 0 0 10px 20px;
+  padding: 0;
+}
+
+.rag-markdown li {
+  margin: 4px 0;
+}
+
+.rag-markdown strong {
+  font-weight: 900;
+}
+
+.rag-markdown a {
+  color: var(--primary-strong);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.rag-markdown a:hover {
+  text-decoration: underline;
+}
+
+.rag-markdown code {
+  border-radius: 6px;
+  background: #f2f6fa;
+  color: #1d3552;
+  padding: 2px 5px;
+  font-family: Consolas, "Liberation Mono", monospace;
+  font-size: 0.92em;
+}
+
+.rag-markdown pre {
+  overflow: auto;
+  border-radius: 8px;
+  background: #152033;
+  color: #f6f8fb;
+  padding: 12px;
+}
+
+.rag-markdown pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
 .rag-thinking-block {
   border: 1px solid #d8e4f2;
   border-radius: 8px;
@@ -3259,7 +3325,7 @@ code {
 
 .rag-composer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 10px;
   border-top: 1px solid var(--border);
   background: #fbfdff;
@@ -3269,6 +3335,23 @@ code {
 .rag-composer textarea {
   min-height: 54px;
   resize: vertical;
+}
+
+.rag-tool-toggle {
+  align-self: end;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  padding: 0 12px;
+  font-weight: 900;
+}
+
+.rag-tool-toggle.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary-strong);
 }
 
 .rag-side-card,

@@ -20,7 +20,6 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
-import java.util.stream.Stream;
 
 import static edu.cqupt.devbrain.framework.errorcode.BaseErrorCode.REMOTE_ERROR;
 
@@ -78,18 +77,30 @@ public class RoutingLLMService implements LLMService {
         for (AIModelProperties.ModelCandidate candidate : candidates) {
             routingCallback.resetStartupFailure();
             try {
+                if (callback != null) {
+                    callback.onTrace("llm.candidate.try", candidateDescription(candidate));
+                }
                 ChatTarget target = targetFor(candidate);
                 StreamCancellationHandle handle = clientFor(candidate).streamChat(request, routingCallback, target);
                 Throwable startupFailure = routingCallback.startupFailure();
                 if (startupFailure == null) {
+                    if (callback != null) {
+                        callback.onTrace("llm.candidate.selected", candidateDescription(candidate));
+                    }
                     return handle;
                 }
                 lastFailure = toRuntimeException(startupFailure);
+                if (callback != null) {
+                    callback.onTrace("llm.candidate.failed", candidateDescription(candidate) + "，启动失败：" + lastFailure.getMessage());
+                }
                 log.warn("LLM 流式候选模型启动失败，candidateId={}，provider={}，model={}",
                         candidate.getId(), candidate.getProvider(), candidate.getModel(), lastFailure);
                 cancelQuietly(handle);
             } catch (RuntimeException ex) {
                 lastFailure = ex;
+                if (callback != null) {
+                    callback.onTrace("llm.candidate.failed", candidateDescription(candidate) + "，启动失败：" + ex.getMessage());
+                }
                 log.warn("LLM 流式候选模型启动失败，candidateId={}，provider={}，model={}",
                         candidate.getId(), candidate.getProvider(), candidate.getModel(), ex);
             }
@@ -126,21 +137,9 @@ public class RoutingLLMService implements LLMService {
     }
 
     private List<AIModelProperties.ModelCandidate> fallbackCandidates() {
-        String defaultModel = defaultModelId();
-        List<AIModelProperties.ModelCandidate> sortedEnabled = chatCandidates().stream()
+        return chatCandidates().stream()
                 .filter(AIModelProperties.ModelCandidate::isEnabled)
                 .sorted(Comparator.comparingInt(AIModelProperties.ModelCandidate::getPriority))
-                .toList();
-        Optional<AIModelProperties.ModelCandidate> defaultCandidate = sortedEnabled.stream()
-                .filter(candidate -> defaultModel.equals(candidate.getId()))
-                .findFirst();
-        if (defaultCandidate.isEmpty()) {
-            return sortedEnabled;
-        }
-        return Stream.concat(
-                        Stream.of(defaultCandidate.get()),
-                        sortedEnabled.stream().filter(candidate -> !defaultModel.equals(candidate.getId()))
-                )
                 .toList();
     }
 
@@ -185,6 +184,13 @@ public class RoutingLLMService implements LLMService {
         return failure == null || !StringUtils.hasText(failure.getMessage())
                 ? ""
                 : "，lastError=" + failure.getMessage();
+    }
+
+    private String candidateDescription(AIModelProperties.ModelCandidate candidate) {
+        return "candidateId=" + candidate.getId()
+                + "，provider=" + candidate.getProvider()
+                + "，model=" + candidate.getModel()
+                + "，priority=" + candidate.getPriority();
     }
 
     private RuntimeException toRuntimeException(Throwable failure) {

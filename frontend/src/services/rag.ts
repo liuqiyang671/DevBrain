@@ -5,6 +5,7 @@ import type {
   RagSseErrorPayload,
   RagSseMessageDelta,
   RagSseMetaPayload,
+  RagSseTracePayload,
 } from '../types';
 
 /**
@@ -22,6 +23,8 @@ export interface RagStreamHandlers {
   onMeta?: (payload: RagSseMetaPayload) => void;
   /** 收到消息增量事件（思考或回答内容片段） */
   onMessage?: (payload: RagSseMessageDelta) => void;
+  /** 收到后端处理阶段追踪事件 */
+  onTrace?: (payload: RagSseTracePayload) => void;
   /** 收到完成事件（包含消息 ID 和会话标题） */
   onFinish?: (payload: RagSseCompletionPayload) => void;
   /** 流式传输结束 */
@@ -40,10 +43,12 @@ export function streamChat(payload: RagChatRequest, handlers: RagStreamHandlers)
     search.set('conversationId', payload.conversationId);
   }
   search.set('deepThinking', String(Boolean(payload.deepThinking)));
+  search.set('webSearch', String(Boolean(payload.webSearch)));
 
   const source = new EventSource(`${API_BASE_URL}/rag/v3/chat?${search.toString()}`, { withCredentials: true });
   source.addEventListener('meta', (event) => handlers.onMeta?.(parseEventData<RagSseMetaPayload>(event)));
   source.addEventListener('message', (event) => handlers.onMessage?.(parseEventData<RagSseMessageDelta>(event)));
+  source.addEventListener('trace', (event) => handlers.onTrace?.(parseEventData<RagSseTracePayload>(event)));
   source.addEventListener('finish', (event) => handlers.onFinish?.(parseEventData<RagSseCompletionPayload>(event)));
   source.addEventListener('done', () => {
     source.close();

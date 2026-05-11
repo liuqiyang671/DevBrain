@@ -85,6 +85,22 @@ class AbstractOpenAIStyleLLMClientTest {
     }
 
     @Test
+    void syncChatDisablesThinkingWhenRequestThinkingIsFalse() throws Exception {
+        server.enqueue(jsonResponse("""
+                {"choices": [{"message": {"content": "OK"}}]}
+                """));
+
+        ChatRequest request = ChatRequest.builder()
+                .messages(List.of(ChatMessage.user("你好")))
+                .thinking(false)
+                .build();
+        client.chat(request, target("sk-test"));
+
+        String body = server.takeRequest().getBody().readUtf8();
+        assertThat(body).contains("\"enable_thinking\":false");
+    }
+
+    @Test
     void syncChatHttpErrorThrowsRemoteException() {
         server.enqueue(new MockResponse().setResponseCode(500).setBody("server error"));
 

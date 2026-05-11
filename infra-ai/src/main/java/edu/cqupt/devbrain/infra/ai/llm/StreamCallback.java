@@ -20,6 +20,17 @@ public interface StreamCallback {
     void onThinking(String thinking);
 
     /**
+     * 接收后端处理阶段追踪信息。
+     * <p>
+     * 默认空实现，避免非 SSE 调用方必须关心 RAG 过程日志。
+     *
+     * @param stage   阶段标识
+     * @param message 阶段说明
+     */
+    default void onTrace(String stage, String message) {
+    }
+
+    /**
      * 流式输出正常结束时回调。整个会话只会调用一次。
      */
     void onComplete();

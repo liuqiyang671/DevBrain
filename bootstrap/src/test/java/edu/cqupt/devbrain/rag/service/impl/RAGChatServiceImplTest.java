@@ -43,7 +43,7 @@ class RAGChatServiceImplTest {
         when(callbackFactory.createChatEventHandler(eq(emitter), eq("conv-1"), any(String.class), eq("user-1")))
                 .thenReturn(callback);
 
-        service.streamChat("后端咋部署", "conv-1", true, emitter);
+        service.streamChat("后端咋部署", "conv-1", true, true, emitter);
 
         ArgumentCaptor<StreamChatContext> ctxCaptor = ArgumentCaptor.forClass(StreamChatContext.class);
         verify(pipeline).execute(ctxCaptor.capture());
@@ -52,6 +52,7 @@ class RAGChatServiceImplTest {
         assertEquals("conv-1", ctx.getConversationId());
         assertEquals("user-1", ctx.getUserId());
         assertEquals(Boolean.TRUE, ctx.getDeepThinking());
+        assertEquals(Boolean.TRUE, ctx.getWebSearch());
         assertNotNull(ctx.getTaskId());
         assertEquals(callback, ctx.getCallback());
     }
@@ -65,7 +66,7 @@ class RAGChatServiceImplTest {
         RuntimeException failure = new RuntimeException("boom");
         doThrow(failure).when(pipeline).execute(any(StreamChatContext.class));
 
-        service.streamChat("问题", null, false, new SseEmitter());
+        service.streamChat("问题", null, false, false, new SseEmitter());
 
         verify(callback).onError(failure);
     }

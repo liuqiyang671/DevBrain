@@ -14,6 +14,9 @@ public enum SSEEventType {
     /** 流式回答 token 增量。 */
     MESSAGE("message"),
 
+    /** 后端 RAG 处理阶段追踪，仅用于前端控制台调试。 */
+    TRACE("trace"),
+
     /** 回答完成，包含 messageId。 */
     FINISH("finish"),
 

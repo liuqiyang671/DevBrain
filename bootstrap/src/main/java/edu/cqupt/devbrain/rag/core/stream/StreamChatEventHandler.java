@@ -13,6 +13,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class StreamChatEventHandler implements StreamCallback {
 
     private static final String ASSISTANT_USER_ID = "__assistant__";
+    private static final String EMPTY_ANSWER_FALLBACK = "抱歉，这次没有生成有效回答，请再试一次。";
 
     private final String conversationId;
     private final String userId;
@@ -51,6 +52,7 @@ public class StreamChatEventHandler implements StreamCallback {
         this.messageChunkSize = normalizeChunkSize(aiModelProperties);
         // 构造完成后立即发送 meta 事件，前端据此关联会话
         this.sender.sendEvent(SSEEventType.META, new MetaPayload(conversationId, taskId));
+        onTrace("stream.meta", "SSE 连接已建立，已分配会话和任务 ID");
         // 注册取消回调，用户调用 stop 接口时会触发 cancel()
         this.streamTaskManager.register(taskId, this::cancel);
     }
@@ -78,6 +80,21 @@ public class StreamChatEventHandler implements StreamCallback {
         sendChunks("think", chunk);
     }
 
+    /** 发送后端处理阶段追踪事件，前端只打印到控制台。 */
+    @Override
+    public void onTrace(String stage, String message) {
+        if (sender.isClosed()) {
+            return;
+        }
+        sender.sendEvent(SSEEventType.TRACE, new TracePayload(
+                stage,
+                message,
+                conversationId,
+                taskId,
+                System.currentTimeMillis()
+        ));
+    }
+
     /** LLM 流式回答完成，持久化助手消息并发送 finish/done 事件。 */
     @Override
     public void onComplete() {
@@ -85,14 +102,22 @@ public class StreamChatEventHandler implements StreamCallback {
             return;
         }
         try {
+            onTrace("stream.persist", "模型输出完成，正在持久化助手消息");
             // 从缓冲区取出完整的回答和思考内容
             String answer = answerBuffer.toString();
             String thinking = thinkingBuffer.toString();
             Integer thinkingDuration = calculateThinkingDuration();
+            if (answer.isBlank()) {
+                answer = EMPTY_ANSWER_FALLBACK;
+                answerBuffer.append(answer);
+                onTrace("stream.empty-content", "模型流结束但没有返回正文，已下发兜底回答");
+                sendChunks("response", answer);
+            }
             // 将助手消息持久化到数据库
             ChatMessage message = ChatMessage.assistant(answer, thinking, thinkingDuration);
             String messageId = memoryService.append(conversationId, userId, message);
             // 发送 finish 事件（携带 messageId）和 done 标记
+            onTrace("stream.done", "助手消息已保存，SSE 流即将结束");
             sender.sendEvent(SSEEventType.FINISH, new CompletionPayload(messageId, null));
             sender.sendEvent(SSEEventType.DONE, "[DONE]");
             // 注销任务并关闭 SSE 连接
@@ -107,6 +132,7 @@ public class StreamChatEventHandler implements StreamCallback {
     @Override
     public void onError(Throwable throwable) {
         try {
+            onTrace("stream.error", errorMessage(throwable));
             sender.sendEvent(SSEEventType.ERROR, new ErrorPayload(errorMessage(throwable)));
         } finally {
             streamTaskManager.unregister(taskId);
@@ -122,6 +148,7 @@ public class StreamChatEventHandler implements StreamCallback {
             return;
         }
         try {
+            onTrace("stream.cancel", "收到取消请求，正在保存已生成的部分回答");
             // 持久化已生成的部分回答，避免取消后丢失内容
             persistPartialAssistant();
             // 发送 cancel 事件通知前端

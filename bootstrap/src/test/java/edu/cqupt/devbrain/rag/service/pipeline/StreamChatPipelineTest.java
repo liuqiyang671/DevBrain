@@ -22,6 +22,8 @@ import edu.cqupt.devbrain.rag.core.retrieve.RetrievalEngine;
 import edu.cqupt.devbrain.rag.core.rewrite.QueryRewriteService;
 import edu.cqupt.devbrain.rag.core.rewrite.RewriteResult;
 import edu.cqupt.devbrain.rag.core.stream.StreamTaskManager;
+import edu.cqupt.devbrain.rag.core.websearch.WebSearchResult;
+import edu.cqupt.devbrain.rag.core.websearch.WebSearchService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -51,6 +53,7 @@ class StreamChatPipelineTest {
     private final RAGPromptService promptService = mock(RAGPromptService.class);
     private final LLMService llmService = mock(LLMService.class);
     private final StreamTaskManager taskManager = mock(StreamTaskManager.class);
+    private final WebSearchService webSearchService = mock(WebSearchService.class);
     private final RAGChatProperties properties = new RAGChatProperties();
 
     @Test
@@ -111,6 +114,9 @@ class StreamChatPipelineTest {
         assertSame(history, ctx.getHistory());
         assertSame(rewriteResult, ctx.getRewriteResult());
         assertSame(subIntents, ctx.getSubIntents());
+        assertTrue(callback.traces.stream().anyMatch(trace -> trace.stage().equals("retrieval.start")));
+        assertTrue(callback.traces.stream().anyMatch(trace -> trace.stage().equals("prompt.built")));
+        assertTrue(callback.traces.stream().anyMatch(trace -> trace.stage().equals("llm.stream")));
     }
 
     @Test
@@ -184,6 +190,108 @@ class StreamChatPipelineTest {
         assertTrue(callback.completed);
         verify(taskManager).bindHandle("task-daily", handle);
         verifyNoInteractions(retrievalEngine, promptService);
+    }
+
+    @Test
+    void executeShouldBypassRewriteAndIntentForSimpleGeneralChat() {
+        StreamChatPipeline pipeline = pipeline();
+        CapturingCallback callback = new CapturingCallback();
+        String question = "你是谁";
+        StreamChatContext ctx = StreamChatContext.builder()
+                .question(question)
+                .conversationId("conv-simple")
+                .taskId("task-simple")
+                .deepThinking(false)
+                .userId("user-simple")
+                .callback(callback)
+                .build();
+        List<ChatMessage> history = List.of(ChatMessage.user(question));
+        StreamCancellationHandle handle = mock(StreamCancellationHandle.class);
+
+        when(memoryService.loadAndAppend(eq("conv-simple"), eq("user-simple"), any(ChatMessage.class))).thenReturn(history);
+        when(llmService.streamChat(any(ChatRequest.class), same(callback))).thenAnswer(invocation -> {
+            callback.onContent("我是 DevBrain Assistant。");
+            callback.onComplete();
+            return handle;
+        });
+        when(taskManager.contains("task-simple")).thenReturn(true);
+
+        pipeline.execute(ctx);
+
+        assertEquals("我是 DevBrain Assistant。", callback.content.toString());
+        assertTrue(callback.completed);
+        verify(llmService).streamChat(any(ChatRequest.class), same(callback));
+        verify(taskManager).bindHandle("task-simple", handle);
+        verifyNoInteractions(rewriteService, intentResolver, guidanceService, retrievalEngine, promptService);
+    }
+
+    @Test
+    void executeGeneralChatShouldSendCurrentQuestionAfterExistingHistory() {
+        StreamChatPipeline pipeline = pipeline();
+        CapturingCallback callback = new CapturingCallback();
+        String question = "你是谁";
+        StreamChatContext ctx = StreamChatContext.builder()
+                .question(question)
+                .conversationId("conv-history")
+                .taskId("task-history")
+                .deepThinking(false)
+                .userId("user-history")
+                .callback(callback)
+                .build();
+        List<ChatMessage> history = List.of(
+                ChatMessage.user("你好"),
+                ChatMessage.assistant("你好！有什么我可以帮你的吗？")
+        );
+        StreamCancellationHandle handle = mock(StreamCancellationHandle.class);
+
+        when(memoryService.loadAndAppend(eq("conv-history"), eq("user-history"), any(ChatMessage.class))).thenReturn(history);
+        when(llmService.streamChat(any(ChatRequest.class), same(callback))).thenReturn(handle);
+
+        pipeline.execute(ctx);
+
+        ArgumentCaptor<ChatRequest> requestCaptor = ArgumentCaptor.forClass(ChatRequest.class);
+        verify(llmService).streamChat(requestCaptor.capture(), same(callback));
+        List<ChatMessage> messages = requestCaptor.getValue().getMessages();
+        ChatMessage lastMessage = messages.get(messages.size() - 1);
+        assertEquals(ChatMessage.Role.USER, lastMessage.getRole());
+        assertEquals(question, lastMessage.getContent());
+        verifyNoInteractions(rewriteService, intentResolver, guidanceService, retrievalEngine, promptService);
+    }
+
+    @Test
+    void executeShouldUseWebSearchForRealtimeQuestion() {
+        StreamChatPipeline pipeline = pipeline();
+        CapturingCallback callback = new CapturingCallback();
+        String question = "今天重庆天气怎么样";
+        StreamChatContext ctx = StreamChatContext.builder()
+                .question(question)
+                .conversationId("conv-web")
+                .taskId("task-web")
+                .deepThinking(false)
+                .webSearch(false)
+                .userId("user-web")
+                .callback(callback)
+                .build();
+        StreamCancellationHandle handle = mock(StreamCancellationHandle.class);
+
+        when(memoryService.loadAndAppend(eq("conv-web"), eq("user-web"), any(ChatMessage.class))).thenReturn(List.of());
+        when(webSearchService.search(question, properties.getWebSearch().getMaxResults())).thenReturn(List.of(
+                new WebSearchResult("重庆天气", "https://weather.example.com/cq", "重庆今天多云，22 到 28 摄氏度。")
+        ));
+        when(llmService.streamChat(any(ChatRequest.class), same(callback))).thenReturn(handle);
+
+        pipeline.execute(ctx);
+
+        verify(webSearchService).search(question, properties.getWebSearch().getMaxResults());
+        ArgumentCaptor<ChatRequest> requestCaptor = ArgumentCaptor.forClass(ChatRequest.class);
+        verify(llmService).streamChat(requestCaptor.capture(), same(callback));
+        String joinedMessages = requestCaptor.getValue().getMessages().stream()
+                .map(ChatMessage::getContent)
+                .reduce("", (left, right) -> left + "\n" + right);
+        assertTrue(joinedMessages.contains("联网搜索结果"));
+        assertTrue(joinedMessages.contains("重庆今天多云"));
+        assertTrue(callback.traces.stream().anyMatch(trace -> trace.stage().equals("web-search.done")));
+        verifyNoInteractions(rewriteService, intentResolver, guidanceService, retrievalEngine, promptService);
     }
 
     @Test
@@ -319,6 +427,7 @@ class StreamChatPipelineTest {
                 promptService,
                 llmService,
                 taskManager,
+                webSearchService,
                 properties
         );
     }
@@ -336,6 +445,7 @@ class StreamChatPipelineTest {
     private static final class CapturingCallback implements StreamCallback {
 
         private final StringBuilder content = new StringBuilder();
+        private final List<TraceRecord> traces = new java.util.ArrayList<>();
         private boolean completed;
 
         @Override
@@ -348,6 +458,11 @@ class StreamChatPipelineTest {
         }
 
         @Override
+        public void onTrace(String stage, String message) {
+            traces.add(new TraceRecord(stage, message));
+        }
+
+        @Override
         public void onComplete() {
             completed = true;
         }
@@ -355,5 +470,8 @@ class StreamChatPipelineTest {
         @Override
         public void onError(Throwable throwable) {
         }
+    }
+
+    private record TraceRecord(String stage, String message) {
     }
 }

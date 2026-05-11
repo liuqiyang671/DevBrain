@@ -488,6 +488,7 @@ export interface RagChatRequest {
   conversationId?: string | null;
   question: string;
   deepThinking?: boolean;
+  webSearch?: boolean;
 }
 
 /** RAG SSE meta 事件 */
@@ -500,6 +501,15 @@ export interface RagSseMetaPayload {
 export interface RagSseMessageDelta {
   type: 'think' | 'response' | string;
   content: string;
+}
+
+/** RAG SSE trace 事件 */
+export interface RagSseTracePayload {
+  stage?: string | null;
+  message?: string | null;
+  conversationId?: string | null;
+  taskId?: string | null;
+  timestamp?: number | null;
 }
 
 /** RAG SSE finish 事件 */

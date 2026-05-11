@@ -51,7 +51,14 @@ import org.springframework.context.annotation.Bean;
 public class DevBrainApplication {
 
     public static void main(String[] args) {
+        configureJvmSystemProxies();
         SpringApplication.run(DevBrainApplication.class, args);
+    }
+
+    static void configureJvmSystemProxies() {
+        if (System.getProperty("java.net.useSystemProxies") == null) {
+            System.setProperty("java.net.useSystemProxies", "true");
+        }
     }
 
     /**

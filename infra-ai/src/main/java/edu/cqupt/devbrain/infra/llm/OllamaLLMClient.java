@@ -36,9 +36,13 @@ public class OllamaLLMClient extends AbstractOpenAIStyleLLMClient {
      */
     @Override
     protected void customizeRequestBody(JsonObject body, ChatTarget target) {
-        if (body.has("enable_thinking")) {
+        if (body.has("enable_thinking") && body.get("enable_thinking").getAsBoolean()) {
             body.remove("enable_thinking");
             body.addProperty("reasoning_effort", "medium");
+            return;
+        }
+        if (body.has("enable_thinking")) {
+            body.remove("enable_thinking");
         }
     }
 }

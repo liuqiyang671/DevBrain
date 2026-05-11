@@ -15,7 +15,7 @@ public interface RAGChatService {
      * @param deepThinking   是否启用深度思考模式
      * @param emitter        SSE 发射器
      */
-    void streamChat(String question, String conversationId, Boolean deepThinking, SseEmitter emitter);
+    void streamChat(String question, String conversationId, Boolean deepThinking, Boolean webSearch, SseEmitter emitter);
 
     /**
      * 取消指定的流式任务。

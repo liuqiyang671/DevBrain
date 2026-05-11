@@ -65,6 +65,16 @@ rag:
     top-k: ${RAG_CHAT_TOP_K:5}
     rate-limit-max-requests: ${RAG_CHAT_RATE_LIMIT_MAX_REQUESTS:20}
     rate-limit-window-seconds: ${RAG_CHAT_RATE_LIMIT_WINDOW_SECONDS:60}
+    web-search:
+      enabled: ${RAG_WEB_SEARCH_ENABLED:true}
+      auto-trigger: ${RAG_WEB_SEARCH_AUTO_TRIGGER:true}
+      provider: ${RAG_WEB_SEARCH_PROVIDER:duckduckgo}
+      endpoint: ${RAG_WEB_SEARCH_ENDPOINT:https://duckduckgo.com/html/}
+      weather-endpoint: ${RAG_WEB_SEARCH_WEATHER_ENDPOINT:https://api.open-meteo.com/v1/forecast}
+      max-results: ${RAG_WEB_SEARCH_MAX_RESULTS:5}
+      timeout-millis: ${RAG_WEB_SEARCH_TIMEOUT_MILLIS:8000}
+      use-system-proxies: ${RAG_WEB_SEARCH_USE_SYSTEM_PROXIES:true}
+      proxy-url: ${RAG_WEB_SEARCH_PROXY:}
   retrieval:
     engine-core-pool-size: ${RAG_RETRIEVAL_ENGINE_CORE_POOL_SIZE:4}
     engine-max-pool-size: ${RAG_RETRIEVAL_ENGINE_MAX_POOL_SIZE:8}
@@ -143,17 +153,17 @@ ai:
       - id: qwen-chat-local-9b
         provider: ollama
         model: qwen3.5:9b
-        priority: 1
+        priority: 2
         enabled: true
       - id: qwen-chat-local-35b
         provider: ollama
         model: qwen3.6:35b-a3b
-        priority: 2
+        priority: 3
         enabled: true
       - id: qwen-chat-siliconflow
         provider: siliconflow
-        model: Qwen/Qwen3-32B
-        priority: 3
+        model: deepseek-ai/DeepSeek-V4-Flash
+        priority: 1
         enabled: true
 
 devbrain:

@@ -25,6 +25,8 @@ public class StreamChatContext {
 
     private final Boolean deepThinking;
 
+    private final Boolean webSearch;
+
     private final String userId;
 
     private final StreamCallback callback;

@@ -28,7 +28,7 @@ public class RAGChatServiceImpl implements RAGChatService {
      * 初始化流式问答：生成会话和任务 ID，创建 SSE 事件处理器，执行对话流水线。
      */
     @Override
-    public void streamChat(String question, String conversationId, Boolean deepThinking, SseEmitter emitter) {
+    public void streamChat(String question, String conversationId, Boolean deepThinking, Boolean webSearch, SseEmitter emitter) {
         String userId = UserContext.requireUser().userId();
         String effectiveConversationId = StringUtils.hasText(conversationId)
                 ? conversationId
@@ -46,6 +46,7 @@ public class RAGChatServiceImpl implements RAGChatService {
                     .conversationId(effectiveConversationId)
                     .taskId(taskId)
                     .deepThinking(Boolean.TRUE.equals(deepThinking))
+                    .webSearch(Boolean.TRUE.equals(webSearch))
                     .userId(userId)
                     .callback(callback)
                     .build();

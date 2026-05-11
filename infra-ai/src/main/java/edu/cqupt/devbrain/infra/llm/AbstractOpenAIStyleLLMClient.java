@@ -200,8 +200,8 @@ public abstract class AbstractOpenAIStyleLLMClient implements LLMClient {
         if (request.getMaxTokens() != null) {
             body.addProperty("max_tokens", request.getMaxTokens());
         }
-        if (Boolean.TRUE.equals(request.getThinking())) {
-            body.addProperty("enable_thinking", true);
+        if (request.getThinking() != null) {
+            body.addProperty("enable_thinking", Boolean.TRUE.equals(request.getThinking()));
         }
 
         customizeRequestBody(body, target);
