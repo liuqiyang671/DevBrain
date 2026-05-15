@@ -2,7 +2,7 @@
 
 ## 1. 模块概述
 
-`frontend` 是 DevBrain-CQUPT 项目的前端单页应用，提供两种模式：**前台用户工作区**（知识问答）和**后台管理面板**（知识库、文档、流水线、用户、系统配置管理）。核心价值是 RAG 问答系统：用户提问 → 系统从知识库检索相关分块 → 构造 Prompt → 流式生成带引用的 AI 回答。
+`frontend` 是 ai-shopping-agent 项目的前端单页应用，提供两种模式：**前台用户工作区**（知识问答）和**后台管理面板**（知识库、文档、流水线、用户、系统配置管理）。核心价值是 RAG 问答系统：用户提问 → 系统从知识库检索相关分块 → 构造 Prompt → 流式生成带引用的 AI 回答。
 
 **技术栈**: React 18 + TypeScript 5 + React Router DOM v7 + Zustand v5 + Axios + Vite 6
 
@@ -158,8 +158,8 @@ frontend/
 | Key | 用途 |
 |-----|------|
 | `devbrain.documentVersions.v1` | 本地文档版本历史 |
-| `devbrain.rag.conversations.v1` | RAG 会话摘要（客户端缓存） |
-| `devbrain.rag.messages.v1` | RAG 会话消息（按 conversationId 存储） |
+| `ai-shopping-agent.rag.conversations.v1` | RAG 会话摘要（客户端缓存） |
+| `ai-shopping-agent.rag.messages.v1` | RAG 会话消息（按 conversationId 存储） |
 
 ---
 
@@ -174,7 +174,7 @@ frontend/
 JWT 存储：HttpOnly Cookie（JavaScript 不可读）
 CSRF 保护：初始化时 GET /auth/csrf 获取 Token，Axios 拦截器自动附加 X-XSRF-TOKEN
 会话刷新：RequireAuth 守卫每次加载页面调用 GET /user/me
-401 处理：Axios 响应拦截器检测 401 → 派发 devbrain-auth-expired 事件 → 清除用户状态
+401 处理：Axios 响应拦截器检测 401 → 派发 ai-shopping-agent-auth-expired 事件 → 清除用户状态
 ```
 
 ---

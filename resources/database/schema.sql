@@ -1,4 +1,4 @@
--- DevBrain-CQUPT 本地数据库基线。
+-- ai-shopping-agent 本地数据库基线。
 -- Step 02 仅准备基础设施级别的数据库对象。
 CREATE EXTENSION IF NOT EXISTS vector;  -- 启用 pgvector 向量扩展
 
@@ -155,7 +155,7 @@ VALUES (
     'admin',
     'admin@devbrain.local',
     '$2a$10$7EqJtq98hPqEX7fNZaFWoOHIhiPOw6o.YBiXqDe8S7K/o5gDhsqRS',
-    'DevBrain Admin',
+    'ai-shopping-agent Admin',
     'enabled'
 )
 ON CONFLICT (username) DO NOTHING;
@@ -467,7 +467,7 @@ COMMENT ON COLUMN t_knowledge_vector.doc_id IS '所属文档 ID，冗余存储�
 COMMENT ON COLUMN t_knowledge_vector.collection_name IS '向量集合名称，格式为 kb_{kbId}，用于隔离不同知识库';
 COMMENT ON COLUMN t_knowledge_vector.content IS 'Chunk 文本内容，冗余存储避免检索命中后回表查询';
 COMMENT ON COLUMN t_knowledge_vector.metadata IS '向量元数据，包含 chunk_index、doc_id、collection_name 等扩展信息';
-COMMENT ON COLUMN t_knowledge_vector.embedding IS '1536 维向量，需与本地 qwen3-embedding:8b-fp16 的 dimensions 配置保持一致';
+COMMENT ON COLUMN t_knowledge_vector.embedding IS '1536 维向量，需与 SiliconFlow Qwen/Qwen3-Embedding-4B 的 dimensions 配置保持一致';
 CREATE INDEX IF NOT EXISTS idx_kv_metadata ON t_knowledge_vector USING gin (metadata);
 CREATE INDEX IF NOT EXISTS idx_kv_embedding_hnsw ON t_knowledge_vector USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS idx_kv_collection ON t_knowledge_vector (collection_name);
@@ -759,4 +759,604 @@ CREATE INDEX IF NOT EXISTS idx_qtm_source ON t_query_term_mapping (source_term);
 
 INSERT INTO t_devbrain_schema_info (version, description)
 VALUES ('15-query-term-mapping', 'Query term mapping table for query normalization')
+ON CONFLICT (version) DO NOTHING;
+
+-- ============================================================
+-- 16: 电商商品目录
+-- ============================================================
+
+-- 执行备注：当前 schema 已存在 15-query-term-mapping，本阶段顺延为 16-commerce-catalog。
+
+CREATE TABLE IF NOT EXISTS t_product (
+    id VARCHAR(32) PRIMARY KEY,                               -- 商品 SPU 唯一标识
+    kb_id VARCHAR(32) NOT NULL,                               -- 所属知识库 ID
+    spu_code VARCHAR(64) NOT NULL,                            -- 商品 SPU 编码
+    name VARCHAR(200) NOT NULL,                               -- 商品名称
+    brand VARCHAR(100),                                       -- 品牌
+    category_id VARCHAR(64),                                  -- 类目 ID
+    summary TEXT,                                             -- 商品摘要
+    selling_points JSONB,                                     -- 商品卖点
+    target_users JSONB,                                       -- 适用人群
+    price_min BIGINT,                                         -- 最低价格，单位：分
+    price_max BIGINT,                                         -- 最高价格，单位：分
+    status VARCHAR(20) NOT NULL DEFAULT 'enabled',            -- 状态：enabled / disabled
+    main_image_url VARCHAR(512),                              -- 主图 URL
+    metadata JSONB,                                           -- 扩展元数据
+    created_by VARCHAR(32),                                   -- 创建人用户 ID
+    updated_by VARCHAR(32),                                   -- 最近更新人用户 ID
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 更新时间
+    deleted SMALLINT NOT NULL DEFAULT 0,                      -- 逻辑删除标记
+    CONSTRAINT uk_product_spu_code UNIQUE (spu_code),
+    CONSTRAINT ck_product_status CHECK (status IN ('enabled', 'disabled')),
+    CONSTRAINT ck_product_deleted CHECK (deleted IN (0, 1)),
+    CONSTRAINT fk_product_kb_id FOREIGN KEY (kb_id) REFERENCES t_knowledge_base (id)
+);
+COMMENT ON TABLE t_product IS '电商商品 SPU 表';
+COMMENT ON COLUMN t_product.kb_id IS '所属知识库 ID';
+COMMENT ON COLUMN t_product.spu_code IS '商品 SPU 编码';
+COMMENT ON COLUMN t_product.selling_points IS '商品卖点 JSON';
+COMMENT ON COLUMN t_product.target_users IS '适用人群 JSON';
+COMMENT ON COLUMN t_product.price_min IS '最低价格，单位：分';
+COMMENT ON COLUMN t_product.price_max IS '最高价格，单位：分';
+CREATE INDEX IF NOT EXISTS idx_product_kb_deleted_update ON t_product (kb_id, deleted, update_time DESC);
+CREATE INDEX IF NOT EXISTS idx_product_brand ON t_product (brand);
+CREATE INDEX IF NOT EXISTS idx_product_category ON t_product (category_id);
+
+CREATE TABLE IF NOT EXISTS t_product_sku (
+    id VARCHAR(32) PRIMARY KEY,                               -- SKU 唯一标识
+    product_id VARCHAR(32) NOT NULL,                          -- 商品 SPU ID
+    sku_code VARCHAR(64) NOT NULL,                            -- SKU 编码
+    title VARCHAR(200),                                       -- SKU 标题
+    price_amount BIGINT,                                      -- 价格，单位：分
+    currency VARCHAR(8) NOT NULL DEFAULT 'CNY',               -- 币种
+    stock_status VARCHAR(20) NOT NULL DEFAULT 'unknown',      -- 库存状态
+    spec_json JSONB,                                          -- 规格 JSON
+    status VARCHAR(20) NOT NULL DEFAULT 'enabled',            -- 状态
+    created_by VARCHAR(32),
+    updated_by VARCHAR(32),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT uk_product_sku_code UNIQUE (sku_code),
+    CONSTRAINT ck_product_sku_stock CHECK (stock_status IN ('in_stock', 'out_of_stock', 'unknown')),
+    CONSTRAINT ck_product_sku_status CHECK (status IN ('enabled', 'disabled')),
+    CONSTRAINT ck_product_sku_deleted CHECK (deleted IN (0, 1)),
+    CONSTRAINT fk_product_sku_product_id FOREIGN KEY (product_id) REFERENCES t_product (id) ON DELETE CASCADE
+);
+COMMENT ON TABLE t_product_sku IS '电商商品 SKU 表';
+CREATE INDEX IF NOT EXISTS idx_product_sku_product_id ON t_product_sku (product_id, deleted);
+
+CREATE TABLE IF NOT EXISTS t_product_attribute (
+    id VARCHAR(32) PRIMARY KEY,                               -- 属性唯一标识
+    product_id VARCHAR(32) NOT NULL,                          -- 商品 SPU ID
+    attr_key VARCHAR(128) NOT NULL,                           -- 属性键
+    attr_name VARCHAR(128),                                   -- 属性名称
+    attr_value TEXT NOT NULL,                                 -- 属性值
+    attr_unit VARCHAR(32),                                    -- 属性单位
+    attr_type VARCHAR(32) NOT NULL DEFAULT 'basic',           -- 属性类型
+    source_type VARCHAR(32) NOT NULL DEFAULT 'manual',        -- 来源类型
+    source_doc_id VARCHAR(32),                                -- 来源文档 ID
+    confidence NUMERIC(5,4),                                  -- 置信度
+    evidence_text TEXT,                                       -- 证据片段
+    created_by VARCHAR(32),
+    updated_by VARCHAR(32),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT uk_product_attribute_key UNIQUE (product_id, attr_key, attr_value),
+    CONSTRAINT ck_product_attribute_deleted CHECK (deleted IN (0, 1)),
+    CONSTRAINT fk_product_attribute_product_id FOREIGN KEY (product_id) REFERENCES t_product (id) ON DELETE CASCADE,
+    CONSTRAINT fk_product_attribute_source_doc_id FOREIGN KEY (source_doc_id) REFERENCES t_knowledge_document (id)
+);
+COMMENT ON TABLE t_product_attribute IS '电商商品属性表';
+CREATE INDEX IF NOT EXISTS idx_product_attribute_product_key ON t_product_attribute (product_id, attr_key, deleted);
+
+CREATE TABLE IF NOT EXISTS t_product_media (
+    id VARCHAR(32) PRIMARY KEY,                               -- 媒体唯一标识
+    product_id VARCHAR(32),                                   -- 商品 SPU ID，可为空用于用户上传图片
+    media_type VARCHAR(20) NOT NULL,                          -- 媒体类型
+    url VARCHAR(512) NOT NULL,                                -- 访问 URL
+    object_key VARCHAR(512),                                  -- 对象存储 key
+    alt_text VARCHAR(256),                                    -- 替代文本
+    ocr_text TEXT,                                            -- OCR 文本
+    metadata JSONB,                                           -- 扩展元数据
+    created_by VARCHAR(32),
+    updated_by VARCHAR(32),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_product_media_type CHECK (media_type IN ('main', 'detail', 'upload', 'ocr')),
+    CONSTRAINT ck_product_media_deleted CHECK (deleted IN (0, 1)),
+    CONSTRAINT fk_product_media_product_id FOREIGN KEY (product_id) REFERENCES t_product (id) ON DELETE CASCADE
+);
+COMMENT ON TABLE t_product_media IS '电商商品媒体表';
+CREATE INDEX IF NOT EXISTS idx_product_media_product_type ON t_product_media (product_id, media_type, deleted);
+
+CREATE TABLE IF NOT EXISTS t_product_doc_link (
+    id VARCHAR(32) PRIMARY KEY,                               -- 绑定记录唯一标识
+    product_id VARCHAR(32) NOT NULL,                          -- 商品 SPU ID
+    doc_id VARCHAR(32) NOT NULL,                              -- 知识库文档 ID
+    chunk_id VARCHAR(32),                                     -- 可选分块 ID
+    doc_type VARCHAR(20) NOT NULL,                            -- 文档类型
+    metadata JSONB,                                           -- 绑定元数据
+    created_by VARCHAR(32),
+    updated_by VARCHAR(32),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT uk_product_doc_link UNIQUE (product_id, doc_id, chunk_id),
+    CONSTRAINT ck_product_doc_link_type CHECK (doc_type IN ('detail', 'marketing', 'faq', 'policy', 'review')),
+    CONSTRAINT ck_product_doc_link_deleted CHECK (deleted IN (0, 1)),
+    CONSTRAINT fk_product_doc_link_product_id FOREIGN KEY (product_id) REFERENCES t_product (id) ON DELETE CASCADE,
+    CONSTRAINT fk_product_doc_link_doc_id FOREIGN KEY (doc_id) REFERENCES t_knowledge_document (id),
+    CONSTRAINT fk_product_doc_link_chunk_id FOREIGN KEY (chunk_id) REFERENCES t_knowledge_chunk (id)
+);
+COMMENT ON TABLE t_product_doc_link IS '电商商品与知识库文档绑定表';
+CREATE INDEX IF NOT EXISTS idx_product_doc_link_product_id ON t_product_doc_link (product_id, deleted);
+CREATE INDEX IF NOT EXISTS idx_product_doc_link_doc_id ON t_product_doc_link (doc_id, deleted);
+
+CREATE TABLE IF NOT EXISTS t_product_tag (
+    id VARCHAR(32) PRIMARY KEY,                               -- 标签唯一标识
+    product_id VARCHAR(32) NOT NULL,                          -- 商品 SPU ID
+    tag_type VARCHAR(32) NOT NULL,                            -- 标签类型
+    tag_value VARCHAR(200) NOT NULL,                          -- 标签值
+    confidence NUMERIC(5,4),                                  -- 置信度
+    created_by VARCHAR(32),
+    updated_by VARCHAR(32),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT uk_product_tag UNIQUE (product_id, tag_type, tag_value),
+    CONSTRAINT ck_product_tag_type CHECK (tag_type IN ('selling_point', 'scenario', 'audience', 'risk', 'promotion')),
+    CONSTRAINT ck_product_tag_deleted CHECK (deleted IN (0, 1)),
+    CONSTRAINT fk_product_tag_product_id FOREIGN KEY (product_id) REFERENCES t_product (id) ON DELETE CASCADE
+);
+COMMENT ON TABLE t_product_tag IS '电商商品标签表';
+CREATE INDEX IF NOT EXISTS idx_product_tag_product_type ON t_product_tag (product_id, tag_type, deleted);
+
+INSERT INTO t_devbrain_schema_info (version, description)
+VALUES ('16-commerce-catalog', 'Commerce product catalog, SKU, attribute, media, document link, and tag tables')
+ON CONFLICT (version) DO NOTHING;
+
+-- ============================================================
+-- 17: 导购会话与反馈
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS t_guide_session (
+    id VARCHAR(32) PRIMARY KEY,
+    conversation_id VARCHAR(32) NOT NULL,
+    user_id VARCHAR(64) NOT NULL,
+    stage VARCHAR(20),
+    intent VARCHAR(64),
+    slot_json JSONB,
+    preference_json JSONB,
+    graph_state_json JSONB,
+    archived SMALLINT NOT NULL DEFAULT 0,
+    archived_time TIMESTAMP,
+    archive_summary TEXT,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT uk_guide_session_conversation_id UNIQUE (conversation_id),
+    CONSTRAINT ck_guide_session_archived CHECK (archived IN (0, 1)),
+    CONSTRAINT ck_guide_session_deleted CHECK (deleted IN (0, 1))
+);
+COMMENT ON TABLE t_guide_session IS '导购会话状态表';
+CREATE INDEX IF NOT EXISTS idx_guide_session_user_update ON t_guide_session (user_id, update_time DESC);
+CREATE INDEX IF NOT EXISTS idx_guide_session_user_archived_update ON t_guide_session (user_id, archived, update_time DESC);
+
+CREATE TABLE IF NOT EXISTS t_guide_recommendation (
+    id VARCHAR(32) PRIMARY KEY,
+    conversation_id VARCHAR(32) NOT NULL,
+    turn_id VARCHAR(32),
+    product_id VARCHAR(32) NOT NULL,
+    sku_id VARCHAR(32),
+    rank_no INTEGER NOT NULL,
+    score NUMERIC(8,5),
+    reason_json JSONB,
+    evidence_json JSONB,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_guide_recommendation_deleted CHECK (deleted IN (0, 1)),
+    CONSTRAINT fk_guide_recommendation_session FOREIGN KEY (conversation_id) REFERENCES t_guide_session (conversation_id) ON DELETE CASCADE,
+    CONSTRAINT fk_guide_recommendation_product_id FOREIGN KEY (product_id) REFERENCES t_product (id),
+    CONSTRAINT fk_guide_recommendation_sku_id FOREIGN KEY (sku_id) REFERENCES t_product_sku (id)
+);
+COMMENT ON TABLE t_guide_recommendation IS '导购推荐快照表';
+CREATE INDEX IF NOT EXISTS idx_guide_recommendation_conversation ON t_guide_recommendation (conversation_id, turn_id, rank_no);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_guide_recommendation_turn_rank
+    ON t_guide_recommendation (conversation_id, turn_id, rank_no)
+    WHERE deleted = 0;
+
+CREATE TABLE IF NOT EXISTS t_guide_message (
+    id VARCHAR(32) PRIMARY KEY,
+    conversation_id VARCHAR(32) NOT NULL,
+    session_id VARCHAR(32),
+    user_id VARCHAR(64) NOT NULL,
+    role VARCHAR(20) NOT NULL,
+    content TEXT,
+    image_refs_json JSONB,
+    client_message_id VARCHAR(64),
+    agent_run_id VARCHAR(32),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_guide_message_role CHECK (role IN ('user', 'assistant', 'system')),
+    CONSTRAINT ck_guide_message_deleted CHECK (deleted IN (0, 1)),
+    CONSTRAINT fk_guide_message_session FOREIGN KEY (conversation_id) REFERENCES t_guide_session (conversation_id) ON DELETE CASCADE
+);
+COMMENT ON TABLE t_guide_message IS '导购会话消息表';
+CREATE INDEX IF NOT EXISTS idx_guide_message_conversation_time ON t_guide_message (conversation_id, create_time);
+CREATE INDEX IF NOT EXISTS idx_guide_message_user_time ON t_guide_message (user_id, create_time DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_guide_message_client
+    ON t_guide_message (user_id, client_message_id)
+    WHERE client_message_id IS NOT NULL AND deleted = 0;
+
+CREATE TABLE IF NOT EXISTS t_agent_memory (
+    id VARCHAR(32) PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL,
+    memory_type VARCHAR(64) NOT NULL,
+    memory_key VARCHAR(128) NOT NULL,
+    memory_value TEXT NOT NULL,
+    confidence NUMERIC(5,4),
+    source VARCHAR(64),
+    last_used_time TIMESTAMP,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_agent_memory_deleted CHECK (deleted IN (0, 1))
+);
+COMMENT ON TABLE t_agent_memory IS 'Agent 用户长期记忆表';
+CREATE INDEX IF NOT EXISTS idx_agent_memory_user_type ON t_agent_memory (user_id, memory_type, deleted);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_agent_memory_user_key
+    ON t_agent_memory (user_id, memory_type, memory_key)
+    WHERE deleted = 0;
+
+CREATE TABLE IF NOT EXISTS t_guide_feedback (
+    id VARCHAR(32) PRIMARY KEY,
+    conversation_id VARCHAR(32) NOT NULL,
+    message_id VARCHAR(64),
+    product_id VARCHAR(32),
+    feedback_type VARCHAR(32) NOT NULL,
+    comment TEXT,
+    target_type VARCHAR(32) NOT NULL DEFAULT 'answer',
+    target_id VARCHAR(64),
+    agent_run_id VARCHAR(32),
+    step_id VARCHAR(32),
+    evidence_id VARCHAR(96),
+    reason_index INTEGER,
+    review_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    review_result TEXT,
+    improvement_suggestion TEXT,
+    created_by VARCHAR(32),
+    reviewed_by VARCHAR(32),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_guide_feedback_type CHECK (feedback_type IN ('like', 'dislike', 'wrong', 'purchased', 'not_interested', 'helpful', 'not_helpful', 'wrong_product', 'wrong_fact', 'missing_context', 'bad_citation', 'unsafe_or_inappropriate', 'irrelevant_reason', 'weak_evidence', 'missing_product', 'bad_ranking', 'unhelpful_clarification')),
+    CONSTRAINT ck_guide_feedback_target_type CHECK (target_type IN ('answer', 'product', 'reason', 'evidence', 'tool_step', 'session')),
+    CONSTRAINT ck_guide_feedback_review_status CHECK (review_status IN ('pending', 'reviewing', 'resolved', 'ignored')),
+    CONSTRAINT ck_guide_feedback_deleted CHECK (deleted IN (0, 1)),
+    CONSTRAINT fk_guide_feedback_session FOREIGN KEY (conversation_id) REFERENCES t_guide_session (conversation_id) ON DELETE CASCADE,
+    CONSTRAINT fk_guide_feedback_product_id FOREIGN KEY (product_id) REFERENCES t_product (id)
+);
+COMMENT ON TABLE t_guide_feedback IS '导购用户反馈表';
+CREATE INDEX IF NOT EXISTS idx_guide_feedback_status_time ON t_guide_feedback (review_status, create_time DESC);
+
+INSERT INTO t_devbrain_schema_info (version, description)
+VALUES ('17-guide-session-feedback', 'Guide session, message, memory, recommendation snapshot, and user feedback tables')
+ON CONFLICT (version) DO NOTHING;
+
+-- ============================================================
+-- 18: 导购评测闭环
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS t_eval_dataset (
+    id VARCHAR(32) PRIMARY KEY,
+    name VARCHAR(128) NOT NULL,
+    description TEXT,
+    status VARCHAR(20) NOT NULL DEFAULT 'enabled',
+    created_by VARCHAR(32),
+    updated_by VARCHAR(32),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_eval_dataset_status CHECK (status IN ('enabled', 'disabled')),
+    CONSTRAINT ck_eval_dataset_deleted CHECK (deleted IN (0, 1))
+);
+COMMENT ON TABLE t_eval_dataset IS '导购评测集表';
+
+CREATE TABLE IF NOT EXISTS t_eval_case (
+    id VARCHAR(32) PRIMARY KEY,
+    dataset_id VARCHAR(32) NOT NULL,
+    case_no VARCHAR(64) NOT NULL,
+    scenario VARCHAR(128),
+    question TEXT NOT NULL,
+    turns_json JSONB,
+    context_json JSONB,
+    expected_answer TEXT,
+    expected_intent VARCHAR(64),
+    expected_slots JSONB,
+    expected_product_ids JSONB,
+    expected_chunk_ids JSONB,
+    must_hit_keywords JSONB,
+    forbidden_claims JSONB,
+    tags JSONB,
+    created_by VARCHAR(32),
+    updated_by VARCHAR(32),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT uk_eval_case_no UNIQUE (dataset_id, case_no),
+    CONSTRAINT ck_eval_case_deleted CHECK (deleted IN (0, 1)),
+    CONSTRAINT fk_eval_case_dataset_id FOREIGN KEY (dataset_id) REFERENCES t_eval_dataset (id) ON DELETE CASCADE
+);
+COMMENT ON TABLE t_eval_case IS '导购评测用例表';
+CREATE INDEX IF NOT EXISTS idx_eval_case_dataset ON t_eval_case (dataset_id, deleted);
+
+CREATE TABLE IF NOT EXISTS t_eval_run (
+    id VARCHAR(32) PRIMARY KEY,
+    dataset_id VARCHAR(32) NOT NULL,
+    prompt_version VARCHAR(64),
+    status VARCHAR(20) NOT NULL DEFAULT 'running',
+    started_at TIMESTAMP,
+    finished_at TIMESTAMP,
+    progress_json JSONB,
+    case_count INTEGER NOT NULL DEFAULT 0,
+    completed_case_count INTEGER NOT NULL DEFAULT 0,
+    failed_case_count INTEGER NOT NULL DEFAULT 0,
+    metrics_json JSONB,
+    created_by VARCHAR(32),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_eval_run_status CHECK (status IN ('running', 'completed', 'failed', 'cancelled')),
+    CONSTRAINT ck_eval_run_deleted CHECK (deleted IN (0, 1)),
+    CONSTRAINT fk_eval_run_dataset_id FOREIGN KEY (dataset_id) REFERENCES t_eval_dataset (id)
+);
+COMMENT ON TABLE t_eval_run IS '导购评测运行表';
+CREATE INDEX IF NOT EXISTS idx_eval_run_dataset_status ON t_eval_run (dataset_id, status, create_time DESC);
+
+CREATE TABLE IF NOT EXISTS t_eval_result (
+    id VARCHAR(32) PRIMARY KEY,
+    run_id VARCHAR(32) NOT NULL,
+    case_id VARCHAR(32) NOT NULL,
+    answer TEXT,
+    retrieved_json JSONB,
+    recommendation_json JSONB,
+    score_json JSONB,
+    trace_json JSONB,
+    agent_run_id VARCHAR(32),
+    failure_type VARCHAR(32),
+    latency_ms BIGINT,
+    expected_json JSONB,
+    actual_json JSONB,
+    debug_hints JSONB,
+    error_message TEXT,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT uk_eval_result_case UNIQUE (run_id, case_id),
+    CONSTRAINT ck_eval_result_deleted CHECK (deleted IN (0, 1)),
+    CONSTRAINT fk_eval_result_run_id FOREIGN KEY (run_id) REFERENCES t_eval_run (id) ON DELETE CASCADE,
+    CONSTRAINT fk_eval_result_case_id FOREIGN KEY (case_id) REFERENCES t_eval_case (id)
+);
+COMMENT ON TABLE t_eval_result IS '导购评测用例结果表';
+CREATE INDEX IF NOT EXISTS idx_eval_result_run ON t_eval_result (run_id);
+CREATE INDEX IF NOT EXISTS idx_eval_result_agent_run ON t_eval_result (agent_run_id);
+
+CREATE TABLE IF NOT EXISTS t_prompt_version (
+    id VARCHAR(32) PRIMARY KEY,
+    version_code VARCHAR(64) NOT NULL,
+    scene VARCHAR(64) NOT NULL,
+    template_path VARCHAR(256),
+    content_hash VARCHAR(128),
+    description TEXT,
+    created_by VARCHAR(32),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT uk_prompt_version_scene UNIQUE (version_code, scene),
+    CONSTRAINT ck_prompt_version_deleted CHECK (deleted IN (0, 1))
+);
+COMMENT ON TABLE t_prompt_version IS 'Prompt 版本表';
+
+INSERT INTO t_devbrain_schema_info (version, description)
+VALUES ('18-evaluation-feedback-loop', 'Evaluation dataset, case, run, result, and prompt version tables')
+ON CONFLICT (version) DO NOTHING;
+
+-- ============================================================
+-- 19: 导购多模态图片引用
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS t_guide_image (
+    id VARCHAR(32) PRIMARY KEY,
+    user_id VARCHAR(32) NOT NULL,
+    session_id VARCHAR(32),
+    conversation_id VARCHAR(32),
+    message_id VARCHAR(64),
+    file_name VARCHAR(255) NOT NULL,
+    content_type VARCHAR(64) NOT NULL,
+    file_size BIGINT NOT NULL,
+    object_key VARCHAR(512) NOT NULL,
+    preview_url VARCHAR(512),
+    ocr_text TEXT,
+    visual_summary TEXT,
+    detected_product_names JSONB,
+    detected_attributes JSONB,
+    risk_flags JSONB,
+    analyze_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    created_by VARCHAR(32),
+    updated_by VARCHAR(32),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_guide_image_status CHECK (analyze_status IN ('pending', 'completed', 'failed')),
+    CONSTRAINT ck_guide_image_deleted CHECK (deleted IN (0, 1))
+);
+COMMENT ON TABLE t_guide_image IS '导购多模态图片引用与识别结果表';
+CREATE INDEX IF NOT EXISTS idx_guide_image_user_time ON t_guide_image (user_id, create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_guide_image_session ON t_guide_image (session_id, deleted);
+
+INSERT INTO t_devbrain_schema_info (version, description)
+VALUES ('19-guide-image-multimodal', 'Guide image upload references and understanding results')
+ON CONFLICT (version) DO NOTHING;
+
+INSERT INTO t_permission (id, permission_code, permission_name, description)
+VALUES
+    ('11000000000000000009', 'commerce:read', '查看商品导购', '查看商品、导购会话和推荐结果'),
+    ('11000000000000000010', 'commerce:write', '管理商品导购', '管理商品、导购配置和用户反馈'),
+    ('11000000000000000011', 'eval:read', '查看评测', '查看评测集和评测结果'),
+    ('11000000000000000012', 'eval:write', '管理评测', '创建评测集、运行评测和维护 Prompt 版本')
+ON CONFLICT (permission_code) DO NOTHING;
+
+INSERT INTO t_role_permission (id, role_id, permission_id)
+SELECT
+    CASE p.permission_code
+        WHEN 'commerce:read' THEN '12000000000000000009'
+        WHEN 'commerce:write' THEN '12000000000000000010'
+        WHEN 'eval:read' THEN '12000000000000000011'
+        WHEN 'eval:write' THEN '12000000000000000012'
+    END,
+    r.id,
+    p.id
+FROM t_role r
+JOIN t_permission p ON p.permission_code IN ('commerce:read', 'commerce:write', 'eval:read', 'eval:write')
+WHERE r.role_code = 'admin'
+ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO t_resource (id, resource_name, http_method, path_pattern, permission_code, public_access)
+VALUES
+    ('13000000000000000034', '商品导购查询', 'GET', '/commerce/**', 'commerce:read', 0),
+    ('13000000000000000046', '导购会话删除', 'DELETE', '/commerce/guide/sessions/*', 'commerce:read', 0),
+    ('13000000000000000035', '商品导购管理', 'POST', '/commerce/**', 'commerce:write', 0),
+    ('13000000000000000036', '商品导购管理', 'PUT', '/commerce/**', 'commerce:write', 0),
+    ('13000000000000000037', '商品导购管理', 'DELETE', '/commerce/**', 'commerce:write', 0),
+    ('13000000000000000038', '评测查询', 'GET', '/evaluations/**', 'eval:read', 0),
+    ('13000000000000000039', '评测管理', 'POST', '/evaluations/**', 'eval:write', 0),
+    ('13000000000000000040', '评测管理', 'PUT', '/evaluations/**', 'eval:write', 0),
+    ('13000000000000000041', '评测管理', 'DELETE', '/evaluations/**', 'eval:write', 0),
+    ('13000000000000000042', '商品导购评测查询', 'GET', '/commerce/evaluations/**', 'eval:read', 0),
+    ('13000000000000000043', '商品导购评测管理', 'POST', '/commerce/evaluations/**', 'eval:write', 0),
+    ('13000000000000000044', '商品导购评测管理', 'PUT', '/commerce/evaluations/**', 'eval:write', 0),
+    ('13000000000000000045', '商品导购评测管理', 'DELETE', '/commerce/evaluations/**', 'eval:write', 0)
+ON CONFLICT (http_method, path_pattern) DO NOTHING;
+
+-- ============================================================
+-- 20: 导购 Agent 运行态与可观测性
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS t_agent_run (
+    id VARCHAR(32) PRIMARY KEY,
+    conversation_id VARCHAR(32) NOT NULL,
+    session_id VARCHAR(32),
+    user_id VARCHAR(64) NOT NULL,
+    scene VARCHAR(64) NOT NULL,
+    engine_name VARCHAR(128) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    started_at TIMESTAMP NOT NULL,
+    finished_at TIMESTAMP,
+    total_steps INTEGER,
+    final_action VARCHAR(64),
+    error_message TEXT,
+    metadata_json JSONB,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_agent_run_status CHECK (status IN ('running', 'completed', 'failed', 'cancelled', 'timeout')),
+    CONSTRAINT ck_agent_run_deleted CHECK (deleted IN (0, 1))
+);
+COMMENT ON TABLE t_agent_run IS '导购 Agent 单次运行记录';
+COMMENT ON COLUMN t_agent_run.conversation_id IS '导购对话 ID';
+COMMENT ON COLUMN t_agent_run.session_id IS '导购会话 ID';
+COMMENT ON COLUMN t_agent_run.scene IS '业务场景';
+COMMENT ON COLUMN t_agent_run.engine_name IS '执行引擎名称';
+COMMENT ON COLUMN t_agent_run.status IS '运行状态：running / completed / failed / cancelled / timeout';
+CREATE INDEX IF NOT EXISTS idx_agent_run_user_time ON t_agent_run (user_id, create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_run_conversation ON t_agent_run (conversation_id, create_time DESC);
+
+CREATE TABLE IF NOT EXISTS t_agent_step (
+    id VARCHAR(32) PRIMARY KEY,
+    run_id VARCHAR(32) NOT NULL,
+    step_no INTEGER NOT NULL,
+    action VARCHAR(64) NOT NULL,
+    thought TEXT,
+    arguments_json JSONB,
+    observation TEXT,
+    status VARCHAR(20) NOT NULL,
+    duration_ms BIGINT,
+    error_message TEXT,
+    state_before_hash VARCHAR(128),
+    state_after_hash VARCHAR(128),
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT fk_agent_step_run_id FOREIGN KEY (run_id) REFERENCES t_agent_run (id) ON DELETE CASCADE,
+    CONSTRAINT ck_agent_step_status CHECK (status IN ('planned', 'succeeded', 'failed')),
+    CONSTRAINT ck_agent_step_deleted CHECK (deleted IN (0, 1))
+);
+COMMENT ON TABLE t_agent_step IS '导购 Agent 规划动作步骤记录';
+CREATE INDEX IF NOT EXISTS idx_agent_step_run ON t_agent_step (run_id, step_no);
+
+CREATE TABLE IF NOT EXISTS t_agent_tool_call (
+    id VARCHAR(32) PRIMARY KEY,
+    run_id VARCHAR(32) NOT NULL,
+    step_id VARCHAR(32) NOT NULL,
+    tool_name VARCHAR(128) NOT NULL,
+    tool_version VARCHAR(64),
+    arguments_json JSONB,
+    result_json JSONB,
+    observation TEXT,
+    status VARCHAR(20) NOT NULL,
+    duration_ms BIGINT,
+    error_message TEXT,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT fk_agent_tool_call_run_id FOREIGN KEY (run_id) REFERENCES t_agent_run (id) ON DELETE CASCADE,
+    CONSTRAINT fk_agent_tool_call_step_id FOREIGN KEY (step_id) REFERENCES t_agent_step (id) ON DELETE CASCADE,
+    CONSTRAINT ck_agent_tool_call_status CHECK (status IN ('running', 'succeeded', 'failed')),
+    CONSTRAINT ck_agent_tool_call_deleted CHECK (deleted IN (0, 1))
+);
+COMMENT ON TABLE t_agent_tool_call IS '导购 Agent 工具调用记录';
+CREATE INDEX IF NOT EXISTS idx_agent_tool_call_step ON t_agent_tool_call (step_id, create_time);
+CREATE INDEX IF NOT EXISTS idx_agent_tool_call_run ON t_agent_tool_call (run_id, create_time);
+
+CREATE TABLE IF NOT EXISTS t_llm_call_log (
+    id VARCHAR(32) PRIMARY KEY,
+    run_id VARCHAR(32),
+    step_id VARCHAR(32),
+    business_scene VARCHAR(64) NOT NULL,
+    provider VARCHAR(64),
+    model VARCHAR(128),
+    stream SMALLINT NOT NULL DEFAULT 0,
+    temperature NUMERIC(4,3),
+    max_tokens INTEGER,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    duration_ms BIGINT,
+    status VARCHAR(20) NOT NULL,
+    error_message TEXT,
+    prompt_hash VARCHAR(128),
+    prompt_summary TEXT,
+    response_hash VARCHAR(128),
+    response_summary TEXT,
+    metadata_json JSONB,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted SMALLINT NOT NULL DEFAULT 0,
+    CONSTRAINT fk_llm_call_run_id FOREIGN KEY (run_id) REFERENCES t_agent_run (id) ON DELETE SET NULL,
+    CONSTRAINT fk_llm_call_step_id FOREIGN KEY (step_id) REFERENCES t_agent_step (id) ON DELETE SET NULL,
+    CONSTRAINT ck_llm_call_status CHECK (status IN ('running', 'succeeded', 'failed')),
+    CONSTRAINT ck_llm_call_stream CHECK (stream IN (0, 1)),
+    CONSTRAINT ck_llm_call_deleted CHECK (deleted IN (0, 1))
+);
+COMMENT ON TABLE t_llm_call_log IS 'LLM 调用账本，默认不保存完整 Prompt 与完整响应';
+CREATE INDEX IF NOT EXISTS idx_llm_call_run ON t_llm_call_log (run_id, create_time);
+CREATE INDEX IF NOT EXISTS idx_llm_call_scene_time ON t_llm_call_log (business_scene, create_time DESC);
+
+INSERT INTO t_devbrain_schema_info (version, description)
+VALUES ('20-agent-runtime-observability', 'Agent run, step, tool call, and LLM call observability tables')
 ON CONFLICT (version) DO NOTHING;

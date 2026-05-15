@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 通用大模型请求对象
@@ -103,4 +104,58 @@ public class ChatRequest {
      * </p>
      */
     private Boolean enableTools;
+
+    /**
+     * 可选：Provider 原生结构化输出格式。
+     * <p>
+     * OpenAI 兼容接口通常使用 {@code {"type":"json_object"}} 约束模型输出 JSON。
+     * 不支持该能力的 Provider 可以忽略，业务层仍应通过统一解析器兜底解析。
+     * </p>
+     */
+    private ResponseFormat responseFormat;
+
+    /**
+     * 可选：工具定义列表，按 OpenAI 兼容 function/tool calling 形态表达。
+     */
+    @Builder.Default
+    private List<ToolDefinition> tools = new ArrayList<>();
+
+    /**
+     * 可选：工具选择策略，例如 {@code auto}、{@code none} 或指定工具名。
+     */
+    private String toolChoice;
+
+    /**
+     * 可选：是否允许并行工具调用。
+     */
+    private Boolean parallelToolCalls;
+
+    /**
+     * 可选：单次模型调用总超时时间，单位毫秒。
+     * <p>
+     * 为空时使用底层客户端默认超时；适合 Agent 规划等短任务覆盖全局较长读超时。
+     * </p>
+     */
+    private Long timeoutMillis;
+
+    public record ResponseFormat(String type) {
+
+        public static ResponseFormat jsonObject() {
+            return new ResponseFormat("json_object");
+        }
+    }
+
+    public record ToolDefinition(String type, FunctionDefinition function) {
+
+        public static ToolDefinition function(String name, String description, Map<String, Object> parameters) {
+            return new ToolDefinition("function", new FunctionDefinition(name, description, parameters));
+        }
+    }
+
+    public record FunctionDefinition(String name, String description, Map<String, Object> parameters) {
+
+        public FunctionDefinition {
+            parameters = parameters == null ? Map.of() : Map.copyOf(parameters);
+        }
+    }
 }

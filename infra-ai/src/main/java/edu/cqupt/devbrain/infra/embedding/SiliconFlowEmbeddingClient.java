@@ -1,5 +1,6 @@
 package edu.cqupt.devbrain.infra.embedding;
 
+import com.google.gson.JsonObject;
 import okhttp3.OkHttpClient;
 import org.springframework.stereotype.Component;
 
@@ -24,6 +25,15 @@ public class SiliconFlowEmbeddingClient extends AbstractOpenAIStyleEmbeddingClie
     @Override
     public String provider() {
         return "siliconflow";
+    }
+
+    /**
+     * Qwen3 Embedding 支持通过 dimensions 指定输出维度，保持返回向量与 pgvector 列一致。
+     */
+    @Override
+    protected void customizeRequestBody(JsonObject body, ModelTarget target) {
+        super.customizeRequestBody(body, target);
+        body.addProperty("dimensions", target.getDimension());
     }
 
     /**

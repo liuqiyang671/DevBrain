@@ -30,6 +30,12 @@ public class PgRetrieverService implements RetrieverService {
              LIMIT ?
             """;
 
+    private static final String RETRIEVE_SQL_PREFIX = """
+            SELECT id, content, metadata ->> 'content_hash' AS content_hash, 1 - (embedding <=> ?::vector) AS score
+              FROM t_knowledge_vector
+             WHERE collection_name = ?
+            """;
+
     private static final String SET_HNSW_EF_SEARCH_SQL = "SET LOCAL hnsw.ef_search = 200";
 
     private final JdbcTemplate jdbcTemplate;
@@ -63,19 +69,76 @@ public class PgRetrieverService implements RetrieverService {
         // hnsw.ef_search 控制 HNSW 索引搜索时的候选队列大小，越大召回率越高
         jdbcTemplate.execute(SET_HNSW_EF_SEARCH_SQL);
         // 执行向量相似度搜索：embedding <=> ?::vector 计算余弦距离，1 - distance 转为相似度分数
+        SqlAndArgs sqlAndArgs = buildRetrieveSql(vectorLiteral, effectiveRequest);
         return jdbcTemplate.query(
-                RETRIEVE_SQL,
+                sqlAndArgs.sql(),
                 (rs, rowNum) -> RetrievedChunk.builder()
                         .id(rs.getString("id"))
                         .text(rs.getString("content"))
                         .contentHash(rs.getString("content_hash"))
                         .score(rs.getFloat("score"))
                         .build(),
-                vectorLiteral,
-                effectiveRequest.getCollectionName(),
-                vectorLiteral,
-                effectiveRequest.getTopK()
+                sqlAndArgs.args().toArray()
         );
+    }
+
+    private SqlAndArgs buildRetrieveSql(String vectorLiteral, RetrieveRequest request) {
+        if (request.getMetadataFilters() == null || request.getMetadataFilters().isEmpty()) {
+            return new SqlAndArgs(RETRIEVE_SQL, List.of(
+                    vectorLiteral,
+                    request.getCollectionName(),
+                    vectorLiteral,
+                    request.getTopK()
+            ));
+        }
+        StringBuilder sql = new StringBuilder(RETRIEVE_SQL_PREFIX);
+        List<Object> args = new java.util.ArrayList<>();
+        args.add(vectorLiteral);
+        args.add(request.getCollectionName());
+        appendTextFilter(sql, args, request.getMetadataFilters(), "productId", "productId");
+        appendTextFilter(sql, args, request.getMetadataFilters(), "docType", "docType");
+        appendInFilter(sql, args, request.getMetadataFilters(), "docIds", "doc_id");
+        appendInFilter(sql, args, request.getMetadataFilters(), "docTypes", "metadata ->> 'docType'");
+        sql.append(" ORDER BY embedding <=> ?::vector LIMIT ?");
+        args.add(vectorLiteral);
+        args.add(request.getTopK());
+        return new SqlAndArgs(sql.toString(), args);
+    }
+
+    private void appendTextFilter(StringBuilder sql, List<Object> args,
+                                  java.util.Map<String, Object> filters, String key, String metadataKey) {
+        Object value = filters.get(key);
+        if (value == null || !StringUtils.hasText(String.valueOf(value))) {
+            return;
+        }
+        sql.append(" AND metadata ->> '").append(metadataKey).append("' = ?");
+        args.add(String.valueOf(value));
+    }
+
+    private void appendInFilter(StringBuilder sql, List<Object> args,
+                                java.util.Map<String, Object> filters, String key, String columnExpression) {
+        Object value = filters.get(key);
+        List<?> values;
+        if (value instanceof List<?> list) {
+            values = list;
+        } else if (value instanceof Object[] array) {
+            values = java.util.Arrays.asList(array);
+        } else if (value == null) {
+            values = List.of();
+        } else {
+            values = List.of(value);
+        }
+        values = values.stream()
+                .filter(item -> item != null && StringUtils.hasText(String.valueOf(item)))
+                .toList();
+        if (values.isEmpty()) {
+            return;
+        }
+        sql.append(" AND ").append(columnExpression)
+                .append(" IN (")
+                .append(String.join(",", values.stream().map(ignored -> "?").toList()))
+                .append(")");
+        values.forEach(item -> args.add(String.valueOf(item)));
     }
 
     /**
@@ -146,5 +209,8 @@ public class PgRetrieverService implements RetrieverService {
         }
         builder.append(']');
         return builder.toString();
+    }
+
+    private record SqlAndArgs(String sql, List<Object> args) {
     }
 }

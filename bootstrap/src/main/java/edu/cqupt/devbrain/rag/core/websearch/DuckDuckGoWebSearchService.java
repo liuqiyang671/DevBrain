@@ -73,7 +73,7 @@ public class DuckDuckGoWebSearchService implements WebSearchService {
                 .build();
         Request request = new Request.Builder()
                 .url(url)
-                .header("User-Agent", "DevBrainBot/1.0")
+                .header("User-Agent", "AiShoppingAgentBot/1.0")
                 .get()
                 .build();
         try (Response response = httpClient.newCall(request).execute()) {
@@ -144,7 +144,7 @@ public class DuckDuckGoWebSearchService implements WebSearchService {
                 .build();
         Request request = new Request.Builder()
                 .url(url)
-                .header("User-Agent", "DevBrainBot/1.0")
+                .header("User-Agent", "AiShoppingAgentBot/1.0")
                 .get()
                 .build();
         try (Response response = httpClient.newCall(request).execute()) {

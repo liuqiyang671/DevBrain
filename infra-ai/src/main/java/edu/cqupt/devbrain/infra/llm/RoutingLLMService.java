@@ -19,7 +19,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
 
 import static edu.cqupt.devbrain.framework.errorcode.BaseErrorCode.REMOTE_ERROR;
 
@@ -55,9 +54,14 @@ public class RoutingLLMService implements LLMService {
         ChatRequest request = ChatRequest.builder()
                 .messages(List.of(ChatMessage.user(prompt)))
                 .build();
-        return callWithFallback(candidate -> {
+        return chat(request);
+    }
+
+    @Override
+    public String chat(ChatRequest request) {
+        return callWithFallback(request, (candidate, candidateRequest) -> {
             ChatTarget target = targetFor(candidate);
-            return clientFor(candidate).chat(request, target);
+            return clientFor(candidate).chat(candidateRequest, target);
         });
     }
 
@@ -116,16 +120,22 @@ public class RoutingLLMService implements LLMService {
 
     // ────────── 降级逻辑 ──────────
 
-    private String callWithFallback(Function<AIModelProperties.ModelCandidate, String> operation) {
+    private String callWithFallback(ChatRequest request, CandidateOperation operation) {
         List<AIModelProperties.ModelCandidate> candidates = fallbackCandidates();
         if (candidates.isEmpty()) {
             throw new RemoteException("LLM 候选模型不可用：" + defaultModelId());
         }
 
+        long deadlineNanoTime = deadlineNanoTime(request);
         RuntimeException lastFailure = null;
         for (AIModelProperties.ModelCandidate candidate : candidates) {
+            Long remainingTimeoutMillis = remainingTimeoutMillis(deadlineNanoTime);
+            if (deadlineNanoTime > 0 && (remainingTimeoutMillis == null || remainingTimeoutMillis <= 0)) {
+                break;
+            }
+            ChatRequest candidateRequest = withTimeoutMillis(request, remainingTimeoutMillis);
             try {
-                return operation.apply(candidate);
+                return operation.apply(candidate, candidateRequest);
             } catch (RuntimeException ex) {
                 lastFailure = ex;
                 log.warn("LLM 候选模型调用失败，candidateId={}，provider={}，model={}",
@@ -184,6 +194,49 @@ public class RoutingLLMService implements LLMService {
         return failure == null || !StringUtils.hasText(failure.getMessage())
                 ? ""
                 : "，lastError=" + failure.getMessage();
+    }
+
+    private long deadlineNanoTime(ChatRequest request) {
+        Long timeoutMillis = request == null ? null : request.getTimeoutMillis();
+        if (timeoutMillis == null || timeoutMillis <= 0) {
+            return -1L;
+        }
+        return System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+    }
+
+    private Long remainingTimeoutMillis(long deadlineNanoTime) {
+        if (deadlineNanoTime <= 0) {
+            return null;
+        }
+        long remainingNanos = deadlineNanoTime - System.nanoTime();
+        if (remainingNanos <= 0) {
+            return 0L;
+        }
+        return Math.max(1L, java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(remainingNanos));
+    }
+
+    private ChatRequest withTimeoutMillis(ChatRequest request, Long timeoutMillis) {
+        if (request == null || timeoutMillis == null) {
+            return request;
+        }
+        return ChatRequest.builder()
+                .messages(request.getMessages())
+                .temperature(request.getTemperature())
+                .topP(request.getTopP())
+                .topK(request.getTopK())
+                .maxTokens(request.getMaxTokens())
+                .thinking(request.getThinking())
+                .enableTools(request.getEnableTools())
+                .responseFormat(request.getResponseFormat())
+                .tools(request.getTools())
+                .toolChoice(request.getToolChoice())
+                .parallelToolCalls(request.getParallelToolCalls())
+                .timeoutMillis(timeoutMillis)
+                .build();
+    }
+
+    private interface CandidateOperation {
+        String apply(AIModelProperties.ModelCandidate candidate, ChatRequest request);
     }
 
     private String candidateDescription(AIModelProperties.ModelCandidate candidate) {

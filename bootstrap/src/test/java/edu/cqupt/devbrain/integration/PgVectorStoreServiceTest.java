@@ -24,7 +24,7 @@ class PgVectorStoreServiceTest extends AbstractVectorIntegrationTest {
     @Test
     void shouldInsertAndQuery() {
         List<VectorChunk> chunks = vectorChunks("store-insert", List.of(
-                "DevBrain 使用 Spring Boot 作为后端框架",
+                "ai-shopping-agent 使用 Spring Boot 作为后端框架",
                 "PostgreSQL 是主要的关系型数据库",
                 "用户通过对话方式提问获取答案"
         ));

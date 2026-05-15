@@ -2,9 +2,11 @@
 
 ## 1. 模块概述
 
-`bootstrap` 是 DevBrain-CQUPT 项目的 **Spring Boot 应用主入口**，一个面向高校场景的知识库驱动 RAG（检索增强生成）平台。作为单体 Web 应用，它提供：
+`bootstrap` 是 ai-shopping-agent 项目的 **Spring Boot 应用主入口**，承载电商 AI 导购、RAG 知识库和后台管理 API。作为单体 Web 应用，它提供：
 
 - 用户认证与 RBAC 授权
+- 商品目录、SKU、属性、媒体和商品文档绑定
+- 导购 Agent 会话、商品推荐、用户反馈与评测闭环
 - 知识库与文档管理（上传、解析、分块、Embedding、索引）
 - 摄取流水线编排（Fetcher → Parser → Enhancer → Chunker → Enricher → Indexer）
 - RAG 对话式 AI（SSE 流式响应）
@@ -25,6 +27,7 @@
 | `auth` | 认证与安全基础设施（JWT、CSRF、Cookie、登录守卫、会话管理、Redis 缓存） |
 | `user` | 用户管理与 RBAC（Controller、Service、DAO、DTO/VO） |
 | `knowledge` | 知识库管理（KB CRUD、文档上传/解析/分块、S3 存储、MQ 异步处理） |
+| `commerce` | 电商导购领域能力（商品目录、导购 Agent、多模态图片、评测反馈） |
 | `rag` | RAG 聊天引擎（流式 SSE、意图分类、多路检索、Prompt 组装、向量存储） |
 | `ingestion` | 摄取流水线引擎（DAG 执行、节点编排、循环检测） |
 | `sync` | 文档同步（飞书/URL 适配器、定时任务、内容哈希比对） |

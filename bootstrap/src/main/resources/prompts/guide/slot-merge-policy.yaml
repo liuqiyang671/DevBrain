@@ -1,0 +1,9 @@
+minConfidence: 0.3
+imageOverrideMinConfidence: 0.85
+sourcePriority:
+  - user_text
+  - llm
+  - policy
+  - image
+  - memory
+  - fallback

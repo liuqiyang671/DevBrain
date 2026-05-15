@@ -2,7 +2,7 @@
 
 ## 1. 模块概述
 
-`mcp-server` 是 DevBrain-CQUPT 项目的 **MCP（Model Context Protocol）工具服务模块**，定位为未来为 AI 模型提供结构化工具调用能力的独立服务端。目前为**空骨架状态**，仅包含 Spring Boot 启动类，无任何业务实现。
+`mcp-server` 是 ai-shopping-agent 项目的 **MCP（Model Context Protocol）工具服务模块**，定位为未来为 AI 模型提供结构化工具调用能力的独立服务端。目前为**空骨架状态**，仅包含 Spring Boot 启动类，无任何业务实现。
 
 **Maven 坐标**: `edu.cqupt:mcp-server:0.0.1-SNAPSHOT`
 
@@ -27,11 +27,11 @@
 
 ## 3. 文件清单
 
-### 3.1 `DevBrainMcpServerApplication.java`
+### 3.1 `AiShoppingAgentMcpServerApplication.java`
 
 标准 `@SpringBootApplication` 启动类，Javadoc 注释说明：
 
-> "DevBrain MCP Server 启动入口。MCP（Model Context Protocol）服务端，为 AI 模型提供结构化工具调用能力。"
+> "ai-shopping-agent MCP Server 启动入口。MCP（Model Context Protocol）服务端，为 AI 模型提供结构化工具调用能力。"
 
 无 Bean 定义、无配置、无工具注册。
 
@@ -47,7 +47,7 @@ server:
 
 无 MCP 特定配置（无 `mcp.server.*` 属性、无 SSE 端点、无传输配置）。
 
-### 3.3 `DevBrainMcpServerApplicationTests.java`
+### 3.3 `AiShoppingAgentMcpServerApplicationTests.java`
 
 单个 `@SpringBootTest` 类，空 `contextLoads()` 测试，仅验证 Spring 上下文可启动。
 
@@ -62,14 +62,14 @@ server:
 3. **注册工具/资源 Bean**: 通过 `@Tool` 注解方法或 `ToolCallbackProvider`
 4. **与兄弟模块集成**: 依赖 `framework` 获取共享模型，依赖 `infra-ai` 调用 LLM/Embedding 能力
 
-**预期能力**: 将 DevBrain 的知识库、RAG 问答、文档管理等能力以 MCP 工具形式暴露给外部 AI Agent 调用。
+**预期能力**: 将 ai-shopping-agent 的知识库、RAG 问答、文档管理等能力以 MCP 工具形式暴露给外部 AI Agent 调用。
 
 ---
 
 ## 5. 模块关系
 
 ```
-devbrain-cqupt (root POM)
+ai-shopping-agent (root POM)
   ├── framework          ← 共享基础设施
   ├── infra-ai           ← AI 基础设施
   ├── bootstrap          ← 主应用 (port 9090)

@@ -1,0 +1,154 @@
+version: commerce-guide-ontology-v1
+
+categories:
+  - id: phone
+    displayName: 手机
+    names: [手机, 智能手机, phone]
+    requiredSlots: [scenario]
+    optionalSlots: [budgetMax, brandPreference, cameraPreference, batteryPreference]
+    scenarioExamples: [拍照旅行, 游戏, 商务续航, 学生备用, 长辈使用]
+  - id: laptop
+    displayName: 笔记本
+    names: [笔记本, 笔记本电脑, 电脑, laptop]
+    requiredSlots: [scenario]
+    optionalSlots: [budgetMax, brandPreference]
+    scenarioExamples: [办公, 写代码, 游戏, 剪视频, 学生学习]
+  - id: audio
+    displayName: 耳机
+    names: [耳机, 音箱, audio, 蓝牙耳机]
+    requiredSlots: [scenario]
+    optionalSlots: [budgetMax, brandPreference]
+    scenarioExamples: [通勤降噪, 运动, 游戏, 办公专注, 音乐监听]
+  - id: home
+    displayName: 家电
+    names: [家电, 扫地机器人, 空气净化器, 空气净化]
+    requiredSlots: [scenario]
+    optionalSlots: [budgetMax]
+    scenarioExamples: [宠物家庭, 新房除醛, 卧室净化, 日常清洁]
+  - id: projector
+    displayName: 投影仪
+    names: [投影, 投影仪]
+    requiredSlots: [scenario]
+    optionalSlots: [budgetMax]
+    scenarioExamples: [宿舍, 租房, 卧室观影, 小客厅]
+  - id: wearable
+    displayName: 运动手表
+    names: [手表, 智能手表, 穿戴]
+    requiredSlots: [scenario]
+    optionalSlots: [budgetMax, brandPreference]
+    scenarioExamples: [跑步, 登山, 日常健康监测, 长续航]
+  - id: camera
+    displayName: 相机
+    names: [相机, 微单]
+    requiredSlots: [scenario]
+    optionalSlots: [budgetMax, brandPreference]
+    scenarioExamples: [旅行, Vlog, 拍视频, 防抖记录]
+  - id: tablet
+    displayName: 平板
+    names: [平板, 平板电脑, tablet]
+    requiredSlots: [scenario]
+    optionalSlots: [budgetMax, brandPreference]
+    scenarioExamples: [网课, 记笔记, 阅读, 轻办公]
+
+brands:
+  - id: xiaomi
+    displayName: 小米
+    aliases: [小米, xiaomi]
+  - id: redmi
+    displayName: 红米
+    aliases: [红米, redmi]
+  - id: huawei
+    displayName: 华为
+    aliases: [华为, huawei]
+  - id: honor
+    displayName: 荣耀
+    aliases: [荣耀, honor]
+  - id: apple
+    displayName: 苹果
+    aliases: [苹果, iphone, apple]
+  - id: oppo
+    displayName: OPPO
+    aliases: [oppo]
+  - id: vivo
+    displayName: vivo
+    aliases: [vivo]
+  - id: samsung
+    displayName: 三星
+    aliases: [三星, samsung]
+  - id: lenovo
+    displayName: 联想
+    aliases: [联想, lenovo]
+  - id: dell
+    displayName: 戴尔
+    aliases: [戴尔, dell]
+  - id: hp
+    displayName: 惠普
+    aliases: [惠普, hp]
+  - id: sony
+    displayName: 索尼
+    aliases: [索尼, sony]
+
+scenarios:
+  - id: coding
+    displayName: 写代码
+    aliases: [写代码, 代码编译, 编程, 开发]
+  - id: video-editing
+    displayName: 剪视频
+    aliases: [剪视频, 视频剪辑]
+  - id: photography
+    displayName: 拍照
+    aliases: [拍照, 拍照好一点, 拍摄, 影像, 人像, 长焦]
+  - id: battery
+    displayName: 续航
+    aliases: [商务续航, 长续航, 续航]
+  - id: commuting
+    displayName: 通勤
+    aliases: [通勤, 降噪]
+  - id: sports
+    displayName: 运动
+    aliases: [运动]
+  - id: music-production
+    displayName: 音乐制作
+    aliases: [监听, 音乐制作]
+  - id: gaming
+    displayName: 游戏
+    aliases: [游戏]
+  - id: office
+    displayName: 办公
+    aliases: [办公, 商务]
+  - id: student
+    displayName: 学生
+    aliases: [学生, 学生备用, 备用, 宿舍]
+  - id: elders
+    displayName: 长辈
+    aliases: [长辈, 老人]
+  - id: travel
+    displayName: 旅行
+    aliases: [旅行]
+  - id: pet-home
+    displayName: 宠物家庭
+    aliases: [宠物家庭]
+  - id: new-home
+    displayName: 新房
+    aliases: [新房, 除醛, 租房]
+
+businessPreferences:
+  - id: coupon
+    displayName: 优惠券
+    aliases: [优惠券, 券, 优惠, 活动, 促销]
+  - id: in-stock
+    displayName: 有货
+    aliases: [有货, 现货, 库存]
+  - id: value-for-money
+    displayName: 性价比
+    aliases: [便宜, 性价比, 划算]
+
+intents:
+  - id: find_product
+    aliases: [推荐, 买, 选, 想买]
+  - id: compare_products
+    aliases: [比较, 对比, 哪个好, 哪款好]
+  - id: promotion_consulting
+    aliases: [优惠, 活动, 促销]
+  - id: after_sales_consulting
+    aliases: [售后, 保修, 退换, 退货, 维修]

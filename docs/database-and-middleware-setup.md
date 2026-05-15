@@ -1,12 +1,12 @@
- # DevBrain-CQUPT 数据库与中间件搭建说明
+ # ai-shopping-agent 数据库与中间件搭建说明
 
 > 生成日期：2026-05-01
-> 参考文档：`E:\IdeaProjects\ragent\docs\devbrain-cqupt-ai-build\_template.md`、`E:\IdeaProjects\ragent1\docs\devbrain-cqupt-ai-build\02-database-and-middleware.md`
-> 目标项目：`E:\IdeaProjects\devbrain-cqupt`
+> 参考文档：历史构建材料
+> 目标项目：`E:\IdeaProjects\ai-shopping-agent`
 
 ## 1. 搭建目标
 
-本步骤为 DevBrain-CQUPT 准备本地开发运行环境，包括 PostgreSQL + pgvector、Redis、MinIO 和 RocketMQ，并在 Spring Boot 主应用中建立统一连接配置。
+本步骤为 ai-shopping-agent 准备本地开发运行环境，包括 PostgreSQL + pgvector、Redis、MinIO 和 RocketMQ，并在 Spring Boot 主应用中建立统一连接配置。
 
 本文记录第 02 步基础设施搭建过程。后续步骤已在同一个 `resources/database/schema.sql` 中继续追加用户认证/RBAC 和知识库 CRUD 表结构；当前 schema 状态以 `resources/database/README.md` 为准。
 
@@ -98,7 +98,7 @@ bootstrap/src/main/resources/application.yaml
 在项目根目录执行：
 
 ```powershell
-cd E:\IdeaProjects\devbrain-cqupt
+cd E:\IdeaProjects\ai-shopping-agent
 
 docker compose -f resources/docker/postgres-pgvector.compose.yaml up -d
 docker compose -f resources/docker/redis.compose.yaml up -d
@@ -175,7 +175,7 @@ mvn -q -DskipTests compile
 | Redis | `6380 -> 6379` | `redis-cli ping` 返回 `PONG` |
 | MinIO | `9000` / `9001` | health endpoint 返回 `200 OK` |
 | MinIO bucket | `devbrain` | `minio-init` 创建 bucket 并设置 private |
-| RocketMQ | `19876 -> 9876`、`11911 -> 10911`、`11909 -> 10909` | Broker 注册到 `DevBrainCluster`，版本 `V5_2_0` |
+| RocketMQ | `19876 -> 9876`、`11911 -> 10911`、`11909 -> 10909` | Broker 注册到 `AiShoppingAgentCluster`，版本 `V5_2_0` |
 | Maven 编译 | 无 | `mvn -q -DskipTests compile` 退出码 0 |
 
 RocketMQ Compose 默认镜像为 `apache/rocketmq:5.2.0`，满足 RocketMQ 5.x 要求，并可通过 `ROCKETMQ_IMAGE` 覆盖。

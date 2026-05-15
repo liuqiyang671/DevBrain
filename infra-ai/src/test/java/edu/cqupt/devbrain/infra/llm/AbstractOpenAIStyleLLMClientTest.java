@@ -85,6 +85,22 @@ class AbstractOpenAIStyleLLMClientTest {
     }
 
     @Test
+    void syncChatAddsJsonObjectResponseFormatWhenRequested() throws Exception {
+        server.enqueue(jsonResponse("""
+                {"choices": [{"message": {"content": "{\\"ok\\":true}"}}]}
+                """));
+
+        ChatRequest request = ChatRequest.builder()
+                .messages(List.of(ChatMessage.user("只返回 JSON")))
+                .responseFormat(ChatRequest.ResponseFormat.jsonObject())
+                .build();
+        client.chat(request, target("sk-test"));
+
+        String body = server.takeRequest().getBody().readUtf8();
+        assertThat(body).contains("\"response_format\":{\"type\":\"json_object\"}");
+    }
+
+    @Test
     void syncChatDisablesThinkingWhenRequestThinkingIsFalse() throws Exception {
         server.enqueue(jsonResponse("""
                 {"choices": [{"message": {"content": "OK"}}]}
@@ -98,6 +114,22 @@ class AbstractOpenAIStyleLLMClientTest {
 
         String body = server.takeRequest().getBody().readUtf8();
         assertThat(body).contains("\"enable_thinking\":false");
+    }
+
+    @Test
+    void syncChatHonorsPerRequestTimeout() {
+        server.enqueue(jsonResponse("""
+                {"choices": [{"message": {"content": "too slow"}}]}
+                """).setBodyDelay(500, TimeUnit.MILLISECONDS));
+
+        ChatRequest request = ChatRequest.builder()
+                .messages(List.of(ChatMessage.user("你好")))
+                .timeoutMillis(100L)
+                .build();
+
+        assertThatThrownBy(() -> client.chat(request, target("sk-test")))
+                .isInstanceOf(RemoteException.class)
+                .hasMessageContaining("LLM 网络请求失败");
     }
 
     @Test

@@ -1,6 +1,6 @@
 spring:
   application:
-    name: devbrain-bootstrap
+    name: ai-shopping-agent-bootstrap
   datasource:
     driver-class-name: org.postgresql.Driver
     url: ${DB_URL:jdbc:postgresql://localhost:5432/devbrain}
@@ -61,7 +61,7 @@ rag:
     ambiguity-delta: ${RAG_INTENT_AMBIGUITY_DELTA:0.08}
     ambiguity-max-score: ${RAG_INTENT_AMBIGUITY_MAX_SCORE:0.45}
   chat:
-    sse-timeout-millis: ${RAG_CHAT_SSE_TIMEOUT_MILLIS:300000}
+    sse-timeout-millis: ${RAG_CHAT_SSE_TIMEOUT_MILLIS:30000000}
     top-k: ${RAG_CHAT_TOP_K:5}
     rate-limit-max-requests: ${RAG_CHAT_RATE_LIMIT_MAX_REQUESTS:20}
     rate-limit-window-seconds: ${RAG_CHAT_RATE_LIMIT_WINDOW_SECONDS:60}
@@ -72,7 +72,7 @@ rag:
       endpoint: ${RAG_WEB_SEARCH_ENDPOINT:https://duckduckgo.com/html/}
       weather-endpoint: ${RAG_WEB_SEARCH_WEATHER_ENDPOINT:https://api.open-meteo.com/v1/forecast}
       max-results: ${RAG_WEB_SEARCH_MAX_RESULTS:5}
-      timeout-millis: ${RAG_WEB_SEARCH_TIMEOUT_MILLIS:8000}
+      timeout-millis: ${RAG_WEB_SEARCH_TIMEOUT_MILLIS:30000000}
       use-system-proxies: ${RAG_WEB_SEARCH_USE_SYSTEM_PROXIES:true}
       proxy-url: ${RAG_WEB_SEARCH_PROXY:}
   retrieval:
@@ -130,43 +130,75 @@ ai:
     ollama:
       url: ${OLLAMA_BASE_URL:http://localhost:11434}
   embedding:
-    default-model: qwen-emb-local
+    default-model: qwen-emb-4b
     candidates:
-      - id: qwen-emb-local
-        provider: ollama
-        model: qwen3-embedding:8b-fp16
+      - id: qwen-emb-4b
+        provider: siliconflow
+        model: Qwen/Qwen3-Embedding-4B
         dimension: ${rag.default.dimension}
         priority: 1
         enabled: true
-      - id: qwen-emb-8b
-        provider: siliconflow
-        model: Qwen/Qwen3-Embedding-8B
+      - id: qwen-emb-local
+        provider: ollama
+        model: qwen3-embedding:8b-fp16
         dimension: ${rag.default.dimension}
         priority: 2
         enabled: false
   chat:
     message-chunk-size: ${AI_CHAT_MESSAGE_CHUNK_SIZE:256}
-    default-model: ${CHAT_DEFAULT_MODEL:qwen-chat-local-9b}
-    connect-timeout-ms: ${CHAT_CONNECT_TIMEOUT_MS:30000}
-    read-timeout-ms: ${CHAT_READ_TIMEOUT_MS:1800000}
+    default-model: ${CHAT_DEFAULT_MODEL:qwen-chat-siliconflow}
+    connect-timeout-ms: ${CHAT_CONNECT_TIMEOUT_MS:120000}
+    read-timeout-ms: ${CHAT_READ_TIMEOUT_MS:3600000}
+    structured-output-enabled: ${AI_CHAT_STRUCTURED_OUTPUT_ENABLED:true}
+    tool-calling-enabled: ${AI_CHAT_TOOL_CALLING_ENABLED:false}
     candidates:
-      - id: qwen-chat-local-9b
-        provider: ollama
-        model: qwen3.5:9b
-        priority: 2
-        enabled: true
-      - id: qwen-chat-local-35b
-        provider: ollama
-        model: qwen3.6:35b-a3b
-        priority: 3
-        enabled: true
       - id: qwen-chat-siliconflow
         provider: siliconflow
         model: deepseek-ai/DeepSeek-V4-Flash
         priority: 1
         enabled: true
+      - id: kimi-k2-6-siliconflow
+        provider: siliconflow
+        model: Pro/moonshotai/Kimi-K2.6
+        priority: 3
+        enabled: true
+      - id: qwen3-6-35b-a3b-siliconflow
+        provider: siliconflow
+        model: Qwen/Qwen3.6-35B-A3B
+        priority: 2
+        enabled: true
+      - id: qwen-chat-local-9b
+        provider: ollama
+        model: qwen3.5:9b
+        priority: 4
+        enabled: true
+      - id: qwen-chat-local-35b
+        provider: ollama
+        model: qwen3.6:35b-a3b
+        priority: 5
+        enabled: true
 
 devbrain:
+  ai:
+    gateway:
+      provider: ${DEVBRAIN_AI_GATEWAY_PROVIDER:legacy}
+      spring-ai-enabled: ${DEVBRAIN_AI_GATEWAY_SPRING_AI_ENABLED:false}
+      persist-prompts: ${DEVBRAIN_AI_OBSERVABILITY_PERSIST_PROMPTS:false}
+    lang-chain4j-enabled: ${DEVBRAIN_AI_GATEWAY_LANGCHAIN4J_ENABLED:false}
+  guide:
+    image:
+      max-file-size: ${DEVBRAIN_GUIDE_IMAGE_MAX_FILE_SIZE:10MB}
+      max-images-per-message: ${DEVBRAIN_GUIDE_IMAGE_MAX_COUNT:4}
+      allowed-content-types:
+        - image/jpeg
+        - image/png
+        - image/webp
+      allowed-extensions:
+        - jpg
+        - jpeg
+        - png
+        - webp
+      object-key-prefix: ${DEVBRAIN_GUIDE_IMAGE_OBJECT_PREFIX:guide-images}
   auth:
     jwt-secret: ${DEVBRAIN_JWT_SECRET:devbrain-local-secret-change-me-32bytes}
     token-ttl: ${DEVBRAIN_TOKEN_TTL:8h}
@@ -217,3 +249,265 @@ devbrain:
       port: ${XXL_JOB_PORT:9999}
       log-path: ${XXL_JOB_LOG_PATH:./logs/xxl-job}
       log-retention-days: ${XXL_JOB_LOG_RETENTION_DAYS:30}
+
+commerce:
+  guide:
+    intent:
+      ontology:
+        location: classpath:prompts/guide/domain-ontology.yaml
+      merge-policy:
+        location: classpath:prompts/guide/slot-merge-policy.yaml
+    clarification:
+      llm-enabled: ${COMMERCE_GUIDE_CLARIFICATION_LLM_ENABLED:false}
+      prompt-location: ${COMMERCE_GUIDE_CLARIFICATION_PROMPT_LOCATION:classpath:prompts/guide/clarification-strategy-system.md}
+      temperature: ${COMMERCE_GUIDE_CLARIFICATION_TEMPERATURE:0.1}
+      max-tokens: ${COMMERCE_GUIDE_CLARIFICATION_MAX_TOKENS:240}
+      timeout-millis: ${COMMERCE_GUIDE_CLARIFICATION_TIMEOUT_MILLIS:300000}
+      default-policy:
+        policy-id: guide-clarification-default-v1
+        category: "*"
+        required-slots: [category]
+        recommended-slots: [budget, scenario, brandPreference]
+        blocking-slots: [category, compareProducts]
+        max-clarification-turns: 2
+        recommend-before-clarify: true
+        ask-style: single_question
+        examples:
+          scenario: [拍照, 游戏, 长续航, 长辈使用, 商务办公]
+          budget: [3000 元以内, 3000-5000 元, 5000 元以上]
+          brandPreference: [小米, 华为, 苹果, 联想, 戴尔]
+      policies:
+        - policy-id: guide-clarification-phone-v1
+          category: phone
+          required-slots: [category]
+          recommended-slots: [budget, scenario, brandPreference]
+          blocking-slots: [category, compareProducts]
+          max-clarification-turns: 2
+          recommend-before-clarify: true
+          ask-style: single_question
+          examples:
+            scenario: [拍照, 游戏, 长续航, 长辈使用, 商务办公]
+            budget: [3000 元以内, 3000-5000 元, 5000 元以上]
+            brandPreference: [小米, 华为, 苹果, 荣耀, OPPO]
+        - policy-id: guide-clarification-laptop-v1
+          category: laptop
+          required-slots: [category]
+          recommended-slots: [budget, scenario, brandPreference]
+          blocking-slots: [category, compareProducts]
+          max-clarification-turns: 2
+          recommend-before-clarify: true
+          ask-style: single_question
+          examples:
+            scenario: [办公, 写代码, 游戏, 剪视频, 学生学习]
+            budget: [4000 元以内, 4000-7000 元, 7000 元以上]
+            brandPreference: [联想, 戴尔, 华为, 苹果, 华硕]
+    agent:
+      enabled: ${COMMERCE_GUIDE_AGENT_ENABLED:true}
+      max-steps: ${COMMERCE_GUIDE_AGENT_MAX_STEPS:6}
+      invalid-action-retry: ${COMMERCE_GUIDE_AGENT_INVALID_ACTION_RETRY:1}
+      planner-temperature: ${COMMERCE_GUIDE_AGENT_PLANNER_TEMPERATURE:0.1}
+      planner-max-tokens: ${COMMERCE_GUIDE_AGENT_PLANNER_MAX_TOKENS:160}
+      planner-timeout-millis: ${COMMERCE_GUIDE_AGENT_PLANNER_TIMEOUT_MILLIS:300000}
+      fallback:
+        enabled: ${COMMERCE_GUIDE_AGENT_FALLBACK_ENABLED:true}
+        policy-version: ${COMMERCE_GUIDE_AGENT_FALLBACK_POLICY_VERSION:fallback-v1}
+        max-attempts: ${COMMERCE_GUIDE_AGENT_FALLBACK_MAX_ATTEMPTS:4}
+        llm-enabled: ${COMMERCE_GUIDE_AGENT_FALLBACK_LLM_ENABLED:false}
+        llm-temperature: ${COMMERCE_GUIDE_AGENT_FALLBACK_LLM_TEMPERATURE:0.0}
+        llm-max-tokens: ${COMMERCE_GUIDE_AGENT_FALLBACK_LLM_MAX_TOKENS:120}
+        llm-timeout-millis: ${COMMERCE_GUIDE_AGENT_FALLBACK_LLM_TIMEOUT_MILLIS:300000}
+      policies:
+        - policy-id: general-shopping-v1
+          version: v1
+          scene: general_shopping
+          allowed-actions:
+            - understand_intent
+            - clarify
+            - search_products
+            - retrieve_evidence
+            - rank_products
+            - final_answer
+          action-transitions:
+            __start__: [understand_intent, search_products, clarify, final_answer]
+            understand_intent: [understand_intent, clarify, search_products, final_answer]
+            clarify: []
+            search_products: [retrieve_evidence, rank_products, final_answer, clarify]
+            retrieve_evidence: [rank_products, final_answer, clarify]
+            rank_products: [final_answer, clarify]
+            final_answer: []
+          max-steps: ${COMMERCE_GUIDE_AGENT_GENERAL_MAX_STEPS:6}
+          retry-policy:
+            planner-failure-retries: ${COMMERCE_GUIDE_AGENT_INVALID_ACTION_RETRY:1}
+            tool-failure-retries: 1
+            parse-failure-retries: 1
+          prompt-location: classpath:prompts/guide/planner/default.md
+          prompt-version: guide-agent-planner-default-v1
+          model-profile:
+            temperature: ${COMMERCE_GUIDE_AGENT_PLANNER_TEMPERATURE:0.1}
+            max-tokens: ${COMMERCE_GUIDE_AGENT_PLANNER_MAX_TOKENS:160}
+            timeout-millis: ${COMMERCE_GUIDE_AGENT_PLANNER_TIMEOUT_MILLIS:300000}
+          bucket-start: 0
+          bucket-end: 100
+        - policy-id: broad-category-purchase-v1
+          version: v1
+          scene: broad_category_purchase
+          allowed-actions:
+            - understand_intent
+            - clarify
+            - search_products
+            - retrieve_evidence
+            - rank_products
+            - final_answer
+          action-transitions:
+            __start__: [understand_intent, search_products]
+            understand_intent: [understand_intent, search_products, clarify]
+            clarify: []
+            search_products: [retrieve_evidence, rank_products, final_answer, clarify]
+            retrieve_evidence: [rank_products, final_answer, clarify]
+            rank_products: [final_answer, clarify]
+            final_answer: []
+          max-steps: ${COMMERCE_GUIDE_AGENT_PURCHASE_MAX_STEPS:6}
+          retry-policy:
+            planner-failure-retries: ${COMMERCE_GUIDE_AGENT_INVALID_ACTION_RETRY:1}
+            tool-failure-retries: 1
+            parse-failure-retries: 1
+          prompt-location: classpath:prompts/guide/planner/default.md
+          prompt-version: guide-agent-planner-default-v1
+          model-profile:
+            temperature: ${COMMERCE_GUIDE_AGENT_PLANNER_TEMPERATURE:0.1}
+            max-tokens: ${COMMERCE_GUIDE_AGENT_PLANNER_MAX_TOKENS:160}
+            timeout-millis: ${COMMERCE_GUIDE_AGENT_PLANNER_TIMEOUT_MILLIS:300000}
+          scene-keywords:
+            - 手机
+            - 电脑
+            - 笔记本
+            - 耳机
+            - 冰箱
+            - 空调
+            - 预算
+            - 价格
+            - 优惠
+            - 库存
+          bucket-start: 0
+          bucket-end: 100
+        - policy-id: compare-products-v1
+          version: v1
+          scene: compare_products
+          allowed-actions:
+            - understand_intent
+            - clarify
+            - search_products
+            - retrieve_evidence
+            - rank_products
+            - final_answer
+          action-transitions:
+            __start__: [understand_intent, search_products]
+            understand_intent: [understand_intent, search_products, clarify]
+            clarify: []
+            search_products: [retrieve_evidence, rank_products, final_answer, clarify]
+            retrieve_evidence: [rank_products, final_answer, clarify]
+            rank_products: [final_answer, clarify]
+            final_answer: []
+          max-steps: ${COMMERCE_GUIDE_AGENT_COMPARE_MAX_STEPS:6}
+          retry-policy:
+            planner-failure-retries: ${COMMERCE_GUIDE_AGENT_INVALID_ACTION_RETRY:1}
+            tool-failure-retries: 1
+            parse-failure-retries: 1
+          prompt-location: classpath:prompts/guide/planner/default.md
+          prompt-version: guide-agent-planner-default-v1
+          model-profile:
+            temperature: ${COMMERCE_GUIDE_AGENT_PLANNER_TEMPERATURE:0.1}
+            max-tokens: ${COMMERCE_GUIDE_AGENT_PLANNER_MAX_TOKENS:160}
+            timeout-millis: ${COMMERCE_GUIDE_AGENT_PLANNER_TIMEOUT_MILLIS:300000}
+          scene-keywords:
+            - 对比
+            - 比较
+            - 哪个好
+            - 哪款好
+          bucket-start: 0
+          bucket-end: 100
+        - policy-id: after-sales-v1
+          version: v1
+          scene: after_sales
+          allowed-actions:
+            - understand_intent
+            - clarify
+            - final_answer
+          action-transitions:
+            __start__: [understand_intent, clarify, final_answer]
+            understand_intent: [clarify, final_answer]
+            clarify: []
+            final_answer: []
+          max-steps: ${COMMERCE_GUIDE_AGENT_AFTER_SALES_MAX_STEPS:4}
+          retry-policy:
+            planner-failure-retries: ${COMMERCE_GUIDE_AGENT_INVALID_ACTION_RETRY:1}
+            tool-failure-retries: 1
+            parse-failure-retries: 1
+          prompt-location: classpath:prompts/guide/planner/default.md
+          prompt-version: guide-agent-planner-default-v1
+          model-profile:
+            temperature: ${COMMERCE_GUIDE_AGENT_PLANNER_TEMPERATURE:0.1}
+            max-tokens: ${COMMERCE_GUIDE_AGENT_PLANNER_MAX_TOKENS:160}
+            timeout-millis: ${COMMERCE_GUIDE_AGENT_PLANNER_TIMEOUT_MILLIS:300000}
+          scene-keywords:
+            - 售后
+            - 保修
+            - 退货
+            - 退款
+            - 维修
+            - 换货
+          bucket-start: 0
+          bucket-end: 100
+    retrieval:
+      llm-enabled: ${COMMERCE_GUIDE_RETRIEVAL_LLM_ENABLED:false}
+      planner-prompt-location: ${COMMERCE_GUIDE_RETRIEVAL_PROMPT_LOCATION:classpath:prompts/guide/candidate-retrieval-planner-system.md}
+      planner-temperature: ${COMMERCE_GUIDE_RETRIEVAL_TEMPERATURE:0.1}
+      planner-max-tokens: ${COMMERCE_GUIDE_RETRIEVAL_MAX_TOKENS:700}
+      planner-timeout-millis: ${COMMERCE_GUIDE_RETRIEVAL_TIMEOUT_MILLIS:300000}
+      default-policy:
+        category: "*"
+        default-limit: 20
+        max-query-count: 4
+        allowed-channels:
+          - catalog_search
+          - attribute_search
+          - semantic_product_search
+          - promotion_search
+        quality-target:
+          min-candidates: 3
+          min-available-candidates: 2
+          need-diversity: true
+          diversity-fields: [brand, priceBand]
+      policies:
+        - category: phone
+          default-limit: 20
+          max-query-count: 4
+          allowed-channels:
+            - catalog_search
+            - attribute_search
+            - semantic_product_search
+            - promotion_search
+          quality-target:
+            min-candidates: 3
+            min-available-candidates: 2
+            need-diversity: true
+            diversity-fields: [brand, priceBand]
+        - category: laptop
+          default-limit: 20
+          max-query-count: 4
+          allowed-channels:
+            - catalog_search
+            - attribute_search
+            - semantic_product_search
+            - promotion_search
+          quality-target:
+            min-candidates: 3
+            min-available-candidates: 2
+            need-diversity: true
+            diversity-fields: [brand, priceBand]
+    answer:
+      llm-enabled: ${COMMERCE_GUIDE_ANSWER_LLM_ENABLED:true}
+      prompt-location: ${COMMERCE_GUIDE_ANSWER_PROMPT_LOCATION:classpath:prompts/guide/final-answer-system.md}
+      temperature: ${COMMERCE_GUIDE_ANSWER_TEMPERATURE:0.25}
+      max-tokens: ${COMMERCE_GUIDE_ANSWER_MAX_TOKENS:700}
+      timeout-millis: ${COMMERCE_GUIDE_ANSWER_TIMEOUT_MILLIS:300000}

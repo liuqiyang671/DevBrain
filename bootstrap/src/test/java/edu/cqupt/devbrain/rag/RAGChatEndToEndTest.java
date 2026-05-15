@@ -37,6 +37,8 @@ import edu.cqupt.devbrain.rag.core.rewrite.QueryRewriteService;
 import edu.cqupt.devbrain.rag.core.rewrite.RewriteResult;
 import edu.cqupt.devbrain.rag.core.stream.StreamCallbackFactory;
 import edu.cqupt.devbrain.rag.core.stream.StreamTaskManager;
+import edu.cqupt.devbrain.rag.core.websearch.WebSearchResult;
+import edu.cqupt.devbrain.rag.core.websearch.WebSearchService;
 import edu.cqupt.devbrain.rag.enums.SSEEventType;
 import edu.cqupt.devbrain.rag.service.impl.RAGChatServiceImpl;
 import edu.cqupt.devbrain.rag.service.pipeline.StreamChatPipeline;
@@ -460,6 +462,11 @@ class RAGChatEndToEndTest {
         }
 
         @Bean
+        WebSearchService webSearchService() {
+            return (query, limit) -> List.<WebSearchResult>of();
+        }
+
+        @Bean
         FakeRedis fakeRedis() {
             return new FakeRedis();
         }
@@ -758,7 +765,7 @@ class RAGChatEndToEndTest {
                 case "answer-chat-kb.st" -> "你是知识库助手，只能基于 <documents> 回答。\n{kbContext}\n{question}";
                 case "answer-chat-mcp.st" -> "你是工具数据助手。\n{mcpContext}\n{question}";
                 case "answer-chat-mcp-kb-mixed.st" -> "你是混合 RAG 助手。\n{mcpContext}\n{kbContext}\n{question}";
-                default -> "你是 DevBrain 助手。\n{question}";
+                default -> "你是 ai-shopping-agent 助手。\n{question}";
             };
         }
 

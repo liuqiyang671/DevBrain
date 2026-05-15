@@ -1,4 +1,4 @@
-# DevBrain-CQUPT 项目初始化说明
+# ai-shopping-agent 项目初始化说明
 
 > 初始化日期：2026-05-01  
 > 目标路径：`E:\IdeaProjects\devbrain-cqupt`  
@@ -6,7 +6,7 @@
 
 ## 1. 初始化过程概述
 
-本次初始化从空目录开始，按照第 01 步文档创建 DevBrain-CQUPT 工程骨架。后端采用 Java 17、Spring Boot 3.5.7 和 Maven 多模块结构，模块包括 `framework`、`infra-ai`、`bootstrap`、`mcp-server`。前端采用 React 18、Vite 和 TypeScript，并提供最小可运行入口页面。
+本次初始化从空目录开始，按照第 01 步文档创建 ai-shopping-agent 工程骨架。后端采用 Java 17、Spring Boot 3.5.7 和 Maven 多模块结构，模块包括 `framework`、`infra-ai`、`bootstrap`、`mcp-server`。前端采用 React 18、Vite 和 TypeScript，并提供最小可运行入口页面。
 
 本步骤只创建工程骨架和基础配置，不新增业务数据库表。数据库脚本、Docker 编排和运行期文档目录已预留，便于后续步骤继续生成 RAG、知识库、MCP 工具和后台管理能力。
 
@@ -21,8 +21,8 @@
 2. 创建后端模块。
    - `framework`：预留通用框架能力
    - `infra-ai`：预留模型调用、Embedding、Rerank 等 AI 基础设施能力
-   - `bootstrap`：主业务应用入口，包含 `DevBrainApplication`
-   - `mcp-server`：独立工具服务入口，包含 `DevBrainMcpServerApplication`
+   - `bootstrap`：主业务应用入口，包含 `AiShoppingAgentApplication`
+   - `mcp-server`：独立工具服务入口，包含 `AiShoppingAgentMcpServerApplication`
 
 3. 写入基础应用配置。
    - `bootstrap/src/main/resources/application.yaml`
@@ -69,9 +69,9 @@ devbrain-cqupt/
   .gitignore
   bootstrap/
     pom.xml
-    src/main/java/edu/cqupt/devbrain/DevBrainApplication.java
+    src/main/java/edu/cqupt/devbrain/AiShoppingAgentApplication.java
     src/main/resources/application.yaml
-    src/test/java/edu/cqupt/devbrain/DevBrainApplicationTests.java
+    src/test/java/edu/cqupt/devbrain/AiShoppingAgentApplicationTests.java
   framework/
     pom.xml
     src/main/java/edu/cqupt/devbrain/framework/package-info.java
@@ -80,9 +80,9 @@ devbrain-cqupt/
     src/main/java/edu/cqupt/devbrain/infra/ai/package-info.java
   mcp-server/
     pom.xml
-    src/main/java/edu/cqupt/devbrain/mcp/DevBrainMcpServerApplication.java
+    src/main/java/edu/cqupt/devbrain/mcp/AiShoppingAgentMcpServerApplication.java
     src/main/resources/application.yml
-    src/test/java/edu/cqupt/devbrain/mcp/DevBrainMcpServerApplicationTests.java
+    src/test/java/edu/cqupt/devbrain/mcp/AiShoppingAgentMcpServerApplicationTests.java
   frontend/
     package.json
     package-lock.json
@@ -106,7 +106,7 @@ devbrain-cqupt/
 | 验证项 | 命令 | 当前结果 |
 | --- | --- | --- |
 | Maven 多模块编译 | `mvn -q -DskipTests compile` | 通过，退出码 0 |
-| 后端主应用启动 | `mvn -pl bootstrap spring-boot:run` | 通过，日志出现 `Started DevBrainApplication`，9090 端口进入监听后已停止 |
+| 后端主应用启动 | `mvn -pl bootstrap spring-boot:run` | 通过，日志出现 `Started AiShoppingAgentApplication`，9090 端口进入监听后已停止 |
 | 前端依赖安装 | `cd frontend && npm install` | 通过，安装 74 个包，`found 0 vulnerabilities` |
 | 前端生产构建 | `cd frontend && npm run build` | 通过，Vite 6.4.2 构建成功 |
 | 前端开发服务启动 | `cd frontend && npm run dev` | 通过，Vite 在 5173 端口启动后已停止 |

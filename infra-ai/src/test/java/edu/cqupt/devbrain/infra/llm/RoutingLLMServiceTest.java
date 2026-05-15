@@ -16,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -38,6 +39,67 @@ class RoutingLLMServiceTest {
         assertThat(sfClient.lastTarget).isNotNull();
         assertThat(sfClient.lastTarget.getProvider()).isEqualTo("siliconflow");
         assertThat(sfClient.lastTarget.getModel()).isEqualTo("Qwen/Qwen3-32B");
+    }
+
+    @Test
+    void structuredChatPreservesGenerationControls() {
+        RecordingLLMClient sfClient = RecordingLLMClient.returning("siliconflow", "Hello from SF");
+        RoutingLLMService service = service("qwen-chat-default", List.of(
+                candidate("qwen-chat-default", "siliconflow", "Qwen/Qwen3-32B", 1, true)
+        ), List.of(sfClient));
+        ChatRequest request = ChatRequest.builder()
+                .messages(List.of(ChatMessage.user("Hi")))
+                .temperature(0.1)
+                .maxTokens(160)
+                .thinking(false)
+                .build();
+
+        String answer = service.chat(request);
+
+        assertThat(answer).isEqualTo("Hello from SF");
+        assertThat(sfClient.lastRequest).isNotNull();
+        assertThat(sfClient.lastRequest.getTemperature()).isEqualTo(0.1);
+        assertThat(sfClient.lastRequest.getMaxTokens()).isEqualTo(160);
+        assertThat(sfClient.lastRequest.getThinking()).isFalse();
+    }
+
+    @Test
+    void structuredChatDoesNotFallbackAfterRequestTimeoutBudgetExhausted() {
+        RecordingLLMClient slowFailClient = RecordingLLMClient.delayedFailing("siliconflow", 80);
+        RecordingLLMClient backupClient = RecordingLLMClient.returning("ollama", "backup");
+        RoutingLLMService service = service("qwen-chat-default", List.of(
+                candidate("qwen-chat-default", "siliconflow", "Qwen/Qwen3-32B", 1, true),
+                candidate("qwen-chat-backup", "ollama", "qwen3.5:9b", 2, true)
+        ), List.of(slowFailClient, backupClient));
+        ChatRequest request = ChatRequest.builder()
+                .messages(List.of(ChatMessage.user("Hi")))
+                .timeoutMillis(50L)
+                .build();
+
+        assertThatThrownBy(() -> service.chat(request))
+                .isInstanceOf(RemoteException.class)
+                .hasMessageContaining("所有 LLM 候选模型调用失败");
+        assertThat(backupClient.lastTarget).isNull();
+    }
+
+    @Test
+    void structuredChatFallsBackWhenFailureLeavesRequestTimeoutBudget() {
+        RecordingLLMClient failClient = RecordingLLMClient.failing("siliconflow");
+        RecordingLLMClient backupClient = RecordingLLMClient.returning("ollama", "backup");
+        RoutingLLMService service = service("qwen-chat-default", List.of(
+                candidate("qwen-chat-default", "siliconflow", "Qwen/Qwen3-32B", 1, true),
+                candidate("qwen-chat-backup", "ollama", "qwen3.5:9b", 2, true)
+        ), List.of(failClient, backupClient));
+        ChatRequest request = ChatRequest.builder()
+                .messages(List.of(ChatMessage.user("Hi")))
+                .timeoutMillis(5_000L)
+                .build();
+
+        String answer = service.chat(request);
+
+        assertThat(answer).isEqualTo("backup");
+        assertThat(backupClient.lastTarget).isNotNull();
+        assertThat(backupClient.lastRequest.getTimeoutMillis()).isLessThanOrEqualTo(5_000L);
     }
 
     @Test
@@ -354,38 +416,46 @@ class RoutingLLMServiceTest {
         private final boolean failStream;
         private final boolean failStreamAfterContent;
         private final boolean streaming;
+        private final long syncDelayMillis;
         private ChatTarget lastTarget;
+        private ChatRequest lastRequest;
         private boolean streamCallbackInvoked;
 
         static RecordingLLMClient returning(String provider, String answer) {
-            return new RecordingLLMClient(provider, answer, false, false, false, false);
+            return new RecordingLLMClient(provider, answer, false, false, false, false, 0L);
         }
 
         static RecordingLLMClient failing(String provider) {
-            return new RecordingLLMClient(provider, null, true, false, false, false);
+            return new RecordingLLMClient(provider, null, true, false, false, false, 0L);
+        }
+
+        static RecordingLLMClient delayedFailing(String provider, long delayMillis) {
+            return new RecordingLLMClient(provider, null, true, false, false, false, delayMillis);
         }
 
         static RecordingLLMClient streaming(String provider) {
-            return new RecordingLLMClient(provider, null, false, false, false, true);
+            return new RecordingLLMClient(provider, null, false, false, false, true, 0L);
         }
 
         static RecordingLLMClient streamFailing(String provider) {
-            return new RecordingLLMClient(provider, null, false, true, false, false);
+            return new RecordingLLMClient(provider, null, false, true, false, false, 0L);
         }
 
         static RecordingLLMClient streamFailingAfterContent(String provider) {
-            return new RecordingLLMClient(provider, null, false, false, true, false);
+            return new RecordingLLMClient(provider, null, false, false, true, false, 0L);
         }
 
         private RecordingLLMClient(String provider, String syncAnswer,
                                    boolean failSync, boolean failStream,
-                                   boolean failStreamAfterContent, boolean streaming) {
+                                   boolean failStreamAfterContent, boolean streaming,
+                                   long syncDelayMillis) {
             this.provider = provider;
             this.syncAnswer = syncAnswer;
             this.failSync = failSync;
             this.failStream = failStream;
             this.failStreamAfterContent = failStreamAfterContent;
             this.streaming = streaming;
+            this.syncDelayMillis = syncDelayMillis;
         }
 
         @Override
@@ -396,6 +466,15 @@ class RoutingLLMServiceTest {
         @Override
         public String chat(ChatRequest request, ChatTarget target) {
             this.lastTarget = target;
+            this.lastRequest = request;
+            if (syncDelayMillis > 0) {
+                try {
+                    TimeUnit.MILLISECONDS.sleep(syncDelayMillis);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    throw new RemoteException("mock sync interrupted: " + provider);
+                }
+            }
             if (failSync) {
                 throw new RemoteException("mock sync failure: " + provider);
             }

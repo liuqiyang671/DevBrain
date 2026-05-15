@@ -94,15 +94,15 @@ ai:
         priority: 1
         enabled: true
       # 云端模型仅作灾备，平时禁用
-      - id: qwen-emb-8b
+      - id: qwen-emb-4b
         provider: siliconflow
-        model: Qwen/Qwen3-Embedding-8B
+        model: Qwen/Qwen3-Embedding-4B
         dimension: 1536
         priority: 99
         enabled: false
 ```
 
-**DevBrain 系统已有能力：** 当前 `RoutingEmbeddingService` 已支持按优先级路由和自动降级，`OllamaEmbeddingClient` 已实现本地调用，无需 API Key。只需确保生产环境 Ollama 可用且云端候选项 `enabled: false`。
+**ai-shopping-agent 系统已有能力：** 当前 `RoutingEmbeddingService` 已支持按优先级路由和自动降级，`OllamaEmbeddingClient` 已实现本地调用，无需 API Key。只需确保生产环境 Ollama 可用且云端候选项 `enabled: false`。
 
 ---
 
@@ -211,7 +211,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
                                         按 RBAC 权限控制检索范围
 ```
 
-**DevBrain 系统已有基础：** `t_knowledge_base.collection_name` 与 `t_knowledge_vector.collection_name` 关联，RBAC 权限控制已实现。需要确保检索接口也走 `knowledge:read` 权限校验。
+**ai-shopping-agent 系统已有基础：** `t_knowledge_base.collection_name` 与 `t_knowledge_vector.collection_name` 关联，RBAC 权限控制已实现。需要确保检索接口也走 `knowledge:read` 权限校验。
 
 #### 2.4.3 数据留存策略
 
@@ -253,7 +253,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 ---
 
-## 四、DevBrain 系统改造要点
+## 四、ai-shopping-agent 系统改造要点
 
 ### 4.1 已具备的能力（无需改造）
 
@@ -289,7 +289,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 ## 五、总结
 
-对于 DevBrain-CQUPT 知识库平台，**本地 Embedding 是最佳隐私保护方案**。系统当前架构已天然支持 Ollama 本地优先 + 云端降级的路由策略，只需在生产环境确保：
+对于 ai-shopping-agent 知识库平台，**本地 Embedding 是最佳隐私保护方案**。系统当前架构已天然支持 Ollama 本地优先 + 云端降级的路由策略，只需在生产环境确保：
 
 1. Ollama 服务可用且配置为默认模型
 2. 云端 Embedding 候选项保持 `enabled: false`

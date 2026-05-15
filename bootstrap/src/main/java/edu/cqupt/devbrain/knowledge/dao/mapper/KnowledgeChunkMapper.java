@@ -7,6 +7,7 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import java.util.List;
 
@@ -33,13 +34,29 @@ public interface KnowledgeChunkMapper extends BaseMapper<KnowledgeChunkDO> {
      */
     @Select("""
             SELECT id, kb_id, doc_id, chunk_index, content, content_hash,
-                   char_count, token_count, enabled, created_by, updated_by,
+                   char_count, token_count, metadata, enabled, created_by, updated_by,
                    create_time, update_time, deleted
               FROM t_knowledge_chunk
              WHERE doc_id = #{docId} AND deleted = 0
              ORDER BY chunk_index ASC
             """)
     List<KnowledgeChunkDO> selectByDocId(@Param("docId") String docId);
+
+    /**
+     * 合并指定文档下所有分块的 JSON 元数据。
+     *
+     * @param docId 文档 ID
+     * @param metadata 待合并的 JSON 对象
+     * @return 更新的分块数量
+     */
+    @Update("""
+            UPDATE t_knowledge_chunk
+               SET metadata = COALESCE(metadata, '{}'::jsonb) || CAST(#{metadata} AS jsonb),
+                   update_time = CURRENT_TIMESTAMP
+             WHERE doc_id = #{docId}
+               AND deleted = 0
+            """)
+    int mergeMetadataByDocId(@Param("docId") String docId, @Param("metadata") String metadata);
 
     /**
      * 批量插入文档分块。
@@ -51,12 +68,13 @@ public interface KnowledgeChunkMapper extends BaseMapper<KnowledgeChunkDO> {
             <script>
             INSERT INTO t_knowledge_chunk
                 (id, kb_id, doc_id, chunk_index, content, content_hash,
-                 char_count, token_count, enabled, created_by, updated_by,
+                 char_count, token_count, metadata, enabled, created_by, updated_by,
                  create_time, update_time, deleted)
             VALUES
             <foreach collection="chunks" item="c" separator=",">
                 (#{c.id}, #{c.kbId}, #{c.docId}, #{c.chunkIndex}, #{c.content},
-                 #{c.contentHash}, #{c.charCount}, #{c.tokenCount}, #{c.enabled},
+                 #{c.contentHash}, #{c.charCount}, #{c.tokenCount},
+                 CAST(COALESCE(#{c.metadata}, '{}') AS jsonb), #{c.enabled},
                  #{c.createdBy}, #{c.updatedBy},
                  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
             </foreach>

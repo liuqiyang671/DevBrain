@@ -1,22 +1,29 @@
 package edu.cqupt.devbrain.ingestion.node;
 
+import edu.cqupt.devbrain.commerce.ingestion.dto.ProductExtractionInput;
+import edu.cqupt.devbrain.commerce.ingestion.dto.ProductExtractionResult;
+import edu.cqupt.devbrain.commerce.ingestion.service.ProductAttributeExtractionService;
+import edu.cqupt.devbrain.infra.ai.gateway.structured.AiJsonOutputParser;
 import edu.cqupt.devbrain.infra.ai.llm.LLMService;
 import edu.cqupt.devbrain.ingestion.domain.context.IngestionContext;
 import edu.cqupt.devbrain.ingestion.domain.pipeline.NodeConfig;
 import edu.cqupt.devbrain.ingestion.domain.result.NodeResult;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * 摄入流水线 Enhancer 节点，使用 LLM 对整篇文档做上下文增强和信息抽取。
  */
 @Component
-@RequiredArgsConstructor
 public class EnhancerNode implements IngestionNode {
+
+    private static final AiJsonOutputParser JSON_OUTPUT_PARSER = new AiJsonOutputParser(
+            new com.fasterxml.jackson.databind.ObjectMapper());
 
     /**
      * 节点类型标识。
@@ -27,11 +34,26 @@ public class EnhancerNode implements IngestionNode {
     private static final String TASK_KEYWORDS = "KEYWORDS";
     private static final String TASK_QUESTIONS = "QUESTIONS";
     private static final String TASK_METADATA = "METADATA";
+    private static final String TASK_PRODUCT_EXTRACT = "PRODUCT_EXTRACT";
 
     /**
      * 大模型服务，用于同步执行文档增强 prompt。
      */
     private final LLMService llmService;
+    private final Optional<ProductAttributeExtractionService> productAttributeExtractionService;
+
+    @Autowired
+    public EnhancerNode(LLMService llmService,
+                        Optional<ProductAttributeExtractionService> productAttributeExtractionService) {
+        this.llmService = llmService;
+        this.productAttributeExtractionService = productAttributeExtractionService == null
+                ? Optional.empty()
+                : productAttributeExtractionService;
+    }
+
+    public EnhancerNode(LLMService llmService) {
+        this(llmService, Optional.empty());
+    }
 
     @Override
     public String getNodeType() {
@@ -88,12 +110,54 @@ public class EnhancerNode implements IngestionNode {
                 yield text;
             }
             case TASK_METADATA -> {
-                Map<String, Object> metadata = IngestionNodeSettings.parseObject(llmService.chat(metadataPrompt(text)));
+                Map<String, Object> metadata = JSON_OUTPUT_PARSER.parse(llmService.chat(metadataPrompt(text)), Map.class);
                 context.getMetadata().putAll(metadata);
+                yield text;
+            }
+            case TASK_PRODUCT_EXTRACT -> {
+                runProductExtraction(context, text);
                 yield text;
             }
             default -> text;
         };
+    }
+
+    /**
+     * 商品文档绑定时抽取商品属性；普通知识库文档没有 productId 时直接跳过。
+     */
+    private void runProductExtraction(IngestionContext context, String text) {
+        String productId = metadataString(context, "productId");
+        if (!StringUtils.hasText(productId) || productAttributeExtractionService.isEmpty()) {
+            context.getMetadata().put("productExtractionSkipped", true);
+            return;
+        }
+        String documentId = firstText(metadataString(context, "documentId"), metadataString(context, "docId"));
+        ProductExtractionResult result = productAttributeExtractionService.get().extract(new ProductExtractionInput(
+                productId,
+                documentId,
+                title(context),
+                text,
+                metadataString(context, "brand"),
+                metadataString(context, "categoryId"),
+                metadataString(context, "docType")
+        ));
+        context.getMetadata().put("productExtractionResult", result);
+    }
+
+    private String title(IngestionContext context) {
+        if (context.getSource() != null && StringUtils.hasText(context.getSource().getFileName())) {
+            return context.getSource().getFileName();
+        }
+        return metadataString(context, "title");
+    }
+
+    private String metadataString(IngestionContext context, String key) {
+        Object value = context.getMetadata() == null ? null : context.getMetadata().get(key);
+        return value == null ? null : value.toString();
+    }
+
+    private String firstText(String first, String second) {
+        return StringUtils.hasText(first) ? first : second;
     }
 
     /**

@@ -210,7 +210,7 @@ class StreamChatPipelineTest {
 
         when(memoryService.loadAndAppend(eq("conv-simple"), eq("user-simple"), any(ChatMessage.class))).thenReturn(history);
         when(llmService.streamChat(any(ChatRequest.class), same(callback))).thenAnswer(invocation -> {
-            callback.onContent("我是 DevBrain Assistant。");
+            callback.onContent("我是 AI Shopping Agent Assistant。");
             callback.onComplete();
             return handle;
         });
@@ -218,7 +218,7 @@ class StreamChatPipelineTest {
 
         pipeline.execute(ctx);
 
-        assertEquals("我是 DevBrain Assistant。", callback.content.toString());
+        assertEquals("我是 AI Shopping Agent Assistant。", callback.content.toString());
         assertTrue(callback.completed);
         verify(llmService).streamChat(any(ChatRequest.class), same(callback));
         verify(taskManager).bindHandle("task-simple", handle);

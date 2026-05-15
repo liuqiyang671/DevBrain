@@ -2,7 +2,7 @@
 
 ## 1. 模块概述
 
-`framework` 是 DevBrain-CQUPT 项目的**共享基础设施模块**，作为 Spring Boot 库模块（不可独立部署），为所有其他服务模块提供横切关注点：数据库配置、Redis/Redisson 集成、RocketMQ 消息队列、统一异常处理、幂等性保障、分布式 ID 生成、请求链路追踪，以及标准化的 API 响应契约。
+`framework` 是 ai-shopping-agent 项目的**共享基础设施模块**，作为 Spring Boot 库模块（不可独立部署），为所有其他服务模块提供横切关注点：数据库配置、Redis/Redisson 集成、RocketMQ 消息队列、统一异常处理、幂等性保障、分布式 ID 生成、请求链路追踪，以及标准化的 API 响应契约。
 
 **Maven 坐标**: `edu.cqupt:framework:0.0.1-SNAPSHOT`
 

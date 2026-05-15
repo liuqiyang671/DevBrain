@@ -1,5 +1,5 @@
 /**
- * DevBrain-CQUPT 前端应用入口模块
+ * ai-shopping-agent 前端应用入口模块
  * 负责初始化 React 应用并挂载到 DOM
  */
 import React from 'react';

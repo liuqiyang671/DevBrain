@@ -61,7 +61,7 @@ api.interceptors.response.use(
   },
   (error) => {
     if (error?.response?.status === 401) {
-      window.dispatchEvent(new Event('devbrain-auth-expired'));
+      window.dispatchEvent(new Event('ai-shopping-agent-auth-expired'));
     }
     const payload = error?.response?.data;
     return Promise.reject(new Error(payload?.message || error?.message || '网络错误'));

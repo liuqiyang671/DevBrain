@@ -1,10 +1,11 @@
 {
-  "name": "devbrain-cqupt-frontend",
+  "name": "ai-shopping-agent-frontend",
   "version": "0.0.1",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "test": "node scripts/run-unit-tests.mjs",
     "build": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && vite build",
     "preview": "vite preview --host 0.0.0.0"
   },

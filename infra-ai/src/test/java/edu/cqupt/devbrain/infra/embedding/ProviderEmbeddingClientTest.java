@@ -37,7 +37,7 @@ class ProviderEmbeddingClientTest {
     }
 
     @Test
-    void siliconFlowClientUsesApiKeyAndSplitsBatchAtThirtyTwo() throws Exception {
+    void siliconFlowClientUsesApiKeyDimensionsAndSplitsBatchAtThirtyTwo() throws Exception {
         SiliconFlowEmbeddingClient client = new SiliconFlowEmbeddingClient(httpClient);
         server.enqueue(responseWithEmbeddings(32));
         server.enqueue(responseWithEmbeddings(1));
@@ -57,6 +57,7 @@ class ProviderEmbeddingClientTest {
         assertThat(firstRequest.getBody().readUtf8()).contains(
                 "\"model\":\"test-model\"",
                 "\"encoding_format\":\"float\"",
+                "\"dimensions\":1536",
                 "\"text-31\""
         );
         assertThat(server.takeRequest().getBody().readUtf8()).contains("\"text-32\"");

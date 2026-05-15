@@ -86,7 +86,7 @@ public class VectorIntegrationTestConfig {
             if (containsAny(text, "对话", "提问", "答案")) {
                 vector[CHAT_SLOT] = 1.0f;
             }
-            if (containsAny(text, "DevBrain", "研发知识库", "知识库")) {
+            if (containsAny(text, "ai-shopping-agent", "研发知识库", "知识库")) {
                 vector[DEVBRAIN_SLOT] = 0.75f;
             }
         }

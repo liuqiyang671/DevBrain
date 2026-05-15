@@ -48,7 +48,7 @@ public class UrlScrapingAdapter implements DocumentSourceAdapter {
 
         Request request = new Request.Builder()
                 .url(sourceLocation)
-                .header("User-Agent", "Mozilla/5.0 (compatible; DevBrain/1.0; +https://devbrain.cqupt.edu.cn)")
+                .header("User-Agent", "Mozilla/5.0 (compatible; ai-shopping-agent/1.0; +https://devbrain.cqupt.edu.cn)")
                 .get()
                 .build();
 

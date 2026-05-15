@@ -27,14 +27,14 @@ class RoutingEmbeddingServiceTest {
                 List.of(localClient, remoteClient)
         );
 
-        List<Float> embedding = service.embed("DevBrain");
+        List<Float> embedding = service.embed("ai-shopping-agent");
 
         assertThat(service).isInstanceOf(EmbeddingService.class);
         assertThat(RoutingEmbeddingService.class).hasAnnotation(Service.class);
         assertThat(embedding).containsExactly(0.1f, 0.2f);
         assertThat(localClient.lastTarget.getProvider()).isEqualTo("ollama");
         assertThat(localClient.lastTarget.getModel()).isEqualTo("qwen3-embedding:8b-fp16");
-        assertThat(localClient.lastText).isEqualTo("DevBrain");
+        assertThat(localClient.lastText).isEqualTo("ai-shopping-agent");
         assertThat(remoteClient.lastTarget).isNull();
     }
 
@@ -50,7 +50,7 @@ class RoutingEmbeddingServiceTest {
                 List.of(localClient, remoteClient)
         );
 
-        List<Float> embedding = service.embed("DevBrain", "qwen-emb-local");
+        List<Float> embedding = service.embed("ai-shopping-agent", "qwen-emb-local");
 
         assertThat(embedding).containsExactly(0.1f, 0.2f);
         assertThat(localClient.lastTarget.getProvider()).isEqualTo("ollama");
@@ -69,7 +69,7 @@ class RoutingEmbeddingServiceTest {
                 List.of(remoteClient, localClient)
         );
 
-        List<Float> embedding = service.embed("DevBrain");
+        List<Float> embedding = service.embed("ai-shopping-agent");
 
         assertThat(embedding).containsExactly(0.1f, 0.2f);
         assertThat(remoteClient.lastTarget.getProvider()).isEqualTo("siliconflow");
@@ -118,7 +118,7 @@ class RoutingEmbeddingServiceTest {
                 List.of(RecordingEmbeddingClient.single("ollama", List.of(0.1f, 0.2f)))
         );
 
-        assertThatThrownBy(() -> service.embed("DevBrain"))
+        assertThatThrownBy(() -> service.embed("ai-shopping-agent"))
                 .isInstanceOf(RemoteException.class)
                 .hasMessageContaining("默认嵌入模型不可用");
     }
@@ -132,7 +132,7 @@ class RoutingEmbeddingServiceTest {
                 List.of()
         );
 
-        assertThatThrownBy(() -> service.embed("DevBrain"))
+        assertThatThrownBy(() -> service.embed("ai-shopping-agent"))
                 .isInstanceOf(RemoteException.class)
                 .hasMessageContaining("嵌入模型客户端不存在：ollama");
     }
@@ -146,7 +146,7 @@ class RoutingEmbeddingServiceTest {
                 List.of(RecordingEmbeddingClient.single("ollama", List.of(0.1f, 0.2f)))
         );
 
-        assertThatThrownBy(() -> service.embed("DevBrain"))
+        assertThatThrownBy(() -> service.embed("ai-shopping-agent"))
                 .isInstanceOf(RemoteException.class)
                 .hasMessageContaining("Embedding 返回维度不匹配")
                 .hasMessageContaining("expected=3")

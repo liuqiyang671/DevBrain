@@ -41,7 +41,7 @@ public class StreamChatPipeline {
     private static final String SYSTEM_ONLY_MESSAGE = "当前问题属于系统意图，请使用对应系统功能处理，或补充需要查询的知识库问题。";
     private static final String EMPTY_RETRIEVAL_MESSAGE = "未检索到与问题相关的文档内容。";
     private static final String GENERAL_CHAT_SYSTEM_PROMPT = """
-            你是 DevBrain Assistant。当前用户问题属于普通闲聊或日常问题，请直接自然回答。
+            你是 AI Shopping Agent Assistant。当前用户问题属于普通闲聊或日常问题，请直接自然回答。
             不要声称已经检索知识库；如果问题需要实时外部信息，请说明当前无法获取实时数据，并给出可行建议。
             """;
     private static final List<String> GENERAL_CHAT_KEYWORDS = List.of(

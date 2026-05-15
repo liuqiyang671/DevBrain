@@ -16,24 +16,60 @@ import static org.assertj.core.api.Assertions.assertThat;
 class AIModelApplicationYamlTest {
 
     @Test
-    void applicationYamlUsesLocalOllamaChatModelsBeforeRemoteFallback() throws IOException {
+    void applicationYamlUsesSiliconflowQwen3Embedding4bByDefault() throws IOException {
         AIModelProperties properties = Binder.get(environmentFromApplicationYaml())
                 .bind("ai", AIModelProperties.class)
                 .get();
 
-        assertThat(properties.getChat().getDefaultModel()).isEqualTo("qwen-chat-local-9b");
+        assertThat(properties.getEmbedding().getDefaultModel()).isEqualTo("qwen-emb-4b");
+        assertThat(properties.getEmbedding().getCandidates())
+                .extracting(AIModelProperties.ModelCandidate::getId)
+                .containsExactly("qwen-emb-4b", "qwen-emb-local");
+        assertThat(properties.getEmbedding().getCandidates())
+                .extracting(AIModelProperties.ModelCandidate::getProvider)
+                .containsExactly("siliconflow", "ollama");
+        assertThat(properties.getEmbedding().getCandidates())
+                .extracting(AIModelProperties.ModelCandidate::getModel)
+                .containsExactly("Qwen/Qwen3-Embedding-4B", "qwen3-embedding:8b-fp16");
+        assertThat(properties.getEmbedding().getCandidates())
+                .extracting(AIModelProperties.ModelCandidate::getDimension)
+                .containsExactly(1536, 1536);
+        assertThat(properties.getEmbedding().getCandidates())
+                .extracting(AIModelProperties.ModelCandidate::isEnabled)
+                .containsExactly(true, false);
+    }
+
+    @Test
+    void applicationYamlUsesSiliconflowAsPrimaryChatCandidate() throws IOException {
+        AIModelProperties properties = Binder.get(environmentFromApplicationYaml())
+                .bind("ai", AIModelProperties.class)
+                .get();
+
+        assertThat(properties.getChat().getDefaultModel()).isEqualTo("qwen-chat-siliconflow");
         assertThat(properties.getChat().getCandidates())
                 .extracting(AIModelProperties.ModelCandidate::getId)
                 .containsExactly(
+                        "qwen-chat-siliconflow",
+                        "kimi-k2-6-siliconflow",
+                        "qwen3-6-35b-a3b-siliconflow",
                         "qwen-chat-local-9b",
-                        "qwen-chat-local-35b",
-                        "qwen-chat-siliconflow"
+                        "qwen-chat-local-35b"
                 );
         assertThat(properties.getChat().getCandidates())
                 .extracting(AIModelProperties.ModelCandidate::getProvider)
-                .containsExactly("ollama", "ollama", "siliconflow");
-        assertThat(properties.getChat().getCandidates().get(0).getModel())
-                .isEqualTo("qwen3.5:9b");
+                .containsExactly("siliconflow", "siliconflow", "siliconflow", "ollama", "ollama");
+        assertThat(properties.getChat().getCandidates())
+                .extracting(AIModelProperties.ModelCandidate::getModel)
+                .containsExactly(
+                        "deepseek-ai/DeepSeek-V4-Flash",
+                        "Pro/moonshotai/Kimi-K2.6",
+                        "Qwen/Qwen3.6-35B-A3B",
+                        "qwen3.5:9b",
+                        "qwen3.6:35b-a3b"
+                );
+        assertThat(properties.getChat().getCandidates())
+                .extracting(AIModelProperties.ModelCandidate::getPriority)
+                .containsExactly(3, 1, 2, 4, 5);
     }
 
     private StandardEnvironment environmentFromApplicationYaml() throws IOException {

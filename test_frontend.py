@@ -1,5 +1,5 @@
 """
-DevBrain 前端 UI 自动化测试模块
+ai-shopping-agent 前端 UI 自动化测试模块
 
 使用 Playwright 进行端到端测试，验证前端页面的基本功能：
 - 认证页面渲染
@@ -176,7 +176,7 @@ if __name__ == "__main__":
         page = context.new_page()
 
         print("=" * 60)
-        print("DevBrain Frontend UI Automation Test")
+        print("ai-shopping-agent Frontend UI Automation Test")
         print("=" * 60)
 
         test_auth_page_renders(page)

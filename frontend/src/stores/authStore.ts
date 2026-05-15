@@ -40,7 +40,7 @@ interface AuthState {
  *
  * 设计要点：
  * - JWT 存储在 HttpOnly Cookie 中，前端只存储用户信息
- * - 401 响应通过全局事件 'devbrain-auth-expired' 触发状态重置
+ * - 401 响应通过全局事件 'ai-shopping-agent-auth-expired' 触发状态重置
  * - loading 状态用于控制表单按钮的禁用状态
  */
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -100,6 +100,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
  * 当 Axios 响应拦截器检测到 401 状态码时，会派发此事件
  * 触发后自动清除用户状态并显示过期提示
  */
-window.addEventListener('devbrain-auth-expired', () => {
+window.addEventListener('ai-shopping-agent-auth-expired', () => {
   useAuthStore.setState({ user: null, message: '登录已过期' });
 });

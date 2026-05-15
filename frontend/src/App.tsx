@@ -1,5 +1,5 @@
 /**
- * DevBrain-CQUPT 前端主应用模块
+ * ai-shopping-agent 前端主应用模块
  * 包含所有页面组件、路由配置和公共 UI 组件
  *
  * 架构说明：
@@ -18,6 +18,13 @@ import * as knowledgeBaseApi from './services/knowledgeBase';
 import * as syncApi from './services/sync';
 import * as ingestionApi from './services/ingestion';
 import * as ragApi from './services/rag';
+import * as ragHistory from './services/ragHistory';
+import * as guideApi from './services/guide';
+import * as guideHistory from './services/guideHistory';
+import { ShoppingGuidePage } from './pages/shopping-guide/ShoppingGuidePage';
+import { ProductListPage } from './pages/admin-products/ProductListPage';
+import { ProductShowcasePage } from './pages/products/ProductShowcasePage';
+import { EvaluationDashboardPage } from './pages/admin-evaluations/EvaluationDashboardPage';
 import type {
   DocumentChunkItem,
   IngestionNodeType,
@@ -29,6 +36,8 @@ import type {
   KnowledgeChunkItem,
   KnowledgeDocumentItem,
   PermissionItem,
+  GuideMessage,
+  GuideSession,
   RagCitation,
   RagConversationSummary,
   RagMessage,
@@ -50,6 +59,8 @@ type AdminTab = 'users' | 'roles' | 'permissions' | 'departments';
 type KnowledgeBaseModalMode = 'create' | 'edit';
 /** 应用 Shell 模式：前台或管理后台 */
 type ShellMode = 'front' | 'admin';
+/** 历史记录来源：知识库问答或导购归档 */
+type HistorySource = 'rag' | 'guide';
 /** 文档来源模式：本地文件、飞书文档、URL */
 type DocumentSourceMode = 'file' | 'feishu' | 'url';
 /** 同步频率选项 */
@@ -199,15 +210,15 @@ interface EmbeddingModelGroup {
   options: EmbeddingModelOption[];
 }
 
-const defaultEmbeddingModel = 'text-embedding-3-small';
+const defaultEmbeddingModel = 'qwen-emb-4b';
 const embeddingModelGroups: EmbeddingModelGroup[] = [
   {
     label: '云服务模型',
     options: [
       {
-        value: 'text-embedding-3-small',
-        label: 'text-embedding-3-small（首选）',
-        hint: '云服务 Embedding 模型，适合优先走稳定托管服务的知识库。',
+        value: 'qwen-emb-4b',
+        label: 'Qwen/Qwen3-Embedding-4B（首选）',
+        hint: '硅基流动 Qwen3 Embedding 线上模型，默认输出 1536 维。',
       },
     ],
   },
@@ -315,15 +326,12 @@ const chunkStrategyOptions: Array<{ value: ChunkStrategyMode; label: string; hin
 ];
 /** 文档版本记录的 localStorage 存储键 */
 const documentVersionStoreKey = 'devbrain.documentVersions.v1';
-/** RAG 本地会话摘要缓存键；后端会话列表接口补齐后可替换为服务端数据。 */
-const ragConversationStoreKey = 'devbrain.rag.conversations.v1';
-/** RAG 本地会话消息缓存键；用于当前浏览器展示历史会话。 */
-const ragMessageStoreKey = 'devbrain.rag.messages.v1';
-
 /** 前台侧边栏菜单配置 */
 const frontMenuItems: ShellMenuItem[] = [
   { label: '首页', path: '/workspace', icon: 'home' },
+  { label: '商品库', path: '/products', icon: 'box' },
   { label: '智能问答', path: '/assistant', icon: 'message' },
+  { label: 'AI 导购', path: '/shopping-guide', icon: 'target' },
   { label: '历史记录', path: '/history', icon: 'history' },
   { label: '个人中心', path: '/profile', icon: 'user' },
 ];
@@ -332,6 +340,8 @@ const frontMenuItems: ShellMenuItem[] = [
 const adminMenuItems: ShellMenuItem[] = [
   { label: '工作台', path: '/admin', icon: 'home' },
   { label: '知识库管理', path: '/admin/knowledge-bases', icon: 'database' },
+  { label: '商品管理', path: '/admin/products', icon: 'box' },
+  { label: '导购评测', path: '/admin/evaluations/datasets', icon: 'chart' },
   { label: '问答管理', path: '/admin/qa', icon: 'message' },
   { label: '用户权限', path: '/admin/users', icon: 'shield' },
   { label: '标签分类', path: '/admin/tags', icon: 'tag' },
@@ -367,7 +377,9 @@ function App() {
         <Route path="/knowledge-bases/:id/documents/:documentId" element={<RequireAuth><DocumentDetailPage /></RequireAuth>} />
         <Route path="/documents" element={<RequireAuth><FrontKnowledgePage /></RequireAuth>} />
         <Route path="/assistant" element={<RequireAuth><AssistantPage /></RequireAuth>} />
-        <Route path="/history" element={<RequireAuth><FrontModulePage title="历史记录" description="查看历史问答、检索和知识库访问记录。" /></RequireAuth>} />
+        <Route path="/products" element={<RequireAuth><AppShell><ProductShowcasePage /></AppShell></RequireAuth>} />
+        <Route path="/shopping-guide" element={<RequireAuth><AppShell><ShoppingGuidePage /></AppShell></RequireAuth>} />
+        <Route path="/history" element={<RequireAuth><HistoryPage /></RequireAuth>} />
         <Route path="/favorites" element={<RequireAuth><FrontModulePage title="我的收藏" description="集中管理收藏的答案、文档片段和引用来源。" /></RequireAuth>} />
         <Route path="/profile" element={<RequireAuth><SettingsPage /></RequireAuth>} />
         <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
@@ -375,6 +387,10 @@ function App() {
         <Route path="/admin/knowledge-bases" element={<RequireAuth><RequireAdmin><KnowledgeBasePage /></RequireAdmin></RequireAuth>} />
         <Route path="/admin/knowledge-bases/:id/documents" element={<RequireAuth><RequireAdmin><KnowledgeBaseDocumentsPage mode="admin" /></RequireAdmin></RequireAuth>} />
         <Route path="/admin/knowledge-bases/:id/documents/:documentId/chunks" element={<RequireAuth><RequireAdmin><AdminDocumentChunksPage /></RequireAdmin></RequireAuth>} />
+        <Route path="/admin/products" element={<RequireAuth><RequireAdmin><AppShell mode="admin"><ProductListPage /></AppShell></RequireAdmin></RequireAuth>} />
+        <Route path="/admin/evaluations/datasets" element={<RequireAuth><RequireAdmin><AppShell mode="admin"><EvaluationDashboardPage /></AppShell></RequireAdmin></RequireAuth>} />
+        <Route path="/admin/evaluations/runs" element={<RequireAuth><RequireAdmin><AppShell mode="admin"><EvaluationDashboardPage /></AppShell></RequireAdmin></RequireAuth>} />
+        <Route path="/admin/evaluations/feedback" element={<RequireAuth><RequireAdmin><AppShell mode="admin"><EvaluationDashboardPage /></AppShell></RequireAdmin></RequireAuth>} />
         <Route path="/admin/documents" element={<RequireAuth><RequireAdmin><AdminDocumentsPage /></RequireAdmin></RequireAuth>} />
         <Route path="/admin/qa" element={<RequireAuth><RequireAdmin><AdminQaPage /></RequireAdmin></RequireAuth>} />
         <Route path="/admin/users" element={<RequireAuth><RequireAdmin><AdminPage /></RequireAdmin></RequireAuth>} />
@@ -385,7 +401,7 @@ function App() {
         <Route path="/admin/audit" element={<RequireAuth><RequireAdmin><AdminModulePage title="日志审计" description="审计登录、权限、配置变更和关键操作日志。" /></RequireAdmin></RequireAuth>} />
         <Route path="/admin/stats" element={<RequireAuth><RequireAdmin><AdminModulePage title="数据统计" description="查看知识库使用、问答效果和系统资源统计。" /></RequireAdmin></RequireAuth>} />
         <Route path="/403" element={<StatusPage code="403" title="权限不足" text="当前账号没有访问该页面的权限。" />} />
-        <Route path="*" element={<StatusPage code="404" title="页面不存在" text="没有找到对应的 DevBrain 工作区页面。" />} />
+        <Route path="*" element={<StatusPage code="404" title="页面不存在" text="没有找到对应的 AI 导购工作区页面。" />} />
       </Routes>
     </BrowserRouter>
   );
@@ -536,12 +552,12 @@ function AuthPage() {
 
   return (
     <main className="auth-stage">
-      <section className="auth-intro" aria-label="DevBrain-CQUPT">
+      <section className="auth-intro" aria-label="ai-shopping-agent">
         <div className="brand-lockup">
-          <span className="brand-logo">DB</span>
+          <span className="brand-logo">AS</span>
           <div>
-            <strong>DevBrain-CQUPT</strong>
-            <span>研发知识中枢</span>
+            <strong>ai-shopping-agent</strong>
+            <span>AI 导购中枢</span>
           </div>
         </div>
         <h1>面向研发团队的知识管理与问答工作台</h1>
@@ -677,11 +693,11 @@ function AppShell({ children, mode = 'front' }: { children: ReactNode; mode?: Sh
   return (
     <div className={isAdminMode ? 'app-shell admin-shell' : 'app-shell front-shell'}>
       <aside className="sidebar">
-        <Link to={isAdminMode ? '/admin' : '/workspace'} className="sidebar-brand" aria-label="DevBrain-CQUPT">
-          <span className="brand-logo">DB</span>
+        <Link to={isAdminMode ? '/admin' : '/workspace'} className="sidebar-brand" aria-label="ai-shopping-agent">
+          <span className="brand-logo">AS</span>
           <span>
-            <strong className="brand-wordmark"><span>Dev</span><b>Brain</b></strong>
-            <small>{isAdminMode ? '管理后台' : '研发知识中枢'}</small>
+            <strong className="brand-wordmark"><span>AI</span><b>Shopping</b></strong>
+            <small>{isAdminMode ? '管理后台' : 'AI 导购中枢'}</small>
           </span>
         </Link>
         <nav className="sidebar-menu" aria-label="主菜单">
@@ -876,7 +892,7 @@ function WorkspacePage() {
  */
 function FrontKnowledgePage() {
   const knowledgeBases = [
-    ['DevBrain 项目知识库', '项目架构、接口规范、部署手册与常见问题', '128 篇文档', '12,842 次引用'],
+    ['AI 导购项目知识库', '项目架构、接口规范、部署手册与常见问题', '128 篇文档', '12,842 次引用'],
     ['运维故障知识库', '故障复盘、排查 SOP、告警处理和恢复方案', '86 篇文档', '8,731 次引用'],
     ['接口文档中心', '后端接口、联调记录、变更说明和错误码', '64 篇文档', '6,245 次引用'],
   ];
@@ -3412,61 +3428,6 @@ function appendLocalDocumentVersion(version: LocalDocumentVersion) {
   }
 }
 
-function readLocalRagConversations(): RagConversationSummary[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = window.localStorage.getItem(ragConversationStoreKey);
-    const parsed = raw ? JSON.parse(raw) as RagConversationSummary[] : [];
-    if (!Array.isArray(parsed)) return [];
-    return parsed;
-  } catch {
-    return [];
-  }
-}
-
-function writeLocalRagConversations(items: RagConversationSummary[]) {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(ragConversationStoreKey, JSON.stringify(items.slice(0, 50)));
-  } catch {
-    // Local RAG history is a convenience cache; the streaming answer remains the source of truth.
-  }
-}
-
-function readLocalRagMessages(conversationId: string): RagMessage[] {
-  if (typeof window === 'undefined' || !conversationId) return [];
-  try {
-    const raw = window.localStorage.getItem(ragMessageStoreKey);
-    const parsed = raw ? JSON.parse(raw) as Record<string, RagMessage[]> : {};
-    const messages = parsed?.[conversationId];
-    return Array.isArray(messages) ? messages : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeLocalRagMessages(conversationId: string, messages: RagMessage[]) {
-  if (typeof window === 'undefined' || !conversationId) return;
-  try {
-    const raw = window.localStorage.getItem(ragMessageStoreKey);
-    const parsed = raw ? JSON.parse(raw) as Record<string, RagMessage[]> : {};
-    const next = { ...(parsed || {}), [conversationId]: messages.slice(-80) };
-    window.localStorage.setItem(ragMessageStoreKey, JSON.stringify(next));
-  } catch {
-    // Local RAG history is best-effort only.
-  }
-}
-
-function upsertLocalRagConversation(summary: RagConversationSummary) {
-  const current = readLocalRagConversations();
-  const next = [
-    summary,
-    ...current.filter((item) => item.conversationId !== summary.conversationId),
-  ].sort((left, right) => new Date(right.lastTime || 0).getTime() - new Date(left.lastTime || 0).getTime());
-  writeLocalRagConversations(next);
-  return next;
-}
-
 /**
  * 构建定时同步 Cron 表达式
  * 根据频率、时间、星期几、月几号生成 Quartz 格式的 Cron 表达式
@@ -3925,6 +3886,385 @@ function FrontModulePage({ title, description }: { title: string; description: s
   );
 }
 
+function HistoryPage() {
+  const navigate = useNavigate();
+  const user = useAuthStore((state) => state.user);
+  const [historySource, setHistorySource] = useState<HistorySource>('rag');
+  const [conversations, setConversations] = useState<RagConversationSummary[]>([]);
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<RagMessage[]>([]);
+  const [guideSessions, setGuideSessions] = useState<GuideSession[]>([]);
+  const [selectedGuideSessionId, setSelectedGuideSessionId] = useState<string | null>(null);
+  const [guideMessages, setGuideMessages] = useState<GuideMessage[]>([]);
+  const [keyword, setKeyword] = useState('');
+  const [historyMessage, setHistoryMessage] = useState<string | null>(null);
+  const selectedConversation = conversations.find((item) => item.conversationId === selectedConversationId) || null;
+  const selectedGuideSession = guideSessions.find((item) => item.sessionId === selectedGuideSessionId) || null;
+  const filteredConversations = useMemo(() => {
+    const normalized = keyword.trim().toLowerCase();
+    if (!normalized) return conversations;
+    return conversations.filter((item) => [
+      item.title,
+      item.lastQuestion,
+      item.lastAnswer,
+      item.conversationId,
+    ].some((value) => (value || '').toLowerCase().includes(normalized)));
+  }, [conversations, keyword]);
+  const archivedGuideSessions = useMemo(() => guideSessions.filter((item) => item.archived), [guideSessions]);
+  const filteredGuideSessions = useMemo(() => {
+    const normalized = keyword.trim().toLowerCase();
+    if (!normalized) return archivedGuideSessions;
+    return archivedGuideSessions.filter((item) => [
+      item.title,
+      item.lastMessage,
+      item.summary,
+      item.sessionId,
+    ].some((value) => (value || '').toLowerCase().includes(normalized)));
+  }, [archivedGuideSessions, keyword]);
+  const totalMessages = historySource === 'guide'
+    ? archivedGuideSessions.reduce((sum, item) => sum + (item.messageCount || 0), 0)
+    : conversations.reduce((sum, item) => sum + (item.messageCount || 0), 0);
+  const latestTime = historySource === 'guide'
+    ? archivedGuideSessions[0]?.archivedTime || archivedGuideSessions[0]?.lastTime || null
+    : conversations[0]?.lastTime || null;
+  const activeHistoryCount = historySource === 'guide' ? archivedGuideSessions.length : conversations.length;
+
+  const loadHistory = useCallback((nextSelectedId?: string | null) => {
+    const next = ragHistory.readRagConversations();
+    setConversations(next);
+    const fallbackId = nextSelectedId !== undefined ? nextSelectedId : selectedConversationId;
+    const targetId = fallbackId && next.some((item) => item.conversationId === fallbackId)
+      ? fallbackId
+      : next[0]?.conversationId || null;
+    setSelectedConversationId(targetId);
+    setMessages(targetId ? ragHistory.readRagMessages(targetId) : []);
+  }, [selectedConversationId]);
+
+  const loadGuideHistory = useCallback((nextSelectedId?: string | null) => {
+    const next = guideHistory.readGuideSessions();
+    const archived = next.filter((item) => item.archived);
+    setGuideSessions(next);
+    const fallbackId = nextSelectedId !== undefined ? nextSelectedId : selectedGuideSessionId;
+    const targetId = fallbackId && archived.some((item) => item.sessionId === fallbackId)
+      ? fallbackId
+      : archived[0]?.sessionId || null;
+    setSelectedGuideSessionId(targetId);
+    setGuideMessages(targetId ? guideHistory.readGuideMessages(targetId) : []);
+  }, [selectedGuideSessionId]);
+
+  const refreshGuideHistory = useCallback(async (nextSelectedId?: string | null) => {
+    const cached = guideHistory.readGuideSessions();
+    setGuideSessions(cached);
+    try {
+      const page = await guideApi.getGuideSessions();
+      const remote = page.records || [];
+      guideHistory.writeGuideSessions(remote);
+      const archived = remote.filter((item) => item.archived);
+      const fallbackId = nextSelectedId !== undefined ? nextSelectedId : selectedGuideSessionId;
+      const targetId = fallbackId && archived.some((item) => item.sessionId === fallbackId)
+        ? fallbackId
+        : archived[0]?.sessionId || null;
+      setGuideSessions(remote);
+      setSelectedGuideSessionId(targetId);
+      setGuideMessages(targetId ? guideHistory.readGuideMessages(targetId) : []);
+      setHistoryMessage(null);
+    } catch {
+      loadGuideHistory(nextSelectedId);
+    }
+  }, [loadGuideHistory, selectedGuideSessionId]);
+
+  useEffect(() => {
+    loadHistory(null);
+    refreshGuideHistory(null);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedConversationId) {
+      setMessages([]);
+      return;
+    }
+    setMessages(ragHistory.readRagMessages(selectedConversationId));
+  }, [selectedConversationId]);
+
+  useEffect(() => {
+    if (!selectedGuideSessionId) {
+      setGuideMessages([]);
+      return;
+    }
+    setGuideMessages(guideHistory.readGuideMessages(selectedGuideSessionId));
+  }, [selectedGuideSessionId]);
+
+  function continueConversation(conversationId?: string | null) {
+    navigate(conversationId ? `/assistant?conversationId=${encodeURIComponent(conversationId)}` : '/assistant');
+  }
+
+  async function restoreGuideConversation(sessionId?: string | null) {
+    if (sessionId) {
+      const cachedSession = guideSessions.find((item) => item.sessionId === sessionId);
+      try {
+        await guideApi.restoreGuideSessionRemote(sessionId);
+      } catch (restoreError) {
+        if (!cachedSession) {
+          setHistoryMessage(restoreError instanceof Error ? restoreError.message : '导购历史恢复失败');
+          return;
+        }
+        setHistoryMessage('服务端恢复失败，已仅恢复当前浏览器缓存。');
+      }
+      guideHistory.restoreGuideSession(sessionId);
+      sessionStorage.setItem('devbrain.guide.restoreSessionId', sessionId);
+    }
+    navigate('/shopping-guide');
+  }
+
+  function deleteConversation(conversationId: string) {
+    const title = ragHistory.getRagConversationTitle(conversations.find((item) => item.conversationId === conversationId));
+    if (!window.confirm(`确认删除「${title}」这条本地历史记录吗？`)) return;
+    ragHistory.deleteRagConversation(conversationId);
+    loadHistory(selectedConversationId === conversationId ? null : selectedConversationId);
+  }
+
+  async function clearHistory() {
+    if (historySource === 'guide') {
+      if (archivedGuideSessions.length === 0) return;
+      if (!window.confirm('确认清空当前浏览器中的全部导购历史吗？')) return;
+      try {
+        await Promise.all(archivedGuideSessions.map((session) => guideApi.deleteGuideSessionRemote(session.sessionId)));
+        const next = guideHistory.deleteArchivedGuideSessions();
+        setGuideSessions(next);
+        setSelectedGuideSessionId(null);
+        setGuideMessages([]);
+        setHistoryMessage(null);
+      } catch (deleteError) {
+        setHistoryMessage(deleteError instanceof Error ? deleteError.message : '导购历史清空失败');
+        await refreshGuideHistory(selectedGuideSessionId);
+      }
+      return;
+    }
+    if (conversations.length === 0) return;
+    if (!window.confirm('确认清空当前浏览器中的全部问答历史吗？')) return;
+    ragHistory.clearRagHistory();
+    setConversations([]);
+    setSelectedConversationId(null);
+    setMessages([]);
+  }
+
+  async function deleteGuideConversation(sessionId: string) {
+    const title = guideHistory.getGuideSessionTitle(guideSessions.find((item) => item.sessionId === sessionId));
+    if (!window.confirm(`确认删除「${title}」这条导购历史记录吗？`)) return;
+    try {
+      await guideApi.deleteGuideSessionRemote(sessionId);
+      guideHistory.deleteGuideSession(sessionId);
+      await refreshGuideHistory(selectedGuideSessionId === sessionId ? null : selectedGuideSessionId);
+      setHistoryMessage(null);
+    } catch (deleteError) {
+      setHistoryMessage(deleteError instanceof Error ? deleteError.message : '导购历史删除失败');
+    }
+  }
+
+  function refreshCurrentHistory() {
+    if (historySource === 'guide') {
+      refreshGuideHistory(selectedGuideSessionId);
+      return;
+    }
+    loadHistory(selectedConversationId);
+  }
+
+  return (
+    <AppShell>
+      <PageContainer
+        title="历史记录"
+        description="集中查看、继续和删除本地问答会话。"
+        actions={(
+          <div className="page-actions">
+            <button className="btn btn-light" type="button" onClick={refreshCurrentHistory}>刷新</button>
+            <button className="btn btn-danger" type="button" onClick={clearHistory} disabled={activeHistoryCount === 0}>清空历史</button>
+          </div>
+        )}
+      >
+        <div className="history-source-tabs" role="tablist" aria-label="历史记录类型">
+          <button
+            className={historySource === 'rag' ? 'active' : ''}
+            type="button"
+            role="tab"
+            aria-selected={historySource === 'rag'}
+            onClick={() => setHistorySource('rag')}
+          >
+            <UiIcon name="message" />
+            智能问答
+            <span>{conversations.length}</span>
+          </button>
+          <button
+            className={historySource === 'guide' ? 'active' : ''}
+            type="button"
+            role="tab"
+            aria-selected={historySource === 'guide'}
+            onClick={() => setHistorySource('guide')}
+          >
+            <UiIcon name="target" />
+            AI 导购
+            <span>{archivedGuideSessions.length}</span>
+          </button>
+        </div>
+
+        <section className="history-metrics">
+          <FrontMetric label="历史会话" value={`${activeHistoryCount}`} delta={historySource === 'guide' ? '服务端同步' : '当前浏览器缓存'} tone="blue" icon="history" />
+          <FrontMetric label="消息数量" value={`${totalMessages}`} delta="用户与助手消息合计" tone="green" icon="message" />
+          <FrontMetric label="最近更新" value={formatShortDate(latestTime)} delta={latestTime ? formatDate(latestTime) : '暂无记录'} tone="cyan" icon="bell" />
+        </section>
+        {historyMessage && <div className="guide-error-banner">{historyMessage}</div>}
+
+        {historySource === 'rag' ? (
+          <section className="history-workbench">
+          <aside className="history-list-panel">
+            <div className="history-search">
+              <input
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+                placeholder="搜索标题、问题、回答..."
+                aria-label="搜索历史记录"
+              />
+              <button className="btn btn-primary" type="button" onClick={() => continueConversation(null)}>新建问答</button>
+            </div>
+
+            <div className="history-list">
+              {filteredConversations.length === 0 ? (
+                <div className="empty-state compact">
+                  {conversations.length === 0 ? '暂无问答历史。' : '没有匹配的历史记录。'}
+                </div>
+              ) : filteredConversations.map((item) => (
+                <article
+                  className={item.conversationId === selectedConversationId ? 'history-item active' : 'history-item'}
+                  key={item.conversationId}
+                >
+                  <button type="button" onClick={() => setSelectedConversationId(item.conversationId)}>
+                    <strong>{ragHistory.getRagConversationTitle(item)}</strong>
+                    <span>{item.lastQuestion || item.lastAnswer || '暂无摘要'}</span>
+                    <small>{formatDate(item.lastTime)} · {item.messageCount || 0} 条消息</small>
+                  </button>
+                  <div className="history-item-actions">
+                    <button className="btn-text" type="button" onClick={() => continueConversation(item.conversationId)}>继续</button>
+                    <button className="btn-text danger" type="button" onClick={() => deleteConversation(item.conversationId)}>删除</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </aside>
+
+          <article className="history-detail-panel">
+            {selectedConversation ? (
+              <>
+                <header className="history-detail-header">
+                  <div>
+                    <p className="eyebrow">Conversation</p>
+                    <h2>{ragHistory.getRagConversationTitle(selectedConversation)}</h2>
+                    <p>{formatDate(selectedConversation.lastTime)} · {selectedConversation.messageCount || messages.length} 条消息</p>
+                  </div>
+                  <div className="history-detail-actions">
+                    <button className="btn btn-light" type="button" onClick={() => deleteConversation(selectedConversation.conversationId)}>删除</button>
+                    <button className="btn btn-primary" type="button" onClick={() => continueConversation(selectedConversation.conversationId)}>继续对话</button>
+                  </div>
+                </header>
+                <div className="history-message-list">
+                  {messages.length === 0 ? (
+                    <div className="empty-state compact">当前浏览器没有缓存这次会话的消息。</div>
+                  ) : messages.map((message) => (
+                    <RagMessageBubble
+                      message={message}
+                      displayName={user?.displayName || user?.username || '我'}
+                      key={message.id}
+                    />
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="empty-state history-empty">
+                <div className="empty-icon">历</div>
+                <h3>选择一条历史记录</h3>
+                <p>问答会话会保存在当前浏览器中，后续接入服务端接口后可跨设备同步。</p>
+                <button className="btn btn-primary" type="button" onClick={() => continueConversation(null)}>开始新问答</button>
+              </div>
+            )}
+          </article>
+        </section>
+        ) : (
+          <section className="history-workbench">
+            <aside className="history-list-panel">
+              <div className="history-search">
+                <input
+                  value={keyword}
+                  onChange={(event) => setKeyword(event.target.value)}
+                  placeholder="搜索导购标题、摘要、会话 ID..."
+                  aria-label="搜索导购历史记录"
+                />
+                <button className="btn btn-primary" type="button" onClick={() => restoreGuideConversation(null)}>新导购</button>
+              </div>
+
+              <div className="history-list">
+                {filteredGuideSessions.length === 0 ? (
+                  <div className="empty-state compact">
+                    {archivedGuideSessions.length === 0 ? '暂无导购历史。' : '没有匹配的导购历史。'}
+                  </div>
+                ) : filteredGuideSessions.map((item) => (
+                  <article
+                    className={item.sessionId === selectedGuideSessionId ? 'history-item active' : 'history-item'}
+                    key={item.sessionId}
+                  >
+                    <button type="button" onClick={() => setSelectedGuideSessionId(item.sessionId)}>
+                      <strong>{guideHistory.getGuideSessionTitle(item)}</strong>
+                      <span>{item.summary || item.lastMessage || '暂无摘要'}</span>
+                      <small>{formatDate(item.archivedTime || item.lastTime)} · {item.messageCount || 0} 条消息</small>
+                    </button>
+                    <div className="history-item-actions">
+                      <button className="btn-text" type="button" onClick={() => restoreGuideConversation(item.sessionId)}>恢复</button>
+                      <button className="btn-text danger" type="button" onClick={() => deleteGuideConversation(item.sessionId)}>删除</button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </aside>
+
+            <article className="history-detail-panel">
+              {selectedGuideSession ? (
+                <>
+                  <header className="history-detail-header">
+                    <div>
+                      <p className="eyebrow">Guide Session</p>
+                      <h2>{guideHistory.getGuideSessionTitle(selectedGuideSession)}</h2>
+                      <p>{formatDate(selectedGuideSession.archivedTime || selectedGuideSession.lastTime)} · {selectedGuideSession.messageCount || guideMessages.length} 条消息</p>
+                    </div>
+                    <div className="history-detail-actions">
+                      <button className="btn btn-light" type="button" onClick={() => deleteGuideConversation(selectedGuideSession.sessionId)}>删除</button>
+                      <button className="btn btn-primary" type="button" onClick={() => restoreGuideConversation(selectedGuideSession.sessionId)}>恢复到导购</button>
+                    </div>
+                  </header>
+                  <div className="history-message-list">
+                    {guideMessages.length === 0 ? (
+                      <div className="empty-state compact">当前浏览器没有缓存这次导购会话的消息。</div>
+                    ) : guideMessages.map((message) => (
+                      <GuideHistoryMessageBubble
+                        message={message}
+                        displayName={user?.displayName || user?.username || '我'}
+                        key={message.id}
+                      />
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="empty-state history-empty">
+                  <div className="empty-icon">导</div>
+                  <h3>选择一条导购历史</h3>
+                  <p>在 AI 导购页点击“归档”后，会话会汇总到这里，便于后续恢复或删除。</p>
+                  <button className="btn btn-primary" type="button" onClick={() => restoreGuideConversation(null)}>开始新导购</button>
+                </div>
+              )}
+            </article>
+          </section>
+        )}
+      </PageContainer>
+    </AppShell>
+  );
+}
+
 function DocumentPage() {
   return (
     <AppShell>
@@ -3958,17 +4298,17 @@ function DocumentPage() {
  */
 function AssistantPage() {
   const user = useAuthStore((state) => state.user);
+  const location = useLocation();
+  const navigate = useNavigate();
   const [conversations, setConversations] = useState<RagConversationSummary[]>([]);
   const [messages, setMessages] = useState<RagMessage[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [question, setQuestion] = useState('');
-  const [loadingConversations, setLoadingConversations] = useState(false);
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [conversationError, setConversationError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const lastQuestionRef = useRef('');
   const activeMessagesRef = useRef<RagMessage[]>([]);
@@ -3986,7 +4326,7 @@ function AssistantPage() {
     const assistantMessages = nextMessages.filter((item) => item.role === 'assistant');
     const lastMessage = nextMessages[nextMessages.length - 1];
     const lastQuestion = userMessages[userMessages.length - 1]?.content || null;
-    const summaries = upsertLocalRagConversation({
+    const summaries = ragHistory.upsertRagConversation({
       conversationId,
       title: title || lastQuestion || '未命名会话',
       lastQuestion,
@@ -3994,7 +4334,7 @@ function AssistantPage() {
       lastTime: lastMessage?.createTime || new Date().toISOString(),
       messageCount: nextMessages.length,
     });
-    writeLocalRagMessages(conversationId, nextMessages);
+    ragHistory.writeRagMessages(conversationId, nextMessages);
     setConversations(summaries);
   }, []);
 
@@ -4008,18 +4348,8 @@ function AssistantPage() {
   }, []);
 
   const loadConversations = useCallback(() => {
-    setLoadingConversations(true);
-    setConversationError(null);
-    setConversations(readLocalRagConversations());
-    setLoadingConversations(false);
+    setConversations(ragHistory.readRagConversations());
   }, []);
-
-  useEffect(() => {
-    loadConversations();
-    return () => {
-      streamRef.current?.close();
-    };
-  }, [loadConversations]);
 
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' });
@@ -4030,7 +4360,7 @@ function AssistantPage() {
     setSelectedConversationId(conversationId);
     setLoadingConversation(true);
     setSendError(null);
-    const cached = readLocalRagMessages(conversationId);
+    const cached = ragHistory.readRagMessages(conversationId);
     setVisibleMessages(cached);
     if (cached.length === 0) {
       setSendError('当前浏览器没有缓存这次会话的消息。');
@@ -4038,13 +4368,29 @@ function AssistantPage() {
     setLoadingConversation(false);
   }, [sending, setVisibleMessages]);
 
+  useEffect(() => {
+    loadConversations();
+  }, [loadConversations]);
+
+  useEffect(() => {
+    const conversationId = new URLSearchParams(location.search).get('conversationId');
+    if (conversationId && !sending) {
+      openConversation(conversationId);
+    }
+  }, [location.search, openConversation, sending]);
+
+  useEffect(() => () => {
+    streamRef.current?.close();
+  }, []);
+
   const startNewConversation = useCallback(() => {
     if (sending) return;
     setSelectedConversationId(null);
     setVisibleMessages([]);
     setQuestion('');
     setSendError(null);
-  }, [sending, setVisibleMessages]);
+    navigate('/assistant', { replace: true });
+  }, [navigate, sending, setVisibleMessages]);
 
   const submitQuestion = useCallback(async (event?: FormEvent) => {
     event?.preventDefault();
@@ -4115,7 +4461,7 @@ function AssistantPage() {
         },
         onTrace: (payload) => {
           const time = payload.timestamp ? new Date(payload.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
-          console.info('[DevBrain RAG]', time, payload.stage || 'trace', payload.message || '', {
+          console.info('[ai-shopping-agent RAG]', time, payload.stage || 'trace', payload.message || '', {
             conversationId: payload.conversationId,
             taskId: payload.taskId,
           });
@@ -4192,23 +4538,27 @@ function AssistantPage() {
 
   const promptSuggestions = ['如何排查 Redis 连接失败？', '接口 500 错误如何定位？', '文档分块策略怎么选？'];
   const activeConversationTitle = conversations.find((item) => item.conversationId === selectedConversationId)?.title || '新会话';
+  const recentConversations = conversations.slice(0, 3);
 
   return (
     <AppShell>
-      <section className="rag-chat-shell">
-        <aside className="rag-session-sidebar card">
+      <section className="rag-chat-shell compact-history">
+        <aside className="rag-current-sidebar card">
           <button className="btn btn-primary" type="button" onClick={startNewConversation} disabled={sending}>新建会话</button>
-          <div className="rag-sidebar-title">
-            <h3>历史会话</h3>
-            <button className="btn-text" type="button" onClick={loadConversations} disabled={loadingConversations}>刷新</button>
+          <div className="rag-current-meta">
+            <span>当前会话</span>
+            <strong>{activeConversationTitle}</strong>
+            <small>{selectedConversationId ? `ID ${selectedConversationId.slice(-8)}` : '尚未发送问题'}</small>
           </div>
-          {conversationError && <p className="rag-error-text">{conversationError}</p>}
-          <div className="rag-session-list">
-            {loadingConversations ? (
-              <div className="empty-state compact">正在加载会话...</div>
-            ) : conversations.length === 0 ? (
+          <Link className="btn btn-light" to="/history">查看全部历史</Link>
+          <div className="rag-recent-box">
+            <div className="rag-sidebar-title">
+              <h3>最近会话</h3>
+              <button className="btn-text" type="button" onClick={loadConversations}>刷新</button>
+            </div>
+            {recentConversations.length === 0 ? (
               <div className="empty-state compact">暂无本地会话</div>
-            ) : conversations.map((item) => (
+            ) : recentConversations.map((item) => (
               <button
                 className={item.conversationId === selectedConversationId ? 'rag-session active' : 'rag-session'}
                 type="button"
@@ -4216,7 +4566,7 @@ function AssistantPage() {
                 disabled={sending}
                 onClick={() => openConversation(item.conversationId)}
               >
-                <strong>{item.title || item.lastQuestion || '未命名会话'}</strong>
+                <strong>{ragHistory.getRagConversationTitle(item)}</strong>
                 <span>{formatShortDate(item.lastTime)}</span>
               </button>
             ))}
@@ -4295,7 +4645,7 @@ function RagMessageBubble({ message, displayName }: { message: RagMessage; displ
   return (
     <article className={isUser ? 'rag-message user' : 'rag-message assistant'}>
       <header>
-        <strong>{isUser ? displayName : 'DevBrain Assistant'}</strong>
+        <strong>{isUser ? displayName : 'AI Shopping Assistant'}</strong>
         <span>{formatShortDate(message.createTime)}</span>
       </header>
       {!isUser && message.thinkingContent ? (
@@ -4323,6 +4673,32 @@ function RagMessageBubble({ message, displayName }: { message: RagMessage; displ
           ))}
         </div>
       ) : null}
+    </article>
+  );
+}
+
+function GuideHistoryMessageBubble({ message, displayName }: { message: GuideMessage; displayName: string }) {
+  const isUser = message.role === 'user';
+  return (
+    <article className={isUser ? 'rag-message user guide-history-message' : 'rag-message assistant guide-history-message'}>
+      <header>
+        <strong>{isUser ? displayName : 'AI 导购'}</strong>
+        <span>{formatShortDate(message.createTime)}</span>
+      </header>
+      {message.images?.length ? (
+        <div className="guide-history-images">
+          {message.images.slice(0, 4).map((image) => (
+            <span key={image.imageId}>{image.fileName || '图片'}</span>
+          ))}
+        </div>
+      ) : null}
+      {isUser ? (
+        <p>{message.content || (message.images?.length ? '已发送图片' : '')}</p>
+      ) : (
+        <MarkdownMessage content={message.content || (message.streaming ? '正在生成...' : '')} />
+      )}
+      {!isUser && message.streaming ? <span className="rag-streaming-indicator">流式生成中</span> : null}
+      {message.errorMessage ? <span className="rag-status-pill danger">{message.errorMessage}</span> : null}
     </article>
   );
 }
@@ -4529,7 +4905,7 @@ function AdminDashboardPage() {
     ['05-12', '66%', '58%'],
   ];
   const ranking = [
-    ['DevBrain 项目知识库', '12,842', '92%'],
+    ['AI 导购项目知识库', '12,842', '92%'],
     ['运维故障知识库', '8,731', '74%'],
     ['接口文档中心', '6,245', '58%'],
     ['部署手册合集', '4,913', '44%'],

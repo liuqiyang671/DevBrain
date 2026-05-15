@@ -1,4 +1,4 @@
-# DevBrain-CQUPT 知识库 CRUD 说明
+# ai-shopping-agent 知识库 CRUD 说明
 
 > 完成日期：2026-05-02
 > 适用模块：知识库管理、接口资源控制、前端后台知识库管理、后续文档入库前置容器
@@ -35,7 +35,7 @@ Controller -> Service -> Mapper -> PostgreSQL
 | Guard | `KnowledgeBaseDocumentGuard`、`DefaultKnowledgeBaseDocumentGuard` | 删除保护，查询 `t_knowledge_document` 统计未删除文档数量 |
 | DAO | `KnowledgeBaseDO`、`KnowledgeBaseMapper` | 映射 `t_knowledge_base` 并复用 MyBatis-Plus CRUD |
 
-Mapper 扫描已在 `DevBrainApplication` 中加入：
+Mapper 扫描已在 `AiShoppingAgentApplication` 中加入：
 
 ```java
 @MapperScan({

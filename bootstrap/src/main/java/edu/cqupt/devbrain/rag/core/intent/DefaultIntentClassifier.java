@@ -2,6 +2,7 @@ package edu.cqupt.devbrain.rag.core.intent;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import edu.cqupt.devbrain.infra.ai.gateway.structured.AiJsonOutputParser;
 import edu.cqupt.devbrain.infra.ai.llm.LLMService;
 import edu.cqupt.devbrain.rag.core.intent.dao.mapper.IntentNodeMapper;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,7 @@ import java.util.Map;
 public class DefaultIntentClassifier implements IntentClassifier {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final AiJsonOutputParser JSON_OUTPUT_PARSER = new AiJsonOutputParser(OBJECT_MAPPER);
 
     private final IntentNodeMapper intentNodeMapper;
     private final LLMService llmService;
@@ -143,7 +145,7 @@ public class DefaultIntentClassifier implements IntentClassifier {
     private List<NodeScore> parseScores(String response, Map<String, IntentNode> nodeById) {
         try {
             // 提取 LLM 返回中的 JSON 部分（可能包含 Markdown 代码块标记）
-            String json = extractJson(response);
+            String json = JSON_OUTPUT_PARSER.extractJsonObject(response);
             if (!StringUtils.hasText(json)) {
                 return List.of();
             }
@@ -173,26 +175,6 @@ public class DefaultIntentClassifier implements IntentClassifier {
             log.warn("意图分类 JSON 解析失败，response={}", response, ex);
             return List.of();
         }
-    }
-
-    private String extractJson(String response) {
-        if (!StringUtils.hasText(response)) {
-            return null;
-        }
-        String cleaned = response.trim();
-        // LLM 有时会用 Markdown 代码块包裹 JSON，需要先剥离
-        if (cleaned.startsWith("```")) {
-            cleaned = cleaned.replaceFirst("^```[a-zA-Z]*\\s*", "")
-                    .replaceFirst("\\s*```$", "")
-                    .trim();
-        }
-        // 定位第一个 { 和最后一个 }，提取 JSON 主体
-        int start = cleaned.indexOf('{');
-        int end = cleaned.lastIndexOf('}');
-        if (start < 0 || end <= start) {
-            return null;
-        }
-        return cleaned.substring(start, end + 1);
     }
 
     /** 从 JSON 对象中安全提取文本字段，null 或缺失时返回 null。 */

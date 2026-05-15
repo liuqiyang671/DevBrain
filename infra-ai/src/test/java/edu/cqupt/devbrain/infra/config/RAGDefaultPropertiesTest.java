@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RAGDefaultPropertiesTest {
 
     @Test
-    void defaultDimensionMatchesLocalOllamaEmbeddingModel() {
+    void defaultDimensionMatchesSiliconflowQwen3Embedding4bModel() {
         RAGDefaultProperties properties = new RAGDefaultProperties();
 
         assertThat(properties.getDimension()).isEqualTo(1536);

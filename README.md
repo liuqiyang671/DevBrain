@@ -1,10 +1,10 @@
-# DevBrain-CQUPT
+# ai-shopping-agent
 
 <div align="center">
 
-**面向高校与企业知识场景的 RAG 智能知识库平台**
+**打通「意图理解 → 智能咨询 → 决策辅助」核心路径的电商 AI 导购系统**
 
-把 PDF、Office、Markdown、网页和飞书文档转成可检索、可追溯、可对话的知识资产。
+通过 RAG 知识库、流式交互与评测闭环，将电商导购从「信息搜索」推向「辅助决策」的代际跨越。
 
 ![Java](https://img.shields.io/badge/Java-17-007396?logo=openjdk&logoColor=white)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.x-6DB33F?logo=springboot&logoColor=white)
@@ -21,18 +21,49 @@
 
 ## 项目简介
 
-DevBrain-CQUPT 是一套前后端分离的智能知识库系统，覆盖「文档采集 → 内容解析 → 智能分块 → Embedding 向量化 → 语义检索 → SSE 流式问答」完整链路。
+ai-shopping-agent 是一套面向电商场景的 AI 智能导购系统，围绕「**意图理解 → 智能咨询 → 决策辅助**」三大核心环节构建完整技术链路。系统能够深度理解商品属性与用户购买意图，通过上传非结构化的商品详情与营销文档构建专属知识库，借助 RAG（检索增强生成）技术确保回复的专业性与准确性。
 
-项目后端采用 Java 17 + Spring Boot 3.5 多模块架构，前端采用 React 18 + Vite，向量存储基于 PostgreSQL + pgvector，并集成 Redis、MinIO、RocketMQ 等中间件。
+在交互层面，系统提供 SSE 流式对话体验，支持商品卡片实时渲染与多模态（文字/图片）输入解析。在质量保障层面，构建了端到端的评测与反馈闭环——通过对典型导购场景下的回答准确率、知识检索精度及多轮对话逻辑进行定量评估，反哺 Prompt 策略优化与知识库迭代，验证该工程方案在模拟商业场景下的技术可行性与交互质量。
+
+后端采用 Java 17 + Spring Boot 3.5 多模块架构，前端采用 React 18 + Vite，向量存储基于 PostgreSQL + pgvector，并集成 Redis、MinIO、RocketMQ 等中间件。
+
+## 项目意义
+
+传统电商搜索更擅长「找商品」，但用户真正需要的是「做决策」——预算怎么取舍、参数是否匹配场景、不同商品为什么推荐、风险点在哪里。这些决策过程需要的不是更多信息，而是**有证据支撑、可追溯来源、可量化评测的智能辅助**。
+
+ai-shopping-agent 将商品结构化数据、非结构化商品知识与多轮对话能力结合起来，构建了一条从意图识别到决策辅助的完整工程路径。它不仅是一个功能原型，更为电商导购从「关键词匹配」升级为「辅助决策」提供了可复制的工程实践参考。
 
 ## 功能亮点
 
-- **知识库闭环：** 知识库、文档、分块、向量、同步历史统一管理。
-- **RAG 流式问答：** 支持 SSE 输出、多轮记忆、查询改写、子问题拆分、深度思考和主动停止。
+### 意图理解
+
+- **多模态输入解析：** 支持文字与图片混合输入，导购 Agent 能从用户描述、商品截图中提取购买意图。
+- **需求澄清与追问：** 当用户意图模糊时，系统主动发起追问，通过多轮对话逐步收敛需求边界。
+- **查询改写与子问题拆分：** 复杂咨询自动拆解为可检索的子问题，提升知识召回的覆盖率与精准度。
+
+### 智能咨询
+
+- **RAG 知识库底座：** 知识库、文档、分块、向量、同步历史统一管理，为商品推荐提供可追溯证据。
 - **文档处理管线：** 支持 PDF、Office、Markdown、HTML 等格式，内置 Apache Tika 和 5 种智能分块策略。
 - **可编排摄入 Pipeline：** `fetcher` / `parser` / `enhancer` / `chunker` / `enricher` / `indexer` 六类节点，支持任务日志追踪。
-- **企业级安全：** HttpOnly Cookie JWT、CSRF 双提交、RBAC 权限码、接口资源规则、登录风控、分布式限流。
 - **AI 多 Provider：** Embedding 和 LLM 支持按优先级路由与降级，当前接入 Ollama 与 SiliconFlow。
+- **SSE 流式问答：** 支持多轮对话记忆、会话摘要、深度思考、引用证据展示和主动停止生成。
+
+### 决策辅助
+
+- **商品卡片流式推荐：** 导购 SSE 实时渲染商品卡片，支持意图识别、追问澄清、推荐排序、引用证据和回答增量输出。
+- **智能导购闭环：** 商品、SKU、属性、媒体、文档绑定、导购会话、推荐快照和用户反馈统一管理。
+- **证据可追溯：** 每条推荐附带知识来源引用，用户可验证推荐依据的可靠性。
+
+### 质量评测与反馈闭环
+
+- **评测集与批量运行：** 支持构建典型导购场景评测集，批量运行并生成指标报告。
+- **多维定量评估：** 覆盖回答准确率、知识检索精度、多轮对话逻辑等核心指标。
+- **反馈反哺迭代：** 用户反馈经审核后反哺 Prompt 策略优化与知识库内容迭代，形成持续改进闭环。
+
+### 企业级基础设施
+
+- **安全体系：** HttpOnly Cookie JWT、CSRF 双提交、RBAC 权限码、接口资源规则、登录风控、分布式限流。
 
 ## 界面预览
 
@@ -57,7 +88,7 @@ DevBrain-CQUPT 是一套前后端分离的智能知识库系统，覆盖「文�
 
 ## 技术架构
 
-![DevBrain-CQUPT 技术架构](picture/img.png)
+![ai-shopping-agent 技术架构](picture/img.png)
 
 ```text
 React + Vite
@@ -66,6 +97,7 @@ React + Vite
     v
 Spring Boot bootstrap
     |-- Auth / RBAC / CSRF / UserContext
+    |-- Commerce Product / Guide Session / Evaluation / Feedback
     |-- Knowledge Base / Document / Chunk / Sync
     |-- Ingestion Pipeline / Task / Node Log
     |-- RAG Chat / Retrieval / Conversation Memory
@@ -94,7 +126,7 @@ Spring Boot bootstrap
 ## 项目结构
 
 ```text
-devbrain-cqupt/
+ai-shopping-agent/
 ├── bootstrap/          # Spring Boot 主应用，包含认证、知识库、文档、Pipeline、RAG 接口
 ├── framework/          # 通用框架能力：响应、异常、上下文、幂等、追踪、MQ、分布式 ID
 ├── infra-ai/           # AI 基础设施：EmbeddingService、LLMService、多 Provider 路由
@@ -188,13 +220,17 @@ git diff --check
 - `/knowledge-base/**`、`/knowledge-documents/**`、`/documents/**`、`/chunks/**`：知识库、文档与分块管理
 - `/sync-tasks/**`：在线文档同步与同步历史
 - `/ingestion/**`：摄入流水线与任务执行
-- `/rag/v3/chat`：SSE 流式问答
-- `/rag/v3/stop`：停止指定流式任务
+- `/rag/v3/chat`：通用 RAG SSE 流式问答
+- `/rag/v3/stop`：停止指定 RAG 流式任务
+- `/commerce/products/**`：商品目录、SKU、属性、媒体和文档绑定
+- `/commerce/guide/**`：AI 导购流式对话、多模态图片和反馈
+- `/commerce/evaluations/**`：导购评测集、运行记录和报告
 
 ## 文档入口
 
 - [文档索引](docs/README.md)
 - [功能总结](docs/feature-summary.md)
+- [已实现功能清单](docs/implemented-features.md)
 - [Framework 架构说明](docs/framework-architecture.md)
 - [数据库与中间件搭建](docs/database-and-middleware-setup.md)
 - [用户认证与权限](docs/user-auth-and-permission.md)
@@ -203,11 +239,15 @@ git diff --check
 - [在线文档同步](docs/document-sync-guide.md)
 - [Embedding 配置指南](docs/embedding-configuration-guide.md)
 - [Embedding 安全方案](docs/embedding-security-guide.md)
+- [电商 AI 导购方案](docs/ecommerce-ai-shopping-guide-solution.md)
+- [电商 AI 导购使用手册](docs/commerce-ai-guide-user-manual.md)
+- [测试指南](docs/testing-guide.md)
 
 ## 配置提示
 
 - 本地数据库 schema 位于 `resources/database/schema.sql`，PostgreSQL 容器首次启动时会自动初始化。
 - `resources/docker/.env.example` 和 `application.yaml` 中的密钥仅作本地占位，生产环境必须通过环境变量或密钥管理器覆盖。
+- 当前保留 `/api/devbrain`、`DEV_BRAIN_TOKEN`、`DEVBRAIN_*` 和 `devbrain.*` 等历史兼容前缀，避免破坏已有本地环境、Cookie、数据库和 Docker 配置。
 - Embedding 模型维度必须与 `t_knowledge_vector.embedding` 列定义一致，切换模型前请确认 `RAG_DEFAULT_DIMENSION`。
 - RAG 流式接口已接入限流、并发控制与幂等防护，相关配置位于 `rag.chat.*`。
 
@@ -234,6 +274,9 @@ git diff --check
 | 在线同步 | 飞书文档同步、URL 抓取同步、内容哈希比对、手动触发、定时调度、同步历史和同步概览。 |
 | 摄入 Pipeline | Pipeline 定义 CRUD、6 类节点注册、JSON 来源任务、文件上传任务、节点级状态与日志记录。 |
 | RAG 问答 | SSE 流式问答、多轮对话记忆、会话摘要、查询改写、子问题拆分、意图识别、深度思考、停止生成。 |
+| AI 导购 | 商品候选召回、需求澄清、证据检索、推荐排序、商品卡片流式输出、导购会话状态持久化。 |
+| 商品管理 | 商品、SKU、属性、媒体、标签、商品文档绑定和商品属性抽取。 |
+| 评测反馈 | 导购评测集、评测用例、批量运行、指标报告、用户反馈和反馈审核。 |
 | 问答防护 | 聊天限流、并发队列控制、短窗口幂等提交、防重复请求、防资源占用。 |
 | 前端应用 | 登录注册、用户工作台、后台管理、知识库管理、文档管理、分块查看、同步任务、Pipeline 编排、RAG 对话页面。 |
 | 基础框架 | 统一响应、全局异常、请求 ID、用户上下文、MyBatis-Plus 自动填充、幂等、追踪、Redis Key 序列化、RocketMQ 适配、分布式 ID。 |

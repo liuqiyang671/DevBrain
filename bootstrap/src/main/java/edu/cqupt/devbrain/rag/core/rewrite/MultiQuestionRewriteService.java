@@ -3,6 +3,7 @@ package edu.cqupt.devbrain.rag.core.rewrite;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import edu.cqupt.devbrain.framework.convention.ChatMessage;
+import edu.cqupt.devbrain.infra.ai.gateway.structured.AiJsonOutputParser;
 import edu.cqupt.devbrain.infra.ai.llm.LLMService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,7 @@ import java.util.regex.Pattern;
 public class MultiQuestionRewriteService implements QueryRewriteService {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final AiJsonOutputParser JSON_OUTPUT_PARSER = new AiJsonOutputParser(OBJECT_MAPPER);
     private static final Pattern SPLIT_PATTERN = Pattern.compile("[？?。！!；;\\n]+");
 
     private final LLMService llmService;
@@ -106,7 +108,7 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
     private java.util.Optional<RewriteResult> parseResponse(String response, String fallbackQuestion) {
         try {
             // 提取 LLM 返回中的 JSON 部分
-            String json = extractJson(response);
+            String json = JSON_OUTPUT_PARSER.extractJsonObject(response);
             if (!StringUtils.hasText(json)) {
                 return java.util.Optional.empty();
             }
@@ -128,29 +130,6 @@ public class MultiQuestionRewriteService implements QueryRewriteService {
             log.debug("查询改写 JSON 解析失败，使用规则拆分回退。response={}", response, ex);
             return java.util.Optional.empty();
         }
-    }
-
-    /**
-     * 从 LLM 响应中提取 JSON 字符串：剥离 Markdown 代码块，定位第一个 { 和最后一个 }。
-     */
-    private String extractJson(String response) {
-        if (!StringUtils.hasText(response)) {
-            return null;
-        }
-        String cleaned = response.trim();
-        // 剥离 Markdown 代码块标记（如 ```json ... ```）
-        if (cleaned.startsWith("```")) {
-            cleaned = cleaned.replaceFirst("^```[a-zA-Z]*\\s*", "")
-                    .replaceFirst("\\s*```$", "")
-                    .trim();
-        }
-        // 定位 JSON 对象的起止位置：第一个 { 到最后一个 }
-        int start = cleaned.indexOf('{');
-        int end = cleaned.lastIndexOf('}');
-        if (start < 0 || end <= start) {
-            return null;
-        }
-        return cleaned.substring(start, end + 1);
     }
 
     private String text(JsonNode root, String fieldName) {

@@ -71,6 +71,20 @@ class AccessControlServiceTest {
         verify(resourceMapper, times(2)).selectList(any());
     }
 
+    @Test
+    void prefersSpecificGuideSessionDeleteRuleOverCommerceWriteWildcard() {
+        when(resourceMapper.selectList(any())).thenReturn(List.of(
+                resource("DELETE", "/commerce/**", "commerce:write", 0),
+                resource("DELETE", "/commerce/guide/sessions/*", "commerce:read", 0)
+        ));
+
+        assertDoesNotThrow(() -> accessControlService.checkAccess(
+                "DELETE",
+                "/commerce/guide/sessions/session-1",
+                user(Set.of("user"), Set.of("commerce:read"))
+        ));
+    }
+
     private LoginUser user(Set<String> roles, Set<String> permissions) {
         return new LoginUser("user-1", "alice", "alice@example.com", "Alice", null, roles, permissions);
     }

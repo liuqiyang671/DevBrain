@@ -27,13 +27,13 @@ class QaPairTextChunkerTest {
      */
     @Test
     void shouldExtractQAPairs() {
-        String text = "Q: 什么是 DevBrain?\nA: DevBrain 是一个研发知识库系统。\nQ: 支持什么格式?\nA: 支持 Markdown 和 PDF。";
+        String text = "Q: 什么是 ai-shopping-agent?\nA: ai-shopping-agent 是一个研发知识库系统。\nQ: 支持什么格式?\nA: 支持 Markdown 和 PDF。";
 
         List<VectorChunk> chunks = chunker.chunk(text, new QaPairOptions(1024, 0));
 
         assertEquals(2, chunks.size());
-        assertTrue(chunks.get(0).getContent().contains("什么是 DevBrain"));
-        assertTrue(chunks.get(0).getContent().contains("DevBrain 是一个研发知识库系统"));
+        assertTrue(chunks.get(0).getContent().contains("什么是 ai-shopping-agent"));
+        assertTrue(chunks.get(0).getContent().contains("ai-shopping-agent 是一个研发知识库系统"));
         assertTrue(chunks.get(1).getContent().contains("支持什么格式"));
         assertTrue(chunks.get(1).getContent().contains("支持 Markdown 和 PDF"));
     }

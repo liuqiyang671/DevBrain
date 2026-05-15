@@ -49,6 +49,368 @@ export interface PageResult<T> {
   pages: number;
 }
 
+export type GuideSseEventType =
+  | 'session'
+  | 'intent'
+  | 'clarification'
+  | 'searching'
+  | 'product_card'
+  | 'compare_table'
+  | 'citation'
+  | 'answer_delta'
+  | 'answer_done'
+  | 'trace'
+  | 'agent_plan'
+  | 'tool_call'
+  | 'tool_observation'
+  | 'agent_finish'
+  | 'cancel'
+  | 'error'
+  | 'done';
+
+export interface GuideSseEvent<T = unknown> {
+  eventId: string;
+  sessionId: string;
+  type: GuideSseEventType;
+  timestamp: string;
+  payload: T;
+}
+
+export interface GuideChatRequest {
+  sessionId?: string | null;
+  conversationId?: string | null;
+  message: string;
+  imageIds?: string[];
+  clientMessageId?: string;
+  scene?: string;
+}
+
+export interface GuideImageRef {
+  imageId: string;
+  fileName: string;
+  contentType?: string | null;
+  size?: number | null;
+  previewUrl?: string | null;
+  ocrText?: string | null;
+  visualSummary?: string | null;
+  detectedProductNames?: string[];
+  detectedAttributes?: Record<string, string>;
+  riskFlags?: string[];
+  uploadStatus?: 'uploading' | 'uploaded' | 'failed';
+  errorMessage?: string | null;
+}
+
+export interface GuideSessionPayload {
+  sessionId: string;
+  conversationId: string;
+  taskId: string;
+  runId?: string | null;
+}
+
+export interface GuideIntentPayload {
+  intentType: string;
+  category?: string | null;
+  budgetMin?: number | null;
+  budgetMax?: number | null;
+  brandPreference?: string | null;
+  hardConstraints?: string[];
+  softPreferences?: string[];
+  confidence?: number | null;
+  evidenceText?: string | null;
+}
+
+export interface GuideClarificationPayload {
+  question: string;
+  missingSlots?: string[];
+  mode?: 'ask_only' | 'recommend_then_ask' | 'skip' | 'confirm_then_continue' | string | null;
+  reason?: string | null;
+  confidence?: number | null;
+}
+
+export interface GuideProductCard {
+  productId: string;
+  name: string;
+  brand?: string | null;
+  priceMin?: number | null;
+  priceMax?: number | null;
+  imageUrl?: string | null;
+  stockStatus?: string | null;
+  promotions?: string[];
+  promotionCount?: number | null;
+  score?: number | null;
+  reasons: string[];
+  badges?: string[];
+  recommendationRole?: string | null;
+  scoreBreakdown?: Record<string, number>;
+  riskFlags?: string[];
+  evidences?: GuideCitation[];
+}
+
+export interface GuideCitation {
+  productId?: string | null;
+  documentId: string;
+  chunkId: string;
+  docType?: string | null;
+  chunkIndex?: number | null;
+  sourceType?: string | null;
+  highlight?: string | null;
+  evidenceType?: string | null;
+  score?: number | null;
+  snippet: string;
+  text?: string | null;
+  scoreBreakdown?: Record<string, number>;
+}
+
+export interface GuideTraceStep {
+  node: string;
+  inputSummary?: string | null;
+  outputSummary?: string | null;
+  durationMs?: number | null;
+  error?: string | null;
+  fallback?: boolean;
+  failureType?: string | null;
+  fallbackPolicyVersion?: string | null;
+  fallbackPlan?: string | null;
+}
+
+export interface GuideAgentPlanPayload {
+  runId: string;
+  stepNo: number;
+  thought?: string | null;
+  action?: string | null;
+  arguments?: Record<string, unknown>;
+}
+
+export interface GuideToolCallPayload {
+  runId: string;
+  stepNo: number;
+  toolName: string;
+  argumentsSummary?: Record<string, unknown>;
+}
+
+export interface GuideToolObservationPayload {
+  runId: string;
+  stepNo: number;
+  toolName?: string | null;
+  observation?: string | null;
+  durationMs: number;
+  status: string;
+  error?: string | null;
+}
+
+export interface GuideAgentFinishPayload {
+  runId: string;
+  status: string;
+  totalSteps: number;
+  finalAction?: string | null;
+}
+
+export interface GuideAgentTimelineItem {
+  id: string;
+  runId: string;
+  stepNo: number;
+  action: string;
+  toolName?: string;
+  thought?: string | null;
+  observation?: string | null;
+  durationMs?: number | null;
+  status: 'running' | 'success' | 'failed' | 'cancelled' | string;
+  arguments?: Record<string, unknown>;
+  error?: string | null;
+  createdAt?: string | null;
+}
+
+export interface GuideBusinessSignalCoverage {
+  hasBusinessData: boolean;
+  hasIntentUnderstanding: boolean;
+  hasPriceStockPromotion: boolean;
+  hasExplainableReasons: boolean;
+  hasEvaluationSignals: boolean;
+  missingSignals: string[];
+}
+
+export interface AgentRunItem {
+  id: string;
+  conversationId: string;
+  sessionId?: string | null;
+  userId: string;
+  scene: string;
+  engineName: string;
+  status: string;
+  startedAt: string;
+  finishedAt?: string | null;
+  totalSteps?: number | null;
+  finalAction?: string | null;
+  errorMessage?: string | null;
+  metadataJson?: string | null;
+  createTime?: string | null;
+}
+
+export interface AgentStepItem {
+  id: string;
+  runId: string;
+  stepNo: number;
+  action: string;
+  thought?: string | null;
+  argumentsJson?: string | null;
+  observation?: string | null;
+  status: string;
+  durationMs?: number | null;
+  errorMessage?: string | null;
+  stateBeforeHash?: string | null;
+  stateAfterHash?: string | null;
+  createTime?: string | null;
+}
+
+export interface AgentToolCallItem {
+  id: string;
+  runId: string;
+  stepId: string;
+  toolName: string;
+  toolVersion?: string | null;
+  argumentsJson?: string | null;
+  resultJson?: string | null;
+  observation?: string | null;
+  status: string;
+  durationMs?: number | null;
+  errorMessage?: string | null;
+  createTime?: string | null;
+}
+
+export interface LlmCallLogItem {
+  id: string;
+  runId?: string | null;
+  stepId?: string | null;
+  businessScene: string;
+  provider?: string | null;
+  model?: string | null;
+  stream?: number | null;
+  temperature?: number | null;
+  maxTokens?: number | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  durationMs?: number | null;
+  status: string;
+  errorMessage?: string | null;
+  promptHash?: string | null;
+  promptSummary?: string | null;
+  responseHash?: string | null;
+  responseSummary?: string | null;
+  metadataJson?: string | null;
+  createTime?: string | null;
+}
+
+export interface GuideMessage {
+  id: string;
+  conversationId?: string | null;
+  sessionId?: string | null;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  createTime: string;
+  imageRefs?: string[];
+  images?: GuideImageRef[];
+  streaming?: boolean;
+  errorMessage?: string | null;
+  clientMessageId?: string | null;
+  agentRunId?: string | null;
+}
+
+export interface GuideSession {
+  sessionId: string;
+  conversationId?: string;
+  userId?: string | null;
+  stage?: string | null;
+  intent?: string | null;
+  title: string;
+  lastMessage?: string | null;
+  lastTime: string;
+  createTime?: string | null;
+  updateTime?: string | null;
+  runId?: string | null;
+  archived?: boolean;
+  archivedTime?: string | null;
+  summary?: string | null;
+  messageCount?: number;
+}
+
+export interface GuideSessionPage {
+  records: GuideSession[];
+  total?: number;
+  size?: number;
+  current?: number;
+}
+
+export interface GuidePersistedEvidence {
+  productId?: string | null;
+  documentId?: string | null;
+  chunkId?: string | null;
+  docType?: string | null;
+  chunkIndex?: number | null;
+  sourceType?: string | null;
+  highlight?: string | null;
+  evidenceType?: string | null;
+  score?: number | null;
+  text?: string | null;
+  snippet?: string | null;
+  scoreBreakdown?: Record<string, number>;
+}
+
+export interface GuidePersistedRecommendation {
+  id?: string;
+  conversationId?: string;
+  turnId?: string;
+  productId: string;
+  skuId?: string | null;
+  rankNo?: number | null;
+  name?: string | null;
+  brand?: string | null;
+  priceMin?: number | null;
+  priceMax?: number | null;
+  imageUrl?: string | null;
+  stockStatus?: string | null;
+  promotions?: string[];
+  promotionCount?: number | null;
+  score?: number | null;
+  recommendationRole?: string | null;
+  scoreBreakdown?: Record<string, number>;
+  riskFlags?: string[];
+  reasons?: string[];
+  evidences?: GuidePersistedEvidence[];
+  createTime?: string | null;
+}
+
+export interface GuidePersistedState {
+  sessionId?: string | null;
+  userId?: string | null;
+  conversationId?: string | null;
+  agentRunId?: string | null;
+  userText?: string | null;
+  imageRefs?: string[];
+  intent?: GuideIntentPayload | null;
+  slots?: Record<string, unknown> | null;
+  clarificationQuestion?: string | null;
+  recommendations?: GuidePersistedRecommendation[];
+  evidences?: GuidePersistedEvidence[];
+  answerDraft?: string | null;
+  errors?: string[];
+}
+
+export interface GuideSessionDetail extends GuideSession {
+  messages?: GuideMessage[];
+  recommendations?: GuidePersistedRecommendation[];
+  state?: GuidePersistedState | null;
+}
+
+export interface GuideStreamState {
+  messages: GuideMessage[];
+  streaming: boolean;
+  currentSessionId: string | null;
+  currentProducts: GuideProductCard[];
+  citations: GuideCitation[];
+  traces: GuideTraceStep[];
+  error: string | null;
+}
+
 /** 摄入 Pipeline 支持的节点类型 */
 export type IngestionNodeType = 'fetcher' | 'parser' | 'enhancer' | 'chunker' | 'enricher' | 'indexer';
 

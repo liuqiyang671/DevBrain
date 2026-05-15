@@ -1,6 +1,6 @@
 # Docker 资源
 
-DevBrain-CQUPT 的本地开发中间件配置。
+ai-shopping-agent 的本地开发中间件配置。
 
 ## 组件
 

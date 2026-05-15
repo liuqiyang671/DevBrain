@@ -6,12 +6,12 @@
 
     <parent>
         <groupId>edu.cqupt</groupId>
-        <artifactId>devbrain-cqupt</artifactId>
+        <artifactId>ai-shopping-agent</artifactId>
         <version>0.0.1-SNAPSHOT</version>
     </parent>
 
     <artifactId>framework</artifactId>
-    <name>DevBrain-CQUPT Framework</name>
+    <name>ai-shopping-agent Framework</name>
 
     <dependencies>
         <dependency>

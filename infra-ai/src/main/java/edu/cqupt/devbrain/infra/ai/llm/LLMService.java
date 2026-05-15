@@ -21,6 +21,18 @@ public interface LLMService {
     String chat(String prompt);
 
     /**
+     * 同步发送结构化聊天请求并阻塞等待模型完整回复。
+     * <p>
+     * 默认实现兼容只实现 {@link #chat(String)} 的旧服务；支持模型控制参数的实现应覆盖该方法。
+     *
+     * @param request 聊天请求，包含消息列表和生成参数
+     * @return 模型回复文本
+     */
+    default String chat(ChatRequest request) {
+        return chat(toPrompt(request));
+    }
+
+    /**
      * 流式发送聊天请求，通过回调逐步接收模型回复。
      * <p>
      * 默认实现桥接到 {@link #chat(String)} 方法同步获取结果后一次性回调；

@@ -1,5 +1,6 @@
 package edu.cqupt.devbrain.infra.llm;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -41,6 +42,7 @@ public abstract class AbstractOpenAIStyleLLMClient implements LLMClient {
 
     private static final MediaType JSON_MEDIA_TYPE = MediaType.parse("application/json; charset=utf-8");
     private static final String SSE_DONE_MARKER = "[DONE]";
+    private static final Gson GSON = new Gson();
 
     private final OkHttpClient httpClient;
 
@@ -87,7 +89,9 @@ public abstract class AbstractOpenAIStyleLLMClient implements LLMClient {
         JsonObject requestBody = buildRequestBody(request, target, false);
 
         Request httpRequest = newRequest(target, requestBody);
-        try (Response response = httpClient.newCall(httpRequest).execute()) {
+        Call call = httpClient.newCall(httpRequest);
+        call = withRequestTimeout(call, request);
+        try (Response response = call.execute()) {
             String responseText = readResponseBody(response);
             if (!response.isSuccessful()) {
                 throw new RemoteException("LLM 请求失败，HTTP " + response.code()
@@ -203,6 +207,36 @@ public abstract class AbstractOpenAIStyleLLMClient implements LLMClient {
         if (request.getThinking() != null) {
             body.addProperty("enable_thinking", Boolean.TRUE.equals(request.getThinking()));
         }
+        if (request.getResponseFormat() != null && isNotBlank(request.getResponseFormat().type())) {
+            JsonObject responseFormat = new JsonObject();
+            responseFormat.addProperty("type", request.getResponseFormat().type());
+            body.add("response_format", responseFormat);
+        }
+        if (request.getTools() != null && !request.getTools().isEmpty()) {
+            JsonArray tools = new JsonArray();
+            for (ChatRequest.ToolDefinition definition : request.getTools()) {
+                if (definition == null || definition.function() == null || isBlank(definition.function().name())) {
+                    continue;
+                }
+                JsonObject tool = new JsonObject();
+                tool.addProperty("type", isNotBlank(definition.type()) ? definition.type() : "function");
+                JsonObject function = new JsonObject();
+                function.addProperty("name", definition.function().name());
+                function.addProperty("description", definition.function().description() == null ? "" : definition.function().description());
+                function.add("parameters", JsonParser.parseString(GSON.toJson(definition.function().parameters())));
+                tool.add("function", function);
+                tools.add(tool);
+            }
+            if (!tools.isEmpty()) {
+                body.add("tools", tools);
+            }
+        }
+        if (isNotBlank(request.getToolChoice())) {
+            body.addProperty("tool_choice", request.getToolChoice());
+        }
+        if (request.getParallelToolCalls() != null) {
+            body.addProperty("parallel_tool_calls", request.getParallelToolCalls());
+        }
 
         customizeRequestBody(body, target);
         return body;
@@ -216,6 +250,15 @@ public abstract class AbstractOpenAIStyleLLMClient implements LLMClient {
             builder.header("Authorization", "Bearer " + target.getApiKey());
         }
         return builder.build();
+    }
+
+    private Call withRequestTimeout(Call call, ChatRequest request) {
+        Long timeoutMillis = request == null ? null : request.getTimeoutMillis();
+        if (timeoutMillis == null || timeoutMillis <= 0) {
+            return call;
+        }
+        call.timeout().timeout(timeoutMillis, java.util.concurrent.TimeUnit.MILLISECONDS);
+        return call;
     }
 
     // ────────── 响应解析 ──────────
@@ -325,5 +368,9 @@ public abstract class AbstractOpenAIStyleLLMClient implements LLMClient {
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private static boolean isNotBlank(String value) {
+        return !isBlank(value);
     }
 }

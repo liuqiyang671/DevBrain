@@ -1,6 +1,6 @@
 # 数据库资源
 
-`schema.sql` 是 DevBrain-CQUPT 当前的本地开发数据库 schema。现阶段它保持简单的追加式维护方式，并通过 `t_devbrain_schema_info` 记录已经执行过的搭建步骤。
+`schema.sql` 是 ai-shopping-agent 当前的本地开发数据库 schema。现阶段它保持简单的追加式维护方式，并通过 `t_devbrain_schema_info` 记录已经执行过的搭建步骤。
 
 当前 schema 版本：
 

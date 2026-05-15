@@ -29,7 +29,7 @@ class RetrieverServiceTest extends AbstractVectorIntegrationTest {
     @Test
     void shouldRetrieveRelevantChunks() {
         vectorStoreService.indexDocumentChunks(DEFAULT_COLLECTION, "doc-retrieve-1", vectorChunks("retrieve-relevant", List.of(
-                "DevBrain 使用 Spring Boot 作为后端框架",
+                "ai-shopping-agent 使用 Spring Boot 作为后端框架",
                 "PostgreSQL 是主要的关系型数据库",
                 "用户通过对话方式提问获取答案"
         )));
@@ -43,7 +43,7 @@ class RetrieverServiceTest extends AbstractVectorIntegrationTest {
     @Test
     void shouldReturnTopK() {
         List<String> contents = IntStream.range(0, 10)
-                .mapToObj(index -> "DevBrain 使用 Spring Boot 作为后端框架，第 " + index + " 条资料")
+                .mapToObj(index -> "ai-shopping-agent 使用 Spring Boot 作为后端框架，第 " + index + " 条资料")
                 .toList();
         vectorStoreService.indexDocumentChunks(DEFAULT_COLLECTION, "doc-retrieve-2", vectorChunks("retrieve-topk", contents));
 
@@ -55,7 +55,7 @@ class RetrieverServiceTest extends AbstractVectorIntegrationTest {
     @Test
     void shouldReturnSortedByScore() {
         vectorStoreService.indexDocumentChunks(DEFAULT_COLLECTION, "doc-retrieve-3", vectorChunks("retrieve-sorted", List.of(
-                "DevBrain 使用 Spring Boot 作为后端框架",
+                "ai-shopping-agent 使用 Spring Boot 作为后端框架",
                 "PostgreSQL 是主要的关系型数据库",
                 "用户通过对话方式提问获取答案"
         )));

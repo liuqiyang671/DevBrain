@@ -102,5 +102,11 @@ public class AIModelProperties {
 
         /** HTTP 读取超时（毫秒）；SSE 长连接建议设较大值。 */
         private int readTimeoutMs = 30 * 60_000;
+
+        /** 是否启用 Provider 原生结构化输出格式。 */
+        private boolean structuredOutputEnabled = true;
+
+        /** 是否启用 Provider 原生工具调用。 */
+        private boolean toolCallingEnabled = false;
     }
 }

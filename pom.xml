@@ -5,12 +5,12 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>edu.cqupt</groupId>
-    <artifactId>devbrain-cqupt</artifactId>
+    <artifactId>ai-shopping-agent</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <name>DevBrain-CQUPT</name>
-    <description>DevBrain-CQUPT intelligent Q&amp;A project skeleton</description>
+    <name>ai-shopping-agent</name>
+    <description>AI shopping agent platform for commerce RAG, guided recommendations, multimodal input, and evaluation feedback</description>
 
     <properties>
         <java.version>17</java.version>
@@ -31,6 +31,9 @@
         <xxl-job.version>2.4.0</xxl-job.version>
         <jsoup.version>1.17.2</jsoup.version>
         <okhttp.version>4.12.0</okhttp.version>
+        <spring-ai.version>1.1.6</spring-ai.version>
+        <langchain4j.version>1.14.1</langchain4j.version>
+        <langgraph4j.version>1.8.15</langgraph4j.version>
     </properties>
 
     <modules>
@@ -46,6 +49,30 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
                 <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-bom</artifactId>
+                <version>${langchain4j.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>org.bsc.langgraph4j</groupId>
+                <artifactId>langgraph4j-bom</artifactId>
+                <version>${langgraph4j.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

@@ -137,7 +137,7 @@ class SemanticTextChunkerTest {
 
     @Test
     void shouldHandleSingleSentence() {
-        String text = "DevBrain 是一个研发知识库系统。";
+        String text = "ai-shopping-agent 是一个研发知识库系统。";
 
         List<VectorChunk> chunks = chunker.chunk(text, new SemanticOptions(512, 50, 0.5, 100, 1024, 10));
 

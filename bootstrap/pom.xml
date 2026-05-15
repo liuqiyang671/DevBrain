@@ -6,12 +6,12 @@
 
     <parent>
         <groupId>edu.cqupt</groupId>
-        <artifactId>devbrain-cqupt</artifactId>
+        <artifactId>ai-shopping-agent</artifactId>
         <version>0.0.1-SNAPSHOT</version>
     </parent>
 
     <artifactId>bootstrap</artifactId>
-    <name>DevBrain-CQUPT Bootstrap</name>
+    <name>ai-shopping-agent Bootstrap</name>
 
     <dependencies>
         <dependency>
@@ -24,6 +24,11 @@
             <groupId>edu.cqupt</groupId>
             <artifactId>infra-ai</artifactId>
             <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.bsc.langgraph4j</groupId>
+            <artifactId>langgraph4j-core</artifactId>
         </dependency>
 
         <dependency>

@@ -1,14 +1,13 @@
 # Embedding 配置使用指南
 
-本文说明 DevBrain-CQUPT 中 Embedding 模型的配置方式、环境变量、维度约束和常见排查方法。知识库创建/编辑表单中的 Embedding 模型已经收敛为固定选项，默认优先选择云服务模型。
+本文说明 ai-shopping-agent 中 Embedding 模型的配置方式、环境变量、维度约束和常见排查方法。知识库创建/编辑表单中的 Embedding 模型已经收敛为固定选项，默认优先选择云服务模型。
 
 ## 知识库表单可选模型
 
 | 类型 | 表单值 / 候选模型 ID | 提供商侧模型名 | 使用前置条件 | 说明 |
 | --- | --- | --- | --- | --- |
-| 云服务模型 | `text-embedding-3-small` | `text-embedding-3-small` | 配置 OpenAI 兼容云服务地址和 API Key | 表单默认首选项，适合优先使用托管 Embedding 服务的知识库。 |
-| 本地模型 | `bge-m3` | `bge-m3` | 本地 Ollama 已拉取并可通过 `/v1/embeddings` 调用 | 本地备选项；启用前必须确认实际输出维度。 |
-| 本地模型 | `qwen3-embedding` | `qwen3-embedding:8b-fp16` | 本地 Ollama 已安装该模型 | 本地备选项；当前项目通过 `dimensions=1536` 输出 1536 维。 |
+| 云服务模型 | `qwen-emb-4b` | `Qwen/Qwen3-Embedding-4B` | 配置 SiliconFlow API Key | 表单默认首选项，适合优先使用托管 Embedding 服务的知识库。 |
+| 本地模型 | `qwen-emb-local` | `qwen3-embedding:8b-fp16` | 本地 Ollama 已安装该模型 | 本地备选项；当前项目通过 `dimensions=1536` 输出 1536 维。 |
 
 > 表单提交的是“表单值 / 候选模型 ID”。如果后续文档入库要真实生成向量，`ai.embedding.candidates[].id` 必须与表单值一致，否则后端会报“嵌入模型不可用”。同时，同一张 pgvector 表中不要混用不同维度的 Embedding 模型。
 
@@ -22,7 +21,7 @@
 
 > 注意：`ollama show` 里生成模型也会显示 `embedding length`，但这表示模型内部隐藏维度，不代表它可以作为 Embedding API 模型使用。`qwen3.5:9b` 和 `qwen3.6:35b-a3b` 不应该放入 Embedding 候选池。
 
-DevBrain 的 RAG 链路会将文本 Chunk 转为向量，再写入 PostgreSQL + pgvector。Embedding 配置目前由 `infra-ai` 模块提供，配置入口位于 [application.yaml](../bootstrap/src/main/resources/application.yaml) 的 `ai` 和 `rag.default` 节点。
+ai-shopping-agent 的 RAG 链路会将文本 Chunk 转为向量，再写入 PostgreSQL + pgvector。Embedding 配置目前由 `infra-ai` 模块提供，配置入口位于 [application.yaml](../bootstrap/src/main/resources/application.yaml) 的 `ai` 和 `rag.default` 节点。
 
 ## 当前状态
 
@@ -40,9 +39,9 @@ DevBrain 的 RAG 链路会将文本 Chunk 转为向量，再写入 PostgreSQL + 
 
 ## 配置总览
 
-仓库默认配置已经切到本地 Ollama，并统一使用 `1536` 维：
+仓库默认配置已切换到 SiliconFlow 云服务，并统一使用 `1536` 维：
 
-> 下面是当前后端本地开发默认配置。`qwen3-embedding:8b-fp16` 原生最大输出 4096 维，但本项目通过 Ollama/OpenAI 兼容请求体中的 `dimensions=1536` 使用 1536 维输出，以便 pgvector 创建 HNSW 索引。
+> 下面是当前后端本地开发默认配置。默认使用 SiliconFlow 的 `Qwen/Qwen3-Embedding-4B` 模型，本地 Ollama 模型作为备选。
 
 ```yaml
 rag:
@@ -61,79 +60,55 @@ ai:
     ollama:
       url: ${OLLAMA_BASE_URL:http://localhost:11434}
   embedding:
-    default-model: qwen-emb-local
+    default-model: qwen-emb-4b
     candidates:
-      - id: qwen-emb-local
-        provider: ollama
-        model: qwen3-embedding:8b-fp16
+      - id: qwen-emb-4b
+        provider: siliconflow
+        model: Qwen/Qwen3-Embedding-4B
         dimension: ${rag.default.dimension}
         priority: 1
         enabled: true
-      - id: qwen-emb-8b
-        provider: siliconflow
-        model: Qwen/Qwen3-Embedding-8B
+      - id: qwen-emb-local
+        provider: ollama
+        model: qwen3-embedding:8b-fp16
         dimension: ${rag.default.dimension}
         priority: 2
         enabled: false
 ```
 
-## 推荐本地配置
+## 推荐配置
 
-如果当前只使用本地 Ollama，推荐把默认 Embedding 模型切到 `qwen3-embedding:8b-fp16`，并统一使用 `1536` 维。
+当前默认配置使用 SiliconFlow 云服务，如果需要切换到本地 Ollama，可以按以下方式配置。
 
-### 1. 后端配置
+### 1. 使用 SiliconFlow 云服务（默认）
 
-修改 [application.yaml](../bootstrap/src/main/resources/application.yaml)：
+默认配置已支持 SiliconFlow，只需设置 API Key：
 
-```yaml
-rag:
-  vector:
-    type: ${RAG_VECTOR_TYPE:pg}
-  default:
-    collection-name: rag_default_store
-    dimension: ${RAG_DEFAULT_DIMENSION:1536}
-    metric-type: COSINE
-
-ai:
-  providers:
-    ollama:
-      url: ${OLLAMA_BASE_URL:http://localhost:11434}
-  embedding:
-    default-model: qwen-emb-local
-    candidates:
-      - id: qwen-emb-local
-        provider: ollama
-        model: qwen3-embedding:8b-fp16
-        dimension: ${rag.default.dimension}
-        priority: 1
-        enabled: true
+```powershell
+$env:SILICONFLOW_API_KEY="your-api-key"
 ```
 
-如果还想保留 SiliconFlow 作为远程备选，可以保留 `siliconflow` provider，但在没有 API Key 时建议先禁用远程候选项：
+### 2. 切换到本地 Ollama
+
+如果想使用本地 Ollama，修改 [application.yaml](../bootstrap/src/main/resources/application.yaml)：
 
 ```yaml
 ai:
-  providers:
-    siliconflow:
-      url: https://api.siliconflow.cn
-      api-key: ${SILICONFLOW_API_KEY:}
-    ollama:
-      url: ${OLLAMA_BASE_URL:http://localhost:11434}
   embedding:
     default-model: qwen-emb-local
     candidates:
-      - id: qwen-emb-local
-        provider: ollama
-        model: qwen3-embedding:8b-fp16
-        dimension: ${rag.default.dimension}
-        priority: 1
-        enabled: true
-      - id: qwen-emb-8b
+      - id: qwen-emb-4b
         provider: siliconflow
-        model: Qwen/Qwen3-Embedding-8B
+        model: Qwen/Qwen3-Embedding-4B
         dimension: ${rag.default.dimension}
         priority: 2
         enabled: false
+      - id: qwen-emb-local
+        provider: ollama
+        model: qwen3-embedding:8b-fp16
+        dimension: ${rag.default.dimension}
+        priority: 1
+        enabled: true
 ```
 
 ### 2. 数据库维度
@@ -264,11 +239,11 @@ ai:
       url: https://api.siliconflow.cn
       api-key: ${SILICONFLOW_API_KEY:}
   embedding:
-    default-model: qwen-emb-8b
+    default-model: qwen-emb-4b
     candidates:
-      - id: qwen-emb-8b
+      - id: qwen-emb-4b
         provider: siliconflow
-        model: Qwen/Qwen3-Embedding-8B
+        model: Qwen/Qwen3-Embedding-4B
         dimension: ${rag.default.dimension}
         priority: 1
         enabled: true
@@ -372,11 +347,11 @@ ai:
     ollama:
       url: ${OLLAMA_BASE_URL:http://localhost:11434}
   embedding:
-    default-model: qwen-emb-8b
+    default-model: qwen-emb-4b
     candidates:
-      - id: qwen-emb-8b
+      - id: qwen-emb-4b
         provider: siliconflow
-        model: Qwen/Qwen3-Embedding-8B
+        model: Qwen/Qwen3-Embedding-4B
         dimension: ${rag.default.dimension}
         priority: 1
         enabled: true
@@ -385,7 +360,7 @@ ai:
         model: qwen3-embedding:8b-fp16
         dimension: ${rag.default.dimension}
         priority: 2
-        enabled: true
+        enabled: false
 ```
 
 语义约定如下：

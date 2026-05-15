@@ -6,12 +6,12 @@
 
     <parent>
         <groupId>edu.cqupt</groupId>
-        <artifactId>devbrain-cqupt</artifactId>
+        <artifactId>ai-shopping-agent</artifactId>
         <version>0.0.1-SNAPSHOT</version>
     </parent>
 
     <artifactId>mcp-server</artifactId>
-    <name>DevBrain-CQUPT MCP Server</name>
+    <name>ai-shopping-agent MCP Server</name>
 
     <dependencies>
         <dependency>

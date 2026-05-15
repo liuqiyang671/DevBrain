@@ -131,7 +131,7 @@ public class AuthServiceImpl implements AuthService {
         record.setExpireTime(new Date(System.currentTimeMillis() + Duration.ofMinutes(30).toMillis()));
         record.setUsed(0);
         passwordResetTokenMapper.insert(record);
-        log.info("DevBrain password reset token for {}: {}", user.getEmail(), token);
+        log.info("ai-shopping-agent password reset token for {}: {}", user.getEmail(), token);
     }
 
     /**

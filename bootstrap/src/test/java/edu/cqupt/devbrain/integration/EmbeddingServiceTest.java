@@ -22,7 +22,7 @@ class EmbeddingServiceTest extends AbstractVectorIntegrationTest {
 
     @Test
     void shouldEmbedSingleText() {
-        List<Float> embedding = embeddingService.embed("DevBrain 是一个研发知识库系统");
+        List<Float> embedding = embeddingService.embed("ai-shopping-agent 是一个研发知识库系统");
 
         assertFalse(embedding.isEmpty());
         assertInstanceOf(Float.class, embedding.get(0));
@@ -38,7 +38,7 @@ class EmbeddingServiceTest extends AbstractVectorIntegrationTest {
 
     @Test
     void shouldReturnCorrectDimension() {
-        List<Float> embedding = embeddingService.embed("DevBrain 是一个研发知识库系统");
+        List<Float> embedding = embeddingService.embed("ai-shopping-agent 是一个研发知识库系统");
 
         assertEquals(ragDefaultProperties.getDimension(), embedding.size());
         assertEquals(1536, embedding.size());

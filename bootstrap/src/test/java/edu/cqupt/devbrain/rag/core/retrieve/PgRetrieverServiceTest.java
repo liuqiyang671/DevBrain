@@ -154,6 +154,33 @@ class PgRetrieverServiceTest {
         assertEquals("[0.0,0.0]", argsCaptor.getValue()[0]);
     }
 
+    @Test
+    void shouldApplyMetadataFiltersForProductEvidenceSearch() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        EmbeddingService embeddingService = mock(EmbeddingService.class);
+        PgRetrieverService service = new PgRetrieverService(jdbcTemplate, embeddingService, defaultProperties());
+        when(embeddingService.embed("售后保修")).thenReturn(List.of(1.0f, 0.0f));
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), any(Object[].class))).thenReturn(List.of());
+
+        service.retrieve(new RetrieveRequest("售后保修", 3, "kb_product", java.util.Map.of(
+                "productId", "product-1",
+                "docIds", List.of("doc-1", "doc-2"),
+                "docTypes", List.of("policy")
+        )));
+
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Object[]> argsCaptor = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbcTemplate).query(sqlCaptor.capture(), any(RowMapper.class), argsCaptor.capture());
+
+        assertTrue(sqlCaptor.getValue().contains("metadata ->> 'productId' = ?"));
+        assertTrue(sqlCaptor.getValue().contains("doc_id IN (?,?)"));
+        assertTrue(sqlCaptor.getValue().contains("metadata ->> 'docType' IN (?)"));
+        assertEquals("product-1", argsCaptor.getValue()[2]);
+        assertEquals("doc-1", argsCaptor.getValue()[3]);
+        assertEquals("doc-2", argsCaptor.getValue()[4]);
+        assertEquals("policy", argsCaptor.getValue()[5]);
+    }
+
     private RAGDefaultProperties defaultProperties() {
         RAGDefaultProperties properties = new RAGDefaultProperties();
         properties.setCollectionName("rag_default_store");
